@@ -2,7 +2,7 @@ use std::{str::FromStr, string::ToString};
 
 use strum::{EnumIter, IntoEnumIterator};
 
-use crate::position::Meta;
+use crate::lexer::position::Meta;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {

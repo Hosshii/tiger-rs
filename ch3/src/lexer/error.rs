@@ -2,7 +2,7 @@ use std::{fmt, io};
 
 use thiserror::Error;
 
-use crate::position::Meta;
+use crate::lexer::position::Meta;
 
 #[derive(Debug, Error)]
 pub struct Error {

@@ -1,3 +1,7 @@
+mod error;
+mod position;
+mod token;
+
 use std::{
     io::{Bytes, Read},
     iter::Peekable,
@@ -5,12 +9,15 @@ use std::{
     str::{self, FromStr},
 };
 
-use crate::{
+use crate::lexer::{
     error::{Error, ErrorKind},
     position::{Cursor, Meta},
     token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind},
-    Result,
 };
+
+type Result<T> = std::result::Result<T, Error>;
+
+pub type Spanned<Tok, Loc> = Result<(Loc, Tok, Loc)>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct State {
