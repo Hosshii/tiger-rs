@@ -5,11 +5,13 @@ use std::{
     str::{self, FromStr},
 };
 
-use crate::lexer::{
-    error::{Error, ErrorKind},
+use crate::{
+    lexer::{
+        error::{Error, ErrorKind},
+        token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind},
+        Result,
+    },
     position::{Cursor, Meta},
-    token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind},
-    Result,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -27,7 +29,7 @@ impl State {
     }
 }
 
-pub struct Lexer<R: Read> {
+pub(crate) struct LexerInner<R: Read> {
     ipt: Peekable<Bytes<R>>,
     filename: Rc<String>,
     before_state: State,
@@ -36,7 +38,7 @@ pub struct Lexer<R: Read> {
 
 use ErrorKind::*;
 
-impl<R> Lexer<R>
+impl<R> LexerInner<R>
 where
     R: Read,
 {
@@ -171,11 +173,6 @@ where
         Ok(result)
     }
 
-    // TODO: 複数回呼び出されたときのことを考える
-    fn save_state(&mut self) {
-        self.before_state = self.state.clone();
-    }
-
     fn separator(&mut self) -> Result<Separator> {
         let first = self.next()? as char;
         let second = self.peek()? as char;
@@ -269,29 +266,6 @@ where
 
             Err(e) => Err(e),
         }
-    }
-
-    pub fn tokenize(&mut self) -> Result<Vec<Token>> {
-        let mut result = Vec::new();
-
-        while self.ipt.peek().is_some() {
-            self.save_state();
-            let token = match self.token() {
-                Err(Error {
-                    kind: ErrorKind::Eof,
-                    ..
-                }) => {
-                    result.push(self.make_token(TokenKind::Eof));
-                    return Ok(result);
-                }
-                Err(e) => return Err(e),
-                Ok(tok) => tok,
-            };
-
-            result.push(token);
-        }
-
-        Ok(result)
     }
 
     fn trim_whitespace(&mut self) -> Result<()> {

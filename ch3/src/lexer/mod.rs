@@ -1,10 +1,9 @@
 mod error;
 mod lex;
-mod position;
 mod token;
 
 pub use error::Error;
-pub use token::{Token, TokenKind};
+pub use token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind};
 
 // pub use lex::Lexer;
 
@@ -19,7 +18,7 @@ pub struct Lexer<R>
 where
     R: Read,
 {
-    lexer: lex::Lexer<R>,
+    lexer: lex::LexerInner<R>,
 }
 
 impl<R> Lexer<R>
@@ -28,7 +27,7 @@ where
 {
     pub fn new(filename: impl Into<String>, r: R) -> Self {
         Self {
-            lexer: lex::Lexer::new(filename, r),
+            lexer: lex::LexerInner::new(filename, r),
         }
     }
 }
