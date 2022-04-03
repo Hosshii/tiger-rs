@@ -72,31 +72,32 @@ where
     }
 
     fn comment_or_slash(&mut self) -> Result<Option<Token>> {
-        if self.must_peek_byte()? != b'*' {
-            Ok(Some(
-                self.make_token(TokenKind::Separator(Separator::Slash)),
-            ))
-        } else {
-            self.consume(b'*')?;
-            loop {
-                self.take_while(|c| c != &b'*' && c != &b'/')?;
+        match self.peek_byte() {
+            Some(Ok(b'*')) => {
+                self.consume(b'*')?;
+                loop {
+                    self.take_while(|c| c != &b'*' && c != &b'/')?;
 
-                match self.must_next_byte()? {
-                    b'*' => {
-                        // end comment
-                        if self.must_next_byte()? == b'/' {
-                            break Ok(None);
+                    match self.must_next_byte()? {
+                        b'*' => {
+                            // end comment
+                            if self.must_next_byte()? == b'/' {
+                                break Ok(None);
+                            }
                         }
-                    }
-                    b'/' => {
-                        // nested comment
-                        if self.must_peek_byte()? == b'*' {
-                            self.comment_or_slash()?;
+                        b'/' => {
+                            // nested comment
+                            if self.must_peek_byte()? == b'*' {
+                                self.comment_or_slash()?;
+                            }
                         }
+                        _ => unreachable!(),
                     }
-                    _ => unreachable!(),
                 }
             }
+            Some(_) | None => Ok(Some(
+                self.make_token(TokenKind::Separator(Separator::Slash)),
+            )),
         }
     }
 
@@ -190,17 +191,23 @@ where
 
     fn separator(&mut self) -> Result<Separator> {
         let first = self.must_next_byte()? as char;
-        let second = self.must_peek_byte()? as char;
-
         let mut s = first.to_string();
-        s.push(second);
-        let s = s;
+        match self.peek_byte() {
+            None => {
+                Separator::from_str(s.as_str()).map_err(|e| self.make_error(ErrorKind::Other(e)))
+            }
+            Some(x) => {
+                let second = x? as char;
+                s.push(second);
+                let s = s;
 
-        if let Ok(v) = Separator::from_str(s.as_str()) {
-            self.must_next_byte()?;
-            Ok(v)
-        } else {
-            Separator::from_str(&s[..1]).map_err(|e| self.make_error(ErrorKind::Other(e)))
+                if let Ok(v) = Separator::from_str(s.as_str()) {
+                    self.must_next_byte()?;
+                    Ok(v)
+                } else {
+                    Separator::from_str(&s[..1]).map_err(|e| self.make_error(ErrorKind::Other(e)))
+                }
+            }
         }
     }
 
@@ -244,8 +251,8 @@ where
     pub(crate) fn token(&mut self) -> Result<Token> {
         self.trim_whitespace()?;
 
-        match self.must_peek_byte() {
-            Ok(ch) => match ch {
+        match self.peek_byte() {
+            Some(Ok(ch)) => match ch {
                 b'0'..=b'9' => {
                     let n = self.number()?;
                     Ok(self.make_token(TokenKind::Int(n)))
@@ -275,13 +282,8 @@ where
                     }
                 }
             },
-
-            Err(Error {
-                kind: ErrorKind::Eof,
-                ..
-            }) => Ok(self.make_token(TokenKind::Eof)),
-
-            Err(e) => Err(e),
+            Some(Err(e)) => Err(e),
+            None => Ok(self.make_token(TokenKind::Eof)),
         }
     }
 

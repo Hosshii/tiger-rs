@@ -40,8 +40,8 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.lexer.token() {
-            Err(Error {
-                kind: ErrorKind::Eof,
+            Ok(Token {
+                kind: TokenKind::Eof,
                 ..
             }) => None,
             x => Some(x.map(|tok| tok.to_lalrpop())),
