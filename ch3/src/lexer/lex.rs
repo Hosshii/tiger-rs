@@ -1,7 +1,3 @@
-mod error;
-mod position;
-mod token;
-
 use std::{
     io::{Bytes, Read},
     iter::Peekable,
