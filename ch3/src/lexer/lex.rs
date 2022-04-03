@@ -51,20 +51,28 @@ where
         }
     }
 
-    fn peek(&mut self) -> Result<u8> {
+    fn peek_byte(&mut self) -> Option<Result<u8>> {
         if let Some(Ok(v)) = self.ipt.peek() {
-            return Ok(*v);
+            return Some(Ok(*v));
         }
 
         match self.ipt.next() {
             Some(Ok(_)) => unreachable!(),
-            Some(Err(e)) => Err(self.make_error(e.into())),
+            Some(Err(e)) => Some(Err(self.make_error(e.into()))),
+            None => None,
+        }
+    }
+
+    /// if reaches EOF this function returns EOF error instead of None
+    fn must_peek_byte(&mut self) -> Result<u8> {
+        match self.peek_byte() {
+            Some(r) => r,
             None => Err(self.make_error(ErrorKind::Eof)),
         }
     }
 
     fn comment_or_slash(&mut self) -> Result<Option<Token>> {
-        if self.peek()? != b'*' {
+        if self.must_peek_byte()? != b'*' {
             Ok(Some(
                 self.make_token(TokenKind::Separator(Separator::Slash)),
             ))
@@ -73,16 +81,16 @@ where
             loop {
                 self.take_while(|c| c != &b'*' && c != &b'/')?;
 
-                match self.next()? {
+                match self.must_next_byte()? {
                     b'*' => {
                         // end comment
-                        if self.next()? == b'/' {
+                        if self.must_next_byte()? == b'/' {
                             break Ok(None);
                         }
                     }
                     b'/' => {
                         // nested comment
-                        if self.peek()? == b'*' {
+                        if self.must_peek_byte()? == b'*' {
                             self.comment_or_slash()?;
                         }
                     }
@@ -93,7 +101,7 @@ where
     }
 
     fn consume(&mut self, c: u8) -> Result<()> {
-        let _c = self.next()?;
+        let _c = self.must_next_byte()?;
         if _c == c {
             Ok(())
         } else {
@@ -102,7 +110,7 @@ where
     }
 
     fn escape_char(&mut self) -> Result<char> {
-        let escaped_char = match self.peek()? {
+        let escaped_char = match self.must_peek_byte()? {
             b'n' => '\n',
             b't' => '\t',
             b'r' => '\r',
@@ -141,7 +149,7 @@ where
         )
     }
 
-    fn next(&mut self) -> Result<u8> {
+    fn next_byte(&mut self) -> Option<Result<u8>> {
         match self.ipt.next() {
             Some(Ok(c)) => {
                 if c == b'\n' {
@@ -149,12 +157,19 @@ where
                 } else {
                     self.state.next();
                 }
-                Ok(c)
+                Some(Ok(c))
             }
             Some(Err(e)) => {
                 self.state.next();
-                Err(self.make_error(e.into()))
+                Some(Err(self.make_error(e.into())))
             }
+            None => None,
+        }
+    }
+
+    fn must_next_byte(&mut self) -> Result<u8> {
+        match self.next_byte() {
+            Some(r) => r,
             None => Err(self.make_error(Eof)),
         }
     }
@@ -174,14 +189,15 @@ where
     }
 
     fn separator(&mut self) -> Result<Separator> {
-        let first = self.next()? as char;
-        let second = self.peek()? as char;
+        let first = self.must_next_byte()? as char;
+        let second = self.must_peek_byte()? as char;
+
         let mut s = first.to_string();
         s.push(second);
         let s = s;
 
         if let Ok(v) = Separator::from_str(s.as_str()) {
-            self.next()?;
+            self.must_next_byte()?;
             Ok(v)
         } else {
             Separator::from_str(&s[..1]).map_err(|e| self.make_error(ErrorKind::Other(e)))
@@ -191,10 +207,10 @@ where
     fn string_literal(&mut self) -> Result<StringLiteral> {
         self.consume(b'"')?;
         let mut st = String::new();
-        while self.peek()? != b'"' {
-            let cur = self.next()?;
+        while self.must_peek_byte()? != b'"' {
+            let cur = self.must_next_byte()?;
             if cur == b'\\' {
-                if self.peek()?.is_ascii_whitespace() {
+                if self.must_peek_byte()?.is_ascii_whitespace() {
                     self.take_while(u8::is_ascii_whitespace)?;
                     self.consume(b'\\')?;
                 } else {
@@ -213,21 +229,22 @@ where
         P: FnMut(&u8) -> bool,
     {
         let mut buf = Vec::new();
-        loop {
-            let cur = self.peek()?;
+        while let Some(r) = self.peek_byte() {
+            let cur = r?;
             if predicate(&cur) {
                 buf.push(cur);
-                self.next()?;
+                self.must_next_byte()?;
             } else {
-                break Ok(buf);
+                break;
             }
         }
+        Ok(buf)
     }
 
     pub(crate) fn token(&mut self) -> Result<Token> {
         self.trim_whitespace()?;
 
-        match self.peek() {
+        match self.must_peek_byte() {
             Ok(ch) => match ch {
                 b'0'..=b'9' => {
                     let n = self.number()?;
