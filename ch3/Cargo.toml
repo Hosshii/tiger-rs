@@ -8,3 +8,8 @@ edition = "2021"
 [dependencies]
 strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0.30"
+lalrpop-util = "0.19.7"
+anyhow = "1.0.56"
+
+[build-dependencies] 
+lalrpop = "0.19.7"

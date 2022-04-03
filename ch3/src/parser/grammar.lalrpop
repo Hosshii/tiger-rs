@@ -1,0 +1,65 @@
+use crate::lexer::{Error as LexError, TokenKind, Reserved, Separator,StringLiteral, Ident};
+
+grammar;
+
+pub Term: u64 = {
+    <n:Int> => n,
+    "(" <t:Term> ")" => t,
+};
+
+extern {
+    type Location = usize;
+    type Error = LexError;
+
+    enum TokenKind {
+        "type" => TokenKind::Reserved(Reserved::Type),
+        "var" => TokenKind::Reserved(Reserved::Var),
+        "function" => TokenKind::Reserved(Reserved::Function),
+        "break" => TokenKind::Reserved(Reserved::Break),
+        "of" => TokenKind::Reserved(Reserved::Of),
+        "end" => TokenKind::Reserved(Reserved::End),
+        "in" => TokenKind::Reserved(Reserved::In),
+        "nil" => TokenKind::Reserved(Reserved::Nil),
+        "let" => TokenKind::Reserved(Reserved::Let),
+        "do" => TokenKind::Reserved(Reserved::Do),
+        "to" => TokenKind::Reserved(Reserved::To),
+        "for" => TokenKind::Reserved(Reserved::For),
+        "while" => TokenKind::Reserved(Reserved::While),
+        "else" => TokenKind::Reserved(Reserved::Else),
+        "then" => TokenKind::Reserved(Reserved::Then),
+        "if" => TokenKind::Reserved(Reserved::If),
+        "array" => TokenKind::Reserved(Reserved::Array),
+
+        ":=" => TokenKind::Separator(Separator::ColonEqual),
+        "|" => TokenKind::Separator(Separator::Pipe),
+        "&" => TokenKind::Separator(Separator::Ampersand),
+        ">=" => TokenKind::Separator(Separator::GreaterOrEqual),
+        ">" => TokenKind::Separator(Separator::Greater),
+        "<=" => TokenKind::Separator(Separator::LesserOrEqual),
+        "<" => TokenKind::Separator(Separator::Lesser),
+        "<>" => TokenKind::Separator(Separator::NotEqual),
+        "=" => TokenKind::Separator(Separator::Equal),
+        "/" => TokenKind::Separator(Separator::Slash),
+        "*" => TokenKind::Separator(Separator::Star),
+        "-" => TokenKind::Separator(Separator::Hyphen),
+        "+" => TokenKind::Separator(Separator::Plus),
+        "." => TokenKind::Separator(Separator::Dot),
+        "{" => TokenKind::Separator(Separator::LBrace),
+        "}" => TokenKind::Separator(Separator::RBrace),
+        "[" => TokenKind::Separator(Separator::LBrack),
+        "]" => TokenKind::Separator(Separator::RBrack),
+        "(" => TokenKind::Separator(Separator::LParen),
+        ")" => TokenKind::Separator(Separator::RParen),
+        ";" => TokenKind::Separator(Separator::Semicolon),
+        ":" => TokenKind::Separator(Separator::Colon),
+        "," => TokenKind::Separator(Separator::Comma),
+
+        Str => TokenKind::Str(<StringLiteral>),
+
+        Int => TokenKind::Int(<u64>),
+
+        Ident => TokenKind::Ident(<Ident>),
+
+        Eof => TokenKind::Eof,
+    }
+}
