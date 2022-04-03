@@ -4,7 +4,7 @@ use std::rc::Rc;
 pub struct Cursor {
     pub(crate) line: u32,
     pub(crate) column: u32,
-    pub(crate) from_start: u32,
+    pub(crate) from_start: usize,
 }
 
 impl Cursor {
@@ -22,9 +22,9 @@ impl Cursor {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Meta {
-    filename: Rc<String>,
-    cursor: Cursor,
-    length: usize,
+    pub(crate) filename: Rc<String>,
+    pub(crate) cursor: Cursor,
+    pub(crate) length: usize,
 }
 
 impl Meta {

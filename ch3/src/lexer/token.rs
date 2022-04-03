@@ -66,6 +66,16 @@ impl Token {
     pub fn new(kind: TokenKind, meta: Meta) -> Self {
         Self { kind, meta }
     }
+
+    pub fn meta(&self) -> &Meta {
+        &self.meta
+    }
+
+    pub fn to_lalrpop(self) -> (usize, TokenKind, usize) {
+        let from_start = self.meta.cursor.from_start;
+        let len = self.meta.length;
+        (from_start, self.kind, len)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
