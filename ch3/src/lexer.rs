@@ -22,18 +22,15 @@ pub type Spanned<Tok, Loc> = Result<(Loc, Tok, Loc)>;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct State {
     cursor: Cursor,
-    from_start: u32,
 }
 
 impl State {
     fn next(&mut self) {
         self.cursor.next();
-        self.from_start += 1;
     }
 
     fn newline(&mut self) {
         self.cursor.newline();
-        self.from_start += 1;
     }
 }
 
@@ -70,9 +67,11 @@ where
         }
     }
 
-    fn comment_or_slash(&mut self) -> Result<Token> {
+    fn comment_or_slash(&mut self) -> Result<Option<Token>> {
         if self.peek()? != b'*' {
-            Ok(self.make_token(TokenKind::Separator(Separator::Slash)))
+            Ok(Some(
+                self.make_token(TokenKind::Separator(Separator::Slash)),
+            ))
         } else {
             self.consume(b'*')?;
             loop {
@@ -82,7 +81,7 @@ where
                     b'*' => {
                         // end comment
                         if self.next()? == b'/' {
-                            break Ok(self.make_token(TokenKind::Comment));
+                            break Ok(None);
                         }
                     }
                     b'/' => {
@@ -134,14 +133,15 @@ where
     }
 
     fn make_error(&self, kind: ErrorKind) -> Error {
-        let meta = Meta::new(self.filename.clone(), self.before_state.cursor);
+        let meta = Meta::new(self.filename.clone(), self.before_state.cursor, 0);
         Error::new(kind, meta)
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
+        let len = kind.len();
         Token::new(
             kind,
-            Meta::new(Rc::clone(&self.filename), self.before_state.cursor),
+            Meta::new(Rc::clone(&self.filename), self.before_state.cursor, len),
         )
     }
 
@@ -234,6 +234,8 @@ where
     }
 
     fn token(&mut self) -> Result<Token> {
+        self.trim_whitespace()?;
+
         match self.peek() {
             Ok(ch) => match ch {
                 b'0'..=b'9' => {
@@ -246,7 +248,10 @@ where
                 }
                 b'/' => {
                     self.consume(b'/')?;
-                    Ok(self.comment_or_slash()?)
+                    match self.comment_or_slash()? {
+                        Some(tok) => Ok(tok),
+                        None => self.token(),
+                    }
                 }
                 c if Separator::starts_with(c as char) => {
                     let separator = self.separator()?;
@@ -276,7 +281,8 @@ where
         let mut result = Vec::new();
 
         while self.ipt.peek().is_some() {
-            match self.trim_whitespace() {
+            self.save_state();
+            let token = match self.token() {
                 Err(Error {
                     kind: ErrorKind::Eof,
                     ..
@@ -285,12 +291,9 @@ where
                     return Ok(result);
                 }
                 Err(e) => return Err(e),
-                Ok(_) => {}
-            }
+                Ok(tok) => tok,
+            };
 
-            self.save_state();
-            let token = self.token()?;
-            dbg!(&token);
             result.push(token);
         }
 

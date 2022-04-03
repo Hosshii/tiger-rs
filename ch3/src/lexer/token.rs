@@ -11,8 +11,22 @@ pub enum TokenKind {
     Str(StringLiteral),
     Int(u64),
     Ident(Ident),
-    Comment,
     Eof,
+}
+
+impl TokenKind {
+    pub fn len(&self) -> usize {
+        use TokenKind::*;
+
+        match self {
+            Reserved(r) => r.len(),
+            Separator(s) => s.len(),
+            Str(s) => s.len(),
+            Int(num) => num.to_string().len(),
+            Ident(ident) => ident.len(),
+            Eof => 0,
+        }
+    }
 }
 
 impl ToString for TokenKind {
@@ -24,7 +38,6 @@ impl ToString for TokenKind {
             Str(s) => format!("\"{}\"", format_escape(s.0.as_str())),
             Int(n) => n.to_string(),
             Ident(s) => s.to_string(),
-            Comment => "COMMENT".to_string(),
             Eof => "eof".to_string(),
         }
     }
@@ -59,6 +72,10 @@ impl Token {
 pub struct StringLiteral(String);
 
 impl StringLiteral {
+    pub fn len(&self) -> usize {
+        self.0.chars().count()
+    }
+
     pub fn new(v: impl Into<String>) -> Self {
         Self(v.into())
     }
@@ -107,6 +124,10 @@ impl Reserved {
             If => "if",
             Array => "array",
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.as_str().chars().count()
     }
 
     pub fn starts_with(c: char) -> bool {
@@ -204,6 +225,10 @@ impl Separator {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.as_str().chars().count()
+    }
+
     pub fn starts_with(c: char) -> bool {
         Self::iter().any(|e| e.as_str().starts_with(c))
     }
@@ -251,6 +276,12 @@ impl FromStr for Separator {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident(pub String);
+
+impl Ident {
+    pub fn len(&self) -> usize {
+        self.0.chars().count()
+    }
+}
 
 impl ToString for Ident {
     fn to_string(&self) -> String {
