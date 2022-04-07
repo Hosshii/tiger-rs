@@ -1,4 +1,4 @@
-use crate::lexer::{Error as LexError, TokenKind, Reserved, Separator,StringLiteral, Ident};
+use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLiteral, Ident}, parser::ast};
 
 grammar;
 
@@ -6,6 +6,230 @@ pub Term: u64 = {
     <n:Int> => n,
     "(" <t:Term> ")" => t,
 };
+
+pub Program: ast::Program = {
+    <Expr> => ast::Program::Expr(<>),
+    <Decls> => ast::Program::Decls(<>),
+}
+
+Decls: Vec<ast::Decl> = {
+    Eof => Vec::new(),
+    <mut ds:Decls> <d:Decl> => {
+        ds.push(d);
+        ds
+    }
+}
+
+Decl: ast::Decl = {
+    TypeDecl => ast::Decl::Type(<>),
+    VarDecl => ast::Decl::Var(<>),
+    FuncDecl => ast::Decl::Func(<>),
+} 
+
+TypeDecl: ast::TypeDecl = {
+    "type" <id:TypeIdent> "=" <ty:Type> => {
+        ast::TypeDecl {
+            id: id,
+            ty: ty,
+        }
+    }
+}
+
+Type: ast::Type = {
+    TypeIdent => ast::Type::Id(<>),
+    "{" <TypeFields> "}" => ast::Type::Fields(<>),
+    "array" "of" <TypeIdent> => ast::Type::Array(<>),
+}
+
+TypeFields: ast::TypeFields = {
+    <f: NonZeroTypeFields?> => {
+        if let Some(fields) = f {
+            fields
+        }else {
+            Vec::new()
+        }
+    }
+}
+
+NonZeroTypeFields: ast::TypeFields = {
+    <i1:Ident> ":" <i2:TypeIdent> <f2:("," Ident ":" TypeIdent)*> => {
+        let mut fields = Vec::new();
+        fields.push(ast::TypeField {id: i1, type_id: i2});
+        for (id, type_id) in f2.into_iter().map(|v| (v.1, v.3)) {
+            fields.push(ast::TypeField {id: id, type_id: type_id});
+        }
+        fields
+    }
+}
+
+VarDecl: ast::VarDecl = {
+    "var" <Ident> ":=" <Expr> => {
+        ast::VarDecl::Short(<>)
+    },
+    "var" <Ident> ":" <TypeIdent> ":=" <Expr> => {
+        ast::VarDecl::Long(<>)
+    } 
+}
+
+TypeIdent: ast::TypeIdent = {
+    "string" => ast::TypeIdent::Builtin(ast::BuiltinTypeIdent::String),
+    "int" => ast::TypeIdent::Builtin(ast::BuiltinTypeIdent::Int),
+}
+
+FuncDecl: ast::FuncDecl = {
+    "function" <Ident> "(" <TypeFields> ")" "=" <Expr> => {
+        ast::FuncDecl::Short(<>)
+    },
+    "function" <Ident> "(" <TypeFields> ")" ":" <TypeIdent> "=" <Expr> => {
+        ast::FuncDecl::Long(<>)
+    }
+}
+
+LValue: ast::LValue = {
+    <Ident> => ast::LValue::Var(<>),
+    <l:LValue> "." <i:Ident> => ast::LValue::RecordField(Box::new(l), i),
+    <l:LValue> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(l), Box::new(e)),
+}
+
+Expr: ast::Expr = {
+    #[precedence(level="0")]
+    <LValue> => ast::Expr::LValue(<>),
+
+    #[precedence(level="0")]
+    "nil" => ast::Expr::Nil,
+
+    #[precedence(level="0")]
+    "(" <seq:Semicolon<Expr>> ")" => ast::Expr::Sequence(<>),
+
+    #[precedence(level="0")]
+    <Int> => ast::Expr::Int(<>),
+
+    #[precedence(level="0")]
+    <Str> => ast::Expr::Str(<>),
+
+    #[precedence(level="0")]
+    <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
+
+    // *, /
+    #[precedence(level="1")]
+    #[assoc(side="left")]
+    <lhs:Expr> <op:MulOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+
+    // +, -
+    #[precedence(level="2")]
+    #[assoc(side="left")]
+    <lhs:Expr> <op:AddOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+
+    // =, <>, >=, >, <=, <
+    #[precedence(level="3")]
+    #[assoc(side="left")]
+    <lhs:Expr> <op:CompOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+
+    // &
+    #[precedence(level="4")]
+    #[assoc(side="left")]
+    <lhs:Expr> <op:AndOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+
+    // |
+    #[precedence(level="5")]
+    #[assoc(side="left")]
+    <lhs:Expr> <op:OrOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+
+    #[precedence(level="0")]
+    <type_id:TypeIdent> "{" <i1:(Ident "=" Expr)?> <f2:("," Ident "=" Expr)*> "}" => {
+        let mut fields = Vec::new();
+        if let Some((id, _, expr)) = i1 {
+            fields.push(ast::RecordField {id: id, expr: expr});
+        }
+
+        f2.into_iter().for_each(|(_, id, _, expr)|{
+            fields.push(ast::RecordField {id: id, expr: expr});
+        });
+        
+        ast::Expr::RecordCreation(type_id, fields)
+    },
+
+    #[precedence(level="0")]
+    <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:Expr> => {
+        ast::Expr::ArrayCreation {
+            type_id: id,
+            size: Box::new(e1),
+            init: Box::new(e2)
+        }
+    },
+
+    #[precedence(level="0")]
+    <l:LValue> ":=" <e:Expr> => ast::Expr::Assign(l, Box::new(e)),
+
+    #[precedence(level="0")]
+    "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+
+    #[precedence(level="0")]
+    "if" <e1:Expr> "then" <e2:Expr> => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
+
+    #[precedence(level="0")]
+    "while" <e1:Expr> "do" <e2:Expr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
+
+    #[precedence(level="0")]
+    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:Expr> => {
+        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
+    },
+
+    #[precedence(level="0")]
+    "break" => ast::Expr::Break,
+
+    #[precedence(level="0")]
+    "let" <Decls> "in" <ExprSeq> "end" => ast::Expr::Let(<>),
+}
+
+ExprSeq = Semicolon<Expr>;
+
+MulOp: ast::Operator = {
+    "*" => ast::Operator::Mul,
+    "/" => ast::Operator::Div,
+}
+
+AddOp: ast::Operator = {
+    "+" => ast::Operator::Plus,
+    "-" => ast::Operator::Minus,
+}
+
+CompOp: ast::Operator = {
+    "=" => ast::Operator::Eq,
+    "<>" => ast::Operator::Neq,
+    ">=" => ast::Operator::Ge,
+    ">" => ast::Operator::Gt,
+    "<=" => ast::Operator::Le,
+    "<" => ast::Operator::Lt,
+}
+
+AndOp: ast::Operator = {
+    "&" => ast::Operator::And,
+}
+
+OrOp: ast::Operator = {
+    "|" => ast::Operator::Or,
+}
+
+Semicolon<T>: Vec<T> = {
+    <mut v:(<T> ";")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+}
+
+Comma<T>: Vec<T> = {
+    <mut v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+}
 
 extern {
     type Location = usize;
@@ -61,5 +285,8 @@ extern {
         Ident => TokenKind::Ident(<Ident>),
 
         Eof => TokenKind::Eof,
+
+        "string" =>  TokenKind::Ident(<Ident>),
+        "int" =>  TokenKind::Ident(<Ident>),
     }
 }

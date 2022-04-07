@@ -284,7 +284,7 @@ impl FromStr for Separator {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident(pub String);
 
 impl Ident {
