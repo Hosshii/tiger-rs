@@ -2,15 +2,10 @@ use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLit
 
 grammar;
 
-pub Term: u64 = {
-    <n:Int> => n,
-    "(" <t:Term> ")" => t,
-};
-
-pub Program: ast::Program = {
-    <Expr> => ast::Program::Expr(<>),
-    <Decls> => ast::Program::Decls(<>),
-}
+// pub Program: ast::Program = {
+//     <Expr> => ast::Program::Expr(<>),
+//     <Decls> => ast::Program::Decls(<>),
+// }
 
 Decls: Vec<ast::Decl> = {
     Eof => Vec::new(),
@@ -91,51 +86,27 @@ LValue: ast::LValue = {
     <l:LValue> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(l), Box::new(e)),
 }
 
-Expr: ast::Expr = {
-    #[precedence(level="0")]
+pub Expr: ast::Expr = ExprRestr<"I">;
+
+ExprRestr<I> = Or<I>;
+
+// precedence 
+// strong --> weak
+// ExperType1 --> Mul --> Add --> Comp --> And --> Or
+
+ExprType1<I>: ast::Expr = {
     <LValue> => ast::Expr::LValue(<>),
 
-    #[precedence(level="0")]
     "nil" => ast::Expr::Nil,
 
-    #[precedence(level="0")]
     "(" <seq:Semicolon<Expr>> ")" => ast::Expr::Sequence(<>),
 
-    #[precedence(level="0")]
     <Int> => ast::Expr::Int(<>),
 
-    #[precedence(level="0")]
     <Str> => ast::Expr::Str(<>),
 
-    #[precedence(level="0")]
     <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
 
-    // *, /
-    #[precedence(level="1")]
-    #[assoc(side="left")]
-    <lhs:Expr> <op:MulOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
-
-    // +, -
-    #[precedence(level="2")]
-    #[assoc(side="left")]
-    <lhs:Expr> <op:AddOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
-
-    // =, <>, >=, >, <=, <
-    #[precedence(level="3")]
-    #[assoc(side="left")]
-    <lhs:Expr> <op:CompOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
-
-    // &
-    #[precedence(level="4")]
-    #[assoc(side="left")]
-    <lhs:Expr> <op:AndOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
-
-    // |
-    #[precedence(level="5")]
-    #[assoc(side="left")]
-    <lhs:Expr> <op:OrOp> <rhs:Expr> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
-
-    #[precedence(level="0")]
     <type_id:TypeIdent> "{" <i1:(Ident "=" Expr)?> <f2:("," Ident "=" Expr)*> "}" => {
         let mut fields = Vec::new();
         if let Some((id, _, expr)) = i1 {
@@ -149,7 +120,6 @@ Expr: ast::Expr = {
         ast::Expr::RecordCreation(type_id, fields)
     },
 
-    #[precedence(level="0")]
     <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:Expr> => {
         ast::Expr::ArrayCreation {
             type_id: id,
@@ -158,31 +128,30 @@ Expr: ast::Expr = {
         }
     },
 
-    #[precedence(level="0")]
     <l:LValue> ":=" <e:Expr> => ast::Expr::Assign(l, Box::new(e)),
 
-    #[precedence(level="0")]
-    "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+    "if" <e1:Expr> "then" <e2:ExprRestr<"">> "else" <e3:ExprRestr<"I">> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
 
-    #[precedence(level="0")]
-    "if" <e1:Expr> "then" <e2:Expr> => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
+    "if" <e1:Expr> "then" <e2:ExprRestr<"I">> if I != "" => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
 
-    #[precedence(level="0")]
     "while" <e1:Expr> "do" <e2:Expr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
 
-    #[precedence(level="0")]
     "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:Expr> => {
         ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
     },
 
-    #[precedence(level="0")]
     "break" => ast::Expr::Break,
 
-    #[precedence(level="0")]
     "let" <Decls> "in" <ExprSeq> "end" => ast::Expr::Let(<>),
 }
 
 ExprSeq = Semicolon<Expr>;
+
+Or<I> = Tier<OrOp, And<I>>;
+And<I> = Tier<AndOp, Comp<I>>;
+Comp<I> = Tier<CompOp, Add<I>>;
+Add<I> = Tier<AddOp, Mul<I>>;
+Mul<I> = Tier<MulOp, ExprType1<I>>;
 
 MulOp: ast::Operator = {
     "*" => ast::Operator::Mul,
@@ -230,6 +199,11 @@ Comma<T>: Vec<T> = {
         }
     }
 }
+
+Tier<Op,NextTier>: ast::Expr = {
+    <lhs:Tier<Op,NextTier>> <op:Op> <rhs:NextTier> => Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+    NextTier
+};
 
 extern {
     type Location = usize;
