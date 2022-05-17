@@ -2,17 +2,80 @@ use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLit
 
 grammar;
 
-// pub Program: ast::Program = {
-//     <Expr> => ast::Program::Expr(<>),
-//     <Decls> => ast::Program::Decls(<>),
-// }
+pub Program: ast::Program = {
+    <Expr> => ast::Program::Expr(<>),
+    <Decls> => ast::Program::Decls(<>),
+}
+
+Expr: ast::Expr = {
+    MatchedIf => <>,
+    UnmatchedIf => <>,
+}
+
+MatchedIf: ast::Expr = {
+    "if" <e1:Expr> "then" <e2:MatchedIf> "else" <e3:MatchedIf> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+    ExprType1 => <>,
+}
+
+UnmatchedIf: ast::Expr = {
+    "if" <e1:Expr> "then" <e2:Expr> => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
+    "if" <e1:Expr> "then" <e2:MatchedIf> "else" <e3:UnmatchedIf> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+}
+
+ExprType1: ast::Expr = {
+    <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:MatchedIf> => {
+        ast::Expr::ArrayCreation {
+            type_id: id,
+            size: Box::new(e1),
+            init: Box::new(e2)
+        }
+    },
+    <type_id:TypeIdent> "{" <f1:(Ident "=" Expr ("," Ident "=" MatchedIf)*)?>  "}" => {
+        let fields = if let Some((id, _, expr, _fields)) = f1 {
+            let fields = vec![ast::RecordField {id: id, expr: expr}];
+            let iter = _fields.into_iter().map(|(_, id, _, expr)| ast::RecordField {id: id, expr: expr});
+            fields.into_iter().chain(iter).collect()
+        }else {
+            ast::RecordFields::new()
+        };
+
+        ast::Expr::RecordCreation(type_id, fields)
+    },
+
+    <LValueNotID> => ast::Expr::LValue(<>),
+    <Ident> => ast::Expr::LValue(ast::LValue::Var(<>)),
+
+    <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
+
+    <Or> => <>,
+
+    <l:LValue> ":=" <e:MatchedIf> => ast::Expr::Assign(l, Box::new(e)),
+
+    "while" <e1:Expr> "do" <e2:MatchedIf> => ast::Expr::While(Box::new(e1), Box::new(e2)),
+    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedIf> => {
+        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
+    },
+}
+
+LValue: ast::LValue = {
+    <Ident> => ast::LValue::Var(<>),
+    LValueNotID => <>,
+}
+
+LValueNotID: ast::LValue = {
+    <l:LValue> "." <i:Ident> => ast::LValue::RecordField(Box::new(l), i),
+    <l:Ident> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(ast::LValue::Var(l)), Box::new(e)),
+    <l:LValueNotID> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(l), Box::new(e)),
+}
+
+ExprSeq = Semicolon<Expr>;
+
+BracketedExprs: ast::Expr = {
+    "(" <ExprSeq> ")" => ast::Expr::Sequence(<>),
+}
 
 Decls: Vec<ast::Decl> = {
-    Eof => Vec::new(),
-    <mut ds:Decls> <d:Decl> => {
-        ds.push(d);
-        ds
-    }
+    <d:Decl*> => <>
 }
 
 Decl: ast::Decl = {
@@ -80,78 +143,28 @@ FuncDecl: ast::FuncDecl = {
     }
 }
 
-LValue: ast::LValue = {
-    <Ident> => ast::LValue::Var(<>),
-    <l:LValue> "." <i:Ident> => ast::LValue::RecordField(Box::new(l), i),
-    <l:LValue> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(l), Box::new(e)),
-}
-
-pub Expr: ast::Expr = ExprRestr<"I">;
-
-ExprRestr<I> = Or<I>;
-
 // precedence 
 // strong --> weak
-// ExperType1 --> Mul --> Add --> Comp --> And --> Or
+//  Mul --> Add --> Comp --> And --> Or --> ExperType1
 
-ExprType1<I>: ast::Expr = {
-    <LValue> => ast::Expr::LValue(<>),
-
-    "nil" => ast::Expr::Nil,
-
-    "(" <seq:Semicolon<Expr>> ")" => ast::Expr::Sequence(<>),
-
-    <Int> => ast::Expr::Int(<>),
-
-    <Str> => ast::Expr::Str(<>),
-
-    <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
-
-    <type_id:TypeIdent> "{" <i1:(Ident "=" Expr)?> <f2:("," Ident "=" Expr)*> "}" => {
-        let mut fields = Vec::new();
-        if let Some((id, _, expr)) = i1 {
-            fields.push(ast::RecordField {id: id, expr: expr});
-        }
-
-        f2.into_iter().for_each(|(_, id, _, expr)|{
-            fields.push(ast::RecordField {id: id, expr: expr});
-        });
-        
-        ast::Expr::RecordCreation(type_id, fields)
-    },
-
-    <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:Expr> => {
-        ast::Expr::ArrayCreation {
-            type_id: id,
-            size: Box::new(e1),
-            init: Box::new(e2)
-        }
-    },
-
-    <l:LValue> ":=" <e:Expr> => ast::Expr::Assign(l, Box::new(e)),
-
-    "if" <e1:Expr> "then" <e2:ExprRestr<"">> "else" <e3:ExprRestr<"I">> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
-
-    "if" <e1:Expr> "then" <e2:ExprRestr<"I">> if I != "" => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
-
-    "while" <e1:Expr> "do" <e2:Expr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
-
-    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:Expr> => {
-        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
-    },
-
-    "break" => ast::Expr::Break,
-
-    "let" <Decls> "in" <ExprSeq> "end" => ast::Expr::Let(<>),
+Or = Tier<OrOp, And>;
+And = Tier<AndOp, Comp>;
+Comp = Tier<CompOp, Add>;
+Add = Tier<AddOp, Mul>;
+Mul = Tier<MulOp, Neg>;
+Neg: ast::Expr = {
+    "-" <Neg> => ast::Expr::Neg(Box::new(<>)),
+    Primary => <>,
 }
 
-ExprSeq = Semicolon<Expr>;
-
-Or<I> = Tier<OrOp, And<I>>;
-And<I> = Tier<AndOp, Comp<I>>;
-Comp<I> = Tier<CompOp, Add<I>>;
-Add<I> = Tier<AddOp, Mul<I>>;
-Mul<I> = Tier<MulOp, ExprType1<I>>;
+Primary: ast::Expr = {
+    "nil" => ast::Expr::Nil,
+    <Int> => ast::Expr::Int(<>),
+    <Str> => ast::Expr::Str(<>),
+    BracketedExprs => <>,
+    "break" => ast::Expr::Break,
+    "let" <Decls> "in" <ExprSeq> "end" => ast::Expr::Let(<>),
+}
 
 MulOp: ast::Operator = {
     "*" => ast::Operator::Mul,
@@ -201,7 +214,7 @@ Comma<T>: Vec<T> = {
 }
 
 Tier<Op,NextTier>: ast::Expr = {
-    <lhs:Tier<Op,NextTier>> <op:Op> <rhs:NextTier> => Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+    <lhs:Tier<Op,NextTier>> <op:Op> <rhs:NextTier> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
     NextTier
 };
 
