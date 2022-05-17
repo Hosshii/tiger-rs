@@ -1,3 +1,5 @@
+pub mod ast;
+
 use std::{fmt, io::Read};
 
 use lalrpop_util::lalrpop_mod;
@@ -43,12 +45,13 @@ impl fmt::Display for Error {
     }
 }
 
-pub fn parse<R>(filename: impl Into<String>, r: R) -> Result<u64, LalrpopError>
+pub fn parse<R>(filename: impl Into<String>, r: R) -> Result<ast::Program, LalrpopError>
 where
     R: Read,
 {
     let lexer = lexer::Lexer::new(filename, r);
-    let parser = grammar::TermParser::new();
+    let parser = grammar::ProgramParser::new();
 
     parser.parse(lexer)
+    // Ok(1)
 }

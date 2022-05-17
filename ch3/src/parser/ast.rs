@@ -80,6 +80,7 @@ pub enum Expr {
     Str(StringLiteral),
     FuncCall(Ident, Vec<Expr>),
     Op(Operator, Box<Expr>, Box<Expr>),
+    Neg(Box<Expr>),
     RecordCreation(TypeIdent, RecordFields),
     ArrayCreation {
         type_id: TypeIdent,
