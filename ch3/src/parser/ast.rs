@@ -59,10 +59,7 @@ pub enum BuiltinTypeIdent {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub enum TypeIdent {
-    Builtin(BuiltinTypeIdent),
-    User(Ident),
-}
+pub struct TypeIdent(pub Ident);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LValue {

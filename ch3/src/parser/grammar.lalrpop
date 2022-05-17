@@ -23,9 +23,10 @@ UnmatchedIf: ast::Expr = {
 }
 
 ExprType1: ast::Expr = {
-    <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:MatchedIf> => {
+    // <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:MatchedIf> => {
+    <id:Ident> "[" <e1:Expr> "]" "of" <e2:MatchedIf> => {
         ast::Expr::ArrayCreation {
-            type_id: id,
+            type_id: ast::TypeIdent(id),
             size: Box::new(e1),
             init: Box::new(e2)
         }
@@ -130,8 +131,7 @@ VarDecl: ast::VarDecl = {
 }
 
 TypeIdent: ast::TypeIdent = {
-    "string" => ast::TypeIdent::Builtin(ast::BuiltinTypeIdent::String),
-    "int" => ast::TypeIdent::Builtin(ast::BuiltinTypeIdent::Int),
+    <Ident> => ast::TypeIdent(<>),
 }
 
 FuncDecl: ast::FuncDecl = {
@@ -272,8 +272,5 @@ extern {
         Ident => TokenKind::Ident(<Ident>),
 
         Eof => TokenKind::Eof,
-
-        "string" =>  TokenKind::Ident(<Ident>),
-        "int" =>  TokenKind::Ident(<Ident>),
     }
 }
