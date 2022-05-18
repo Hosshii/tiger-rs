@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::lexer::{self};
 
 pub type Decls = Vec<Decl>;

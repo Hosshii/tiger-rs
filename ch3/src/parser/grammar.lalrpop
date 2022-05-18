@@ -1,4 +1,4 @@
-use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLiteral, Ident}, parser::ast};
+use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLiteral, Ident}, parser::ast, position::Cursor};
 
 grammar;
 
@@ -242,7 +242,7 @@ Tier<Op,NextTier>: ast::Expr = {
 };
 
 extern {
-    type Location = usize;
+    type Location = Cursor;
     type Error = LexError;
 
     enum TokenKind {

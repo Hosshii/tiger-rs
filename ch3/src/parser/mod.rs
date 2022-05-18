@@ -7,53 +7,88 @@ use thiserror::Error;
 
 use crate::{
     lexer::{self, Error as LexError, TokenKind},
-    position::Meta,
+    position::Cursor,
 };
 
 lalrpop_mod!(pub grammar,"/parser/grammar.rs");
 
-type LalrpopError = lalrpop_util::ParseError<usize, TokenKind, LexError>;
+type LalrpopError = lalrpop_util::ParseError<Cursor, TokenKind, LexError>;
 
 #[derive(Debug, Error)]
 pub enum ErrorKind {
-    #[error("parse error: unexpected end of file")]
-    Eof,
+    #[error("parse error: unexpected end of file. expected: `{0:?}`")]
+    Eof(Vec<String>),
     #[error("lexer error: {0}")]
     Lexical(LexError),
-    #[error("parse error: extra token {0:?}")]
+    #[error("parse error: extra token: `{0:?}`")]
     ExtraToken(TokenKind),
-    #[error("parse error: unrecognized token {0:?}, expected {1}")]
-    UnrecognizedToken(TokenKind, String),
+    #[error("parse error: unrecognized token: `{0:?}`, expected: `{1:?}`")]
+    UnrecognizedToken(TokenKind, Vec<String>),
+    #[error("invalid token")]
+    InvalidToken,
 }
 
 #[derive(Debug, Error)]
 pub struct Error {
     pub(crate) kind: ErrorKind,
-    pub(crate) meta: Meta,
+    pub(crate) loc: Cursor,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "file: {}, line: {}, column: {}",
-            self.meta.filename(),
-            self.meta.line(),
-            self.meta.column()
+            "line: {}, column: {}",
+            self.loc.line + 1,
+            self.loc.column + 1
         )?;
         write!(f, "{}", self.kind)
     }
 }
 
-pub fn parse<R>(filename: impl Into<String>, r: R) -> Result<ast::Program, LalrpopError>
+impl From<LalrpopError> for Error {
+    fn from(e: LalrpopError) -> Self {
+        match e {
+            lalrpop_util::ParseError::ExtraToken {
+                token: (loc, kind, _),
+            } => Error {
+                kind: ErrorKind::ExtraToken(kind),
+                loc: loc,
+            },
+            lalrpop_util::ParseError::InvalidToken { location } => Error {
+                kind: ErrorKind::InvalidToken,
+                loc: location,
+            },
+            lalrpop_util::ParseError::UnrecognizedEOF { location, expected } => Error {
+                kind: ErrorKind::Eof(expected),
+                loc: location,
+            },
+            lalrpop_util::ParseError::UnrecognizedToken {
+                token: (loc, kind, _),
+                expected,
+            } => Error {
+                kind: ErrorKind::UnrecognizedToken(kind, expected),
+                loc: loc,
+            },
+            lalrpop_util::ParseError::User { error } => {
+                let loc = error.meta.cursor;
+                Error {
+                    kind: ErrorKind::Lexical(error),
+                    loc: loc,
+                }
+            }
+        }
+    }
+}
+
+pub fn parse<R>(filename: impl Into<String>, r: R) -> Result<ast::Program, Error>
 where
     R: Read,
 {
     let lexer = lexer::Lexer::new(filename, r);
     let parser = grammar::ProgramParser::new();
 
-    parser.parse(lexer)
-    // Ok(1)
+    parser.parse(lexer).map_err(Into::into)
 }
 
 macro_rules! test_file {
@@ -62,7 +97,7 @@ macro_rules! test_file {
         fn $name() {
             use std::fs::File;
             let file = File::open($path).unwrap();
-            let ast = parse($path, file).unwrap();
+            parse($path, file).unwrap();
         }
     };
 }

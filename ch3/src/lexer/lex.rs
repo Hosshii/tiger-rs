@@ -32,7 +32,6 @@ impl State {
 pub(crate) struct LexerInner<R: Read> {
     ipt: Peekable<Bytes<R>>,
     filename: Rc<String>,
-    before_state: State,
     state: State,
 }
 
@@ -46,7 +45,6 @@ where
         Self {
             ipt: ipt.bytes().peekable(),
             filename: Rc::new(filename.into()),
-            before_state: State::default(),
             state: State::default(),
         }
     }
