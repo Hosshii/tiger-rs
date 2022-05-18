@@ -8,47 +8,61 @@ pub Program: ast::Program = {
 }
 
 Expr: ast::Expr = {
+    MatchedExpr => <>,
+    UnmatchedExpr => <>,
+}
+
+MatchedExpr: ast::Expr = {
     MatchedIf => <>,
+    MatchedExprType => <>,
+}
+UnmatchedExpr: ast::Expr = {
     UnmatchedIf => <>,
+    UnmatchedExprType => <>,
 }
 
 MatchedIf: ast::Expr = {
-    "if" <e1:Expr> "then" <e2:MatchedIf> "else" <e3:MatchedIf> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
-    ExprType1 => <>,
+    "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
 }
 
 UnmatchedIf: ast::Expr = {
     "if" <e1:Expr> "then" <e2:Expr> => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
-    "if" <e1:Expr> "then" <e2:MatchedIf> "else" <e3:UnmatchedIf> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+    "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
 }
 
-ExprType1: ast::Expr = {
-    // <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:MatchedIf> => {
-    <id:Ident> "[" <e1:Expr> "]" "of" <e2:MatchedIf> => {
+UnmatchedExprType: ast::Expr = {
+    // <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:UnmatchedExpr> => {
+    <id:Ident> "[" <e1:Expr> "]" "of" <e2:UnmatchedExpr> => {
         ast::Expr::ArrayCreation {
             type_id: ast::TypeIdent(id),
             size: Box::new(e1),
             init: Box::new(e2)
         }
     },
-    <type_id:TypeIdent> "{" <f1:(Ident "=" Expr ("," Ident "=" MatchedIf)*)?>  "}" => {
-        let fields = if let Some((id, _, expr, _fields)) = f1 {
-            let fields = vec![ast::RecordField {id: id, expr: expr}];
-            let iter = _fields.into_iter().map(|(_, id, _, expr)| ast::RecordField {id: id, expr: expr});
-            fields.into_iter().chain(iter).collect()
-        }else {
-            ast::RecordFields::new()
-        };
 
-        ast::Expr::RecordCreation(type_id, fields)
+    <l:LValue> ":=" <e:UnmatchedExpr> => ast::Expr::Assign(l, Box::new(e)),
+
+    "while" <e1:Expr> "do" <e2:UnmatchedExpr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
+    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:UnmatchedExpr> => {
+        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
+    },
+}
+
+MatchedExprType: ast::Expr = {
+    // <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:MatchedExpr> => {
+    <id:Ident> "[" <e1:Expr> "]" "of" <e2:MatchedExpr> => {
+        ast::Expr::ArrayCreation {
+            type_id: ast::TypeIdent(id),
+            size: Box::new(e1),
+            init: Box::new(e2)
+        }
     },
 
-    <Or> => <>,
+    Or => <>,
+    <l:LValue> ":=" <e:MatchedExpr> => ast::Expr::Assign(l, Box::new(e)),
 
-    <l:LValue> ":=" <e:MatchedIf> => ast::Expr::Assign(l, Box::new(e)),
-
-    "while" <e1:Expr> "do" <e2:MatchedIf> => ast::Expr::While(Box::new(e1), Box::new(e2)),
-    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedIf> => {
+    "while" <e1:Expr> "do" <e2:MatchedExpr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
+    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedExpr> => {
         ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
     },
 }
@@ -162,6 +176,17 @@ Primary: ast::Expr = {
     <LValueNotID> => ast::Expr::LValue(<>),
     <Ident> => ast::Expr::LValue(ast::LValue::Var(<>)),
     <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
+    <type_id:TypeIdent> "{" <f1:(Ident "=" Expr ("," Ident "="Expr)*)?>  "}" => {
+        let fields = if let Some((id, _, expr, _fields)) = f1 {
+            let fields = vec![ast::RecordField {id: id, expr: expr}];
+            let iter = _fields.into_iter().map(|(_, id, _, expr)| ast::RecordField {id: id, expr: expr});
+            fields.into_iter().chain(iter).collect()
+        }else {
+            ast::RecordFields::new()
+        };
+
+        ast::Expr::RecordCreation(type_id, fields)
+    },
 }
 
 MulOp: ast::Operator = {
