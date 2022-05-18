@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Cursor {
+    // 0 idx
     pub(crate) line: u32,
     pub(crate) column: u32,
     pub(crate) from_start: usize,

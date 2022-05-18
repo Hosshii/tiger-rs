@@ -137,8 +137,9 @@ where
         }
     }
 
+    // use before_state ?
     fn make_error(&self, kind: ErrorKind) -> Error {
-        let meta = Meta::new(self.filename.clone(), self.before_state.cursor, 0);
+        let meta = Meta::new(self.filename.clone(), self.state.cursor, 0);
         Error::new(kind, meta)
     }
 
@@ -146,7 +147,7 @@ where
         let len = kind.len();
         Token::new(
             kind,
-            Meta::new(Rc::clone(&self.filename), self.before_state.cursor, len),
+            Meta::new(Rc::clone(&self.filename), self.state.cursor, len),
         )
     }
 
