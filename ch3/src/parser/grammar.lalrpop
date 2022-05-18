@@ -43,11 +43,6 @@ ExprType1: ast::Expr = {
         ast::Expr::RecordCreation(type_id, fields)
     },
 
-    <LValueNotID> => ast::Expr::LValue(<>),
-    <Ident> => ast::Expr::LValue(ast::LValue::Var(<>)),
-
-    <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
-
     <Or> => <>,
 
     <l:LValue> ":=" <e:MatchedIf> => ast::Expr::Assign(l, Box::new(e)),
@@ -164,6 +159,9 @@ Primary: ast::Expr = {
     BracketedExprs => <>,
     "break" => ast::Expr::Break,
     "let" <Decls> "in" <ExprSeq> "end" => ast::Expr::Let(<>),
+    <LValueNotID> => ast::Expr::LValue(<>),
+    <Ident> => ast::Expr::LValue(ast::LValue::Var(<>)),
+    <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
 }
 
 MulOp: ast::Operator = {
