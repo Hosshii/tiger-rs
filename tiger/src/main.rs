@@ -1,6 +1,6 @@
 use std::{env, fs::File};
 
-use ch3::parser;
+use tiger::parser;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filename = env::args().nth(1).expect("expect filename");

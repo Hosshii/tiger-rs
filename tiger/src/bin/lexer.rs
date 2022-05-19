@@ -1,6 +1,6 @@
 use std::{env, fs::File, io::Write};
 
-use ch3::lexer::Lexer;
+use tiger::lexer::Lexer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filename = env::args().nth(1).expect("expect filename");
