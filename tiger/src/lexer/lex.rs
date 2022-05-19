@@ -110,11 +110,17 @@ where
 
     fn escape_char(&mut self) -> Result<char> {
         let escaped_char = match self.must_peek_byte()? {
-            b'n' => '\n',
-            b't' => '\t',
-            b'r' => '\r',
-            b'\\' => '\\',
-            b'"' => '"',
+            x @ (b'n' | b't' | b'r' | b'\\' | b'"') => {
+                self.must_next_byte()?;
+                match x {
+                    b'n' => '\n',
+                    b't' => '\t',
+                    b'r' => '\r',
+                    b'\\' => '\\',
+                    b'"' => '"',
+                    _ => unreachable!(),
+                }
+            }
             ch if ch.is_ascii_digit() => self.escape_ascii()? as char,
             _ => return Err(self.make_error(InvalidEscape)),
         };
@@ -122,14 +128,21 @@ where
     }
 
     fn escape_ascii(&mut self) -> Result<u8> {
-        let digit = self.take_while(u8::is_ascii_digit)?;
-        if digit.len() == 3 {
-            let num: u16 = digit[0] as u16 * 100 + digit[1] as u16 * 10 + digit[2] as u16;
-            if num <= u8::MAX as u16 {
-                Ok(num as u8)
-            } else {
-                Err(self.make_error(InvalidEscape))
-            }
+        let mut digit = vec![
+            self.must_next_byte()?,
+            self.must_next_byte()?,
+            self.must_next_byte()?,
+        ];
+
+        if !digit.iter().all(u8::is_ascii_digit) {
+            return Err(self.make_error(InvalidEscape));
+        }
+
+        digit.iter_mut().for_each(|v| *v -= b'0');
+
+        let num: u16 = digit[0] as u16 * 100 + digit[1] as u16 * 10 + digit[2] as u16;
+        if num <= u8::MAX as u16 {
+            Ok(num as u8)
         } else {
             Err(self.make_error(InvalidEscape))
         }
