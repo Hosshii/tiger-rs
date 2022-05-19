@@ -12,9 +12,9 @@ pub enum Program {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decl {
-    Type(TypeDecl),
+    Type(Vec<TypeDecl>),
     Var(VarDecl),
-    Func(FuncDecl),
+    Func(Vec<FuncDecl>),
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -85,13 +85,39 @@ BracketedExprs: ast::Expr = {
 }
 
 Decls: Vec<ast::Decl> = {
-    <d:Decl*> => <>
+    <d:Decl*> => {
+        use ast::Decl::*;
+        if d.is_empty() {
+            d
+        } else {
+            let mut iter = d.into_iter();
+            let init = iter.next().unwrap();
+            let (mut d, remain) = iter
+                .fold((Vec::new(), init), |(mut result, cur), x| match (cur, x) {
+                    (Type(mut lhs), Type(mut rhs)) => {
+                        lhs.append(&mut rhs);
+                        (result, Type(lhs))
+                    }
+                    (Func(mut lhs), Func(mut rhs)) => {
+                        lhs.append(&mut rhs);
+                        (result, Func(lhs))
+                    }
+                    (cur, x) => {
+                        result.push(cur);
+                        (result, x)
+                    }
+                }
+            );
+            d.push(remain);
+            d
+        }
+    }
 }
 
 Decl: ast::Decl = {
-    TypeDecl => ast::Decl::Type(<>),
+    TypeDecl => ast::Decl::Type(vec![<>]),
     VarDecl => ast::Decl::Var(<>),
-    FuncDecl => ast::Decl::Func(<>),
+    FuncDecl => ast::Decl::Func(vec![<>]),
 } 
 
 TypeDecl: ast::TypeDecl = {
