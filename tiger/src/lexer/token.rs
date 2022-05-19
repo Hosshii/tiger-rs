@@ -84,7 +84,7 @@ impl Token {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StringLiteral(String);
+pub struct StringLiteral(pub(crate) String);
 
 impl StringLiteral {
     pub fn len(&self) -> usize {

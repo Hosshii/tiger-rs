@@ -304,3 +304,52 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::lexer::Lexer;
+    use strum::IntoEnumIterator;
+
+    use super::*;
+    #[test]
+    fn test_tokenize() {
+        let test_case: Vec<(&str, Box<dyn Iterator<Item = TokenKind>>)> = vec![
+            (
+                "type var function break of end in nil let do to for while else then if array",
+                Box::new(Reserved::iter().map(TokenKind::Reserved)),
+            ),
+            (
+                ":=|&>=><=<<>=/ *-+.{}[]();:,",
+                Box::new(Separator::iter().map(TokenKind::Separator)),
+            ),
+            (
+                r##"
+                "hello world"
+                "hello\n\t\r\"\\ \          \ \000 \111"
+                "##,
+                Box::new(
+                    vec!["hello world", "hello\n\t\r\"\\  \u{0} o"]
+                        .into_iter()
+                        .map(|v| TokenKind::Str(StringLiteral(v.to_string()))),
+                ),
+            ),
+            (
+                "typeident",
+                Box::new(
+                    vec!["typeident"]
+                        .into_iter()
+                        .map(|v| TokenKind::Ident(Ident(v.to_string()))),
+                ),
+            ),
+        ];
+
+        for (ipt, expected) in test_case {
+            let actual = Lexer::new("", ipt.as_bytes())
+                .into_iter()
+                .map(|v| v.unwrap().1)
+                .inspect(|v| println!("{:?}", v));
+
+            assert!(expected.eq(actual));
+        }
+    }
+}
