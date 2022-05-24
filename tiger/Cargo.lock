@@ -467,6 +467,7 @@ dependencies = [
  "anyhow",
  "lalrpop",
  "lalrpop-util",
+ "once_cell",
  "strum",
  "thiserror",
 ]
