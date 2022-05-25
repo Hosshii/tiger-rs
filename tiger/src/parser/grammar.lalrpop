@@ -1,4 +1,4 @@
-use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLiteral, Ident}, parser::ast, position::Cursor};
+use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLiteral, Ident}, parser::ast, position::Position};
 
 grammar;
 
@@ -22,60 +22,62 @@ UnmatchedExpr: ast::Expr = {
 }
 
 MatchedIf: ast::Expr = {
-    "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> <r:@R> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3), (l, r)),
 }
 
 UnmatchedIf: ast::Expr = {
-    "if" <e1:Expr> "then" <e2:Expr> => ast::Expr::IfThen(Box::new(e1), Box::new(e2)),
-    "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3)),
+    <l:@L> "if" <e1:Expr> "then" <e2:Expr> <r:@R> => ast::Expr::IfThen(Box::new(e1), Box::new(e2), (l, r)),
+    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> <r:@R> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3), (l, r)),
 }
 
 UnmatchedExprType: ast::Expr = {
     // <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:UnmatchedExpr> => {
-    <id:Ident> "[" <e1:Expr> "]" "of" <e2:UnmatchedExpr> => {
+    <l:@L> <id:Ident> "[" <e1:Expr> "]" "of" <e2:UnmatchedExpr> <r:@R> => {
         ast::Expr::ArrayCreation {
             type_id: ast::TypeIdent(id),
             size: Box::new(e1),
-            init: Box::new(e2)
+            init: Box::new(e2),
+            pos: (l, r),
         }
     },
 
-    <l:LValue> ":=" <e:UnmatchedExpr> => ast::Expr::Assign(l, Box::new(e)),
+    <l:@L> <lvalue:LValue> ":=" <e:UnmatchedExpr> <r:@R> => ast::Expr::Assign(lvalue, Box::new(e), (l, r)),
 
-    "while" <e1:Expr> "do" <e2:UnmatchedExpr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
-    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:UnmatchedExpr> => {
-        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
+    <l:@L> "while" <e1:Expr> "do" <e2:UnmatchedExpr> <r:@R> => ast::Expr::While(Box::new(e1), Box::new(e2), (l, r)),
+    <l:@L> "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:UnmatchedExpr> <r:@R> => {
+        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
     },
 }
 
 MatchedExprType: ast::Expr = {
     // <id:TypeIdent> "[" <e1:Expr> "]" "of" <e2:MatchedExpr> => {
-    <id:Ident> "[" <e1:Expr> "]" "of" <e2:MatchedExpr> => {
+    <l:@L> <id:Ident> "[" <e1:Expr> "]" "of" <e2:MatchedExpr> <r:@R> => {
         ast::Expr::ArrayCreation {
             type_id: ast::TypeIdent(id),
             size: Box::new(e1),
-            init: Box::new(e2)
+            init: Box::new(e2),
+            pos: (l, r),
         }
     },
 
     Or => <>,
-    <l:LValue> ":=" <e:MatchedExpr> => ast::Expr::Assign(l, Box::new(e)),
+    <l:@L> <lvalue:LValue> ":=" <e:MatchedExpr> <r:@R> => ast::Expr::Assign(lvalue, Box::new(e), (l, r)),
 
-    "while" <e1:Expr> "do" <e2:MatchedExpr> => ast::Expr::While(Box::new(e1), Box::new(e2)),
-    "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedExpr> => {
-        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3))
+    <l:@L> "while" <e1:Expr> "do" <e2:MatchedExpr> <r:@R> => ast::Expr::While(Box::new(e1), Box::new(e2), (l, r)),
+    <l:@L> "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedExpr> <r:@R> => {
+        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
     },
 }
 
 LValue: ast::LValue = {
-    <Ident> => ast::LValue::Var(<>),
+    <l:@L> <id:Ident> <r:@R> => ast::LValue::Var(id, (l, r)),
     LValueNotID => <>,
 }
 
 LValueNotID: ast::LValue = {
-    <l:LValue> "." <i:Ident> => ast::LValue::RecordField(Box::new(l), i),
-    <l:Ident> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(ast::LValue::Var(l)), Box::new(e)),
-    <l:LValueNotID> "[" <e:Expr> "]" => ast::LValue::Array(Box::new(l), Box::new(e)),
+    <l:@L> <lvalue:LValue> "." <i:Ident> <r:@R> => ast::LValue::RecordField(Box::new(lvalue), i, (l, r)),
+    <l:@L> <lvalue:Ident> <r1:@R> "[" <e:Expr> "]" <r2:@R> => ast::LValue::Array(Box::new(ast::LValue::Var(lvalue, (l, r1))), Box::new(e), (l, r2)),
+    <l:@L> <lvalue:LValueNotID> "[" <e:Expr> "]" <r:@R> => ast::LValue::Array(Box::new(lvalue), Box::new(e), (l, r)),
 }
 
 ExprSeq = Semicolon<Expr>;
@@ -121,18 +123,19 @@ Decl: ast::Decl = {
 } 
 
 TypeDecl: ast::TypeDecl = {
-    "type" <id:TypeIdent> "=" <ty:Type> => {
+    <l:@L> "type" <id:TypeIdent> "=" <ty:Type> <r:@R> => {
         ast::TypeDecl {
             id: id,
             ty: ty,
+            pos: (l, r),
         }
     }
 }
 
 Type: ast::Type = {
-    TypeIdent => ast::Type::Id(<>),
-    "{" <TypeFields> "}" => ast::Type::Fields(<>),
-    "array" "of" <TypeIdent> => ast::Type::Array(<>),
+    <l:@L> <type_id:TypeIdent> <r:@R> => ast::Type::Id(type_id, (l, r)),
+    <l:@L> "{" <f:TypeFields> "}" <r:@R> => ast::Type::Fields(f, (l, r)),
+    <l:@L> "array" "of" <id:TypeIdent> <r:@R> => ast::Type::Array(id, (l, r)),
 }
 
 TypeFields: ast::TypeFields = {
@@ -146,22 +149,22 @@ TypeFields: ast::TypeFields = {
 }
 
 NonZeroTypeFields: ast::TypeFields = {
-    <i1:Ident> ":" <i2:TypeIdent> <f2:("," Ident ":" TypeIdent)*> => {
+    <l:@L> <i1:Ident> ":" <i2:TypeIdent> <r:@R> <f2:("," @L Ident ":" TypeIdent @R)*> => {
         let mut fields = Vec::new();
-        fields.push(ast::TypeField {id: i1, type_id: i2});
-        for (id, type_id) in f2.into_iter().map(|v| (v.1, v.3)) {
-            fields.push(ast::TypeField {id: id, type_id: type_id});
+        fields.push(ast::TypeField {id: i1, type_id: i2, pos: (l, r)});
+        for (_, l2, id, _, type_id, r2) in f2 {
+            fields.push(ast::TypeField {id: id, type_id: type_id, pos: (l2, r2)});
         }
         fields
     }
 }
 
 VarDecl: ast::VarDecl = {
-    "var" <Ident> ":=" <Expr> => {
-        ast::VarDecl::Short(<>)
+    <l:@L> "var" <id:Ident> ":=" <e:Expr> <r:@R> => {
+        ast::VarDecl::Short(id, e, (l, r))
     },
-    "var" <Ident> ":" <TypeIdent> ":=" <Expr> => {
-        ast::VarDecl::Long(<>)
+    <l:@L> "var" <id:Ident> ":" <type_id:TypeIdent> ":=" <e:Expr> <r:@R> => {
+        ast::VarDecl::Long(id, type_id, e, (l, r))
     } 
 }
 
@@ -170,11 +173,11 @@ TypeIdent: ast::TypeIdent = {
 }
 
 FuncDecl: ast::FuncDecl = {
-    "function" <Ident> "(" <TypeFields> ")" "=" <Expr> => {
-        ast::FuncDecl::Short(<>)
+    <l:@L> "function" <id:Ident> "(" <f:TypeFields> ")" "=" <e:Expr> <r:@R> => {
+        ast::FuncDecl::Short(id, f, e, (l, r))
     },
-    "function" <Ident> "(" <TypeFields> ")" ":" <TypeIdent> "=" <Expr> => {
-        ast::FuncDecl::Long(<>)
+    <l:@L> "function" <id:Ident> "(" <f:TypeFields> ")" ":" <type_id:TypeIdent> "=" <e:Expr> <r:@R> => {
+        ast::FuncDecl::Long(id, f, type_id, e, (l, r))
     }
 }
 
@@ -188,30 +191,30 @@ Comp = Tier<CompOp, Add>;
 Add = Tier<AddOp, Mul>;
 Mul = Tier<MulOp, Neg>;
 Neg: ast::Expr = {
-    "-" <Neg> => ast::Expr::Neg(Box::new(<>)),
+    <l:@L> "-" <n:Neg> <r:@R> => ast::Expr::Neg(Box::new(n), (l, r)),
     Primary => <>,
 }
 
 Primary: ast::Expr = {
-    "nil" => ast::Expr::Nil,
-    <Int> => ast::Expr::Int(<>),
-    <Str> => ast::Expr::Str(<>),
+    <l:@L> "nil" <r:@R> => ast::Expr::Nil((l,r)),
+    <l:@L> <v:Int> <r:@R> => ast::Expr::Int(v, (l, r)),
+    <l:@L> <v:Str> <r:@R> => ast::Expr::Str(v, (l, r)),
     BracketedExprs => <>,
-    "break" => ast::Expr::Break,
-    "let" <Decls> "in" <ExprSeq> "end" => ast::Expr::Let(<>),
+    <l:@L> "break" <r:@R> => ast::Expr::Break((l, r)),
+    <l:@L> "let" <d:Decls> "in" <e:ExprSeq> "end" <r:@R> => ast::Expr::Let(d, e, (l, r)),
     <LValueNotID> => ast::Expr::LValue(<>),
-    <Ident> => ast::Expr::LValue(ast::LValue::Var(<>)),
-    <Ident> "(" <Comma<Expr>> ")" => ast::Expr::FuncCall(<>),
-    <type_id:TypeIdent> "{" <f1:(Ident "=" Expr ("," Ident "="Expr)*)?>  "}" => {
-        let fields = if let Some((id, _, expr, _fields)) = f1 {
-            let fields = vec![ast::RecordField {id: id, expr: expr}];
-            let iter = _fields.into_iter().map(|(_, id, _, expr)| ast::RecordField {id: id, expr: expr});
+    <l:@L> <id:Ident> <r:@R> => ast::Expr::LValue(ast::LValue::Var(id, (l, r))),
+    <l:@L> <id:Ident> "(" <e:Comma<Expr>> ")" <r:@R> => ast::Expr::FuncCall(id, e, (l, r)),
+    <l:@L> <type_id:TypeIdent> "{" <f1:(@L Ident "=" Expr @R ("," @L Ident "="Expr @R)*)?>  "}" <r:@R> => {
+        let fields = if let Some((l1, id, _, expr, r1, _fields)) = f1 {
+            let fields = vec![ast::RecordField {id: id, expr: expr, pos: (l1, r1)}];
+            let iter = _fields.into_iter().map(|(_,l2, id, _, expr, r2)| ast::RecordField {id: id, expr: expr, pos:(l2, r2)});
             fields.into_iter().chain(iter).collect()
         }else {
             ast::RecordFields::new()
         };
 
-        ast::Expr::RecordCreation(type_id, fields)
+        ast::Expr::RecordCreation(type_id, fields, (l, r))
     },
 }
 
@@ -263,12 +266,12 @@ Comma<T>: Vec<T> = {
 }
 
 Tier<Op,NextTier>: ast::Expr = {
-    <lhs:Tier<Op,NextTier>> <op:Op> <rhs:NextTier> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs)),
+    <l:@L> <lhs:Tier<Op,NextTier>> <op:Op> <rhs:NextTier> <r:@R> => ast::Expr::Op(op, Box::new(lhs), Box::new(rhs), (l, r)),
     NextTier
 };
 
 extern {
-    type Location = Cursor;
+    type Location = Position;
     type Error = LexError;
 
     enum TokenKind {

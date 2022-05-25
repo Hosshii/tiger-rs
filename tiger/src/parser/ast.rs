@@ -7,6 +7,8 @@ pub type Decls = Vec<Decl>;
 pub type Ident = lexer::Ident;
 pub type StringLiteral = lexer::StringLiteral;
 
+pub type Positions = (Position, Position);
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Program {
     Expr(Expr),
@@ -24,13 +26,14 @@ pub enum Decl {
 pub struct TypeDecl {
     pub id: TypeIdent,
     pub ty: Type,
+    pub pos: Positions,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Type {
-    Id(TypeIdent),
-    Fields(TypeFields),
-    Array(TypeIdent),
+    Id(TypeIdent, Positions),
+    Fields(TypeFields, Positions),
+    Array(TypeIdent, Positions),
 }
 
 pub type TypeFields = Vec<TypeField>;
@@ -39,24 +42,19 @@ pub type TypeFields = Vec<TypeField>;
 pub struct TypeField {
     pub id: Ident,
     pub type_id: TypeIdent,
+    pub pos: Positions,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum VarDecl {
-    Short(Ident, Expr),
-    Long(Ident, TypeIdent, Expr),
+    Short(Ident, Expr, Positions),
+    Long(Ident, TypeIdent, Expr, Positions),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FuncDecl {
-    Short(Ident, TypeFields, Expr),
-    Long(Ident, TypeFields, TypeIdent, Expr),
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum BuiltinTypeIdent {
-    Int,
-    String,
+    Short(Ident, TypeFields, Expr, Positions),
+    Long(Ident, TypeFields, TypeIdent, Expr, Positions),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -64,34 +62,35 @@ pub struct TypeIdent(pub Ident);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LValue {
-    Var(Ident),
-    RecordField(Box<LValue>, Ident),
-    Array(Box<LValue>, Box<Expr>),
+    Var(Ident, Positions),
+    RecordField(Box<LValue>, Ident, Positions),
+    Array(Box<LValue>, Box<Expr>, Positions),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
     LValue(LValue),
-    Nil,
+    Nil(Positions),
     Sequence(Vec<Expr>),
-    Int(u64),
-    Str(StringLiteral),
-    FuncCall(Ident, Vec<Expr>),
-    Op(Operator, Box<Expr>, Box<Expr>),
-    Neg(Box<Expr>),
-    RecordCreation(TypeIdent, RecordFields),
+    Int(u64, Positions),
+    Str(StringLiteral, Positions),
+    FuncCall(Ident, Vec<Expr>, Positions),
+    Op(Operator, Box<Expr>, Box<Expr>, Positions),
+    Neg(Box<Expr>, Positions),
+    RecordCreation(TypeIdent, RecordFields, Positions),
     ArrayCreation {
         type_id: TypeIdent,
         size: Box<Expr>,
         init: Box<Expr>,
+        pos: Positions,
     },
-    Assign(LValue, Box<Expr>),
-    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>),
-    IfThen(Box<Expr>, Box<Expr>),
-    While(Box<Expr>, Box<Expr>),
-    For(Ident, Box<Expr>, Box<Expr>, Box<Expr>),
-    Break,
-    Let(Decls, Vec<Expr>),
+    Assign(LValue, Box<Expr>, Positions),
+    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>, Positions),
+    IfThen(Box<Expr>, Box<Expr>, Positions),
+    While(Box<Expr>, Box<Expr>, Positions),
+    For(Ident, Box<Expr>, Box<Expr>, Box<Expr>, Positions),
+    Break(Positions),
+    Let(Decls, Vec<Expr>, Positions),
 }
 
 pub type RecordFields = Vec<RecordField>;
@@ -101,6 +100,7 @@ pub type RecordFields = Vec<RecordField>;
 pub struct RecordField {
     pub id: Ident,
     pub expr: Expr,
+    pub pos: Positions,
 }
 
 #[derive(Debug, PartialEq, Eq)]
