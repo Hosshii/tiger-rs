@@ -1,13 +1,11 @@
 use crate::{
     lexer::{self},
-    position::Position,
+    position::Positions,
 };
 
 pub type Decls = Vec<Decl>;
 pub type Ident = lexer::Ident;
 pub type StringLiteral = lexer::StringLiteral;
-
-pub type Positions = (Position, Position);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Program {

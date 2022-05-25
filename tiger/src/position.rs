@@ -20,6 +20,8 @@ impl Position {
     }
 }
 
+pub type Positions = (Position, Position);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Meta {
     pub(crate) filename: Rc<String>,
