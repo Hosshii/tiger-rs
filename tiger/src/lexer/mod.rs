@@ -9,7 +9,7 @@ pub use token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind};
 
 use std::io::Read;
 
-use crate::position::Cursor;
+use crate::position::Position;
 
 type Result<T> = std::result::Result<T, Error>;
 pub type Spanned<Tok, Loc> = Result<(Loc, Tok, Loc)>;
@@ -36,7 +36,7 @@ impl<R> Iterator for Lexer<R>
 where
     R: Read,
 {
-    type Item = Spanned<TokenKind, Cursor>;
+    type Item = Spanned<TokenKind, Position>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.lexer.token() {

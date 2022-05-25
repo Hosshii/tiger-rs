@@ -1,4 +1,7 @@
-use crate::lexer::{self};
+use crate::{
+    lexer::{self},
+    position::Position,
+};
 
 pub type Decls = Vec<Decl>;
 pub type Ident = lexer::Ident;

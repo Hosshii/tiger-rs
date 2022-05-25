@@ -11,12 +11,12 @@ use crate::{
         token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind},
         Result,
     },
-    position::{Cursor, Meta},
+    position::{Meta, Position},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct State {
-    cursor: Cursor,
+    cursor: Position,
 }
 
 impl State {

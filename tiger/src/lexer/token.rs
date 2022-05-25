@@ -2,7 +2,7 @@ use std::{str::FromStr, string::ToString};
 
 use strum::{EnumIter, IntoEnumIterator};
 
-use crate::position::{Cursor, Meta};
+use crate::position::{Meta, Position};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
@@ -71,10 +71,10 @@ impl Token {
         &self.meta
     }
 
-    pub fn to_lalrpop(self) -> (Cursor, TokenKind, Cursor) {
+    pub fn to_lalrpop(self) -> (Position, TokenKind, Position) {
         let start = self.meta.cursor;
         let len = self.meta.length;
-        let end = Cursor {
+        let end = Position {
             line: start.line,
             column: start.column + len as u32,
             from_start: start.from_start + len,

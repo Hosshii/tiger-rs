@@ -7,12 +7,12 @@ use thiserror::Error;
 
 use crate::{
     lexer::{self, Error as LexError, TokenKind},
-    position::Cursor,
+    position::Position,
 };
 
 lalrpop_mod!(pub grammar,"/parser/grammar.rs");
 
-type LalrpopError = lalrpop_util::ParseError<Cursor, TokenKind, LexError>;
+type LalrpopError = lalrpop_util::ParseError<Position, TokenKind, LexError>;
 
 #[derive(Debug, Error)]
 pub enum ErrorKind {
@@ -31,7 +31,7 @@ pub enum ErrorKind {
 #[derive(Debug, Error)]
 pub struct Error {
     pub(crate) kind: ErrorKind,
-    pub(crate) loc: Cursor,
+    pub(crate) loc: Position,
 }
 
 impl fmt::Display for Error {
