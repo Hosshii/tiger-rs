@@ -1,6 +1,6 @@
 pub mod lexer;
 pub mod parser;
 
-mod env;
+pub mod env;
 mod position;
-mod symbol;
+pub mod symbol;

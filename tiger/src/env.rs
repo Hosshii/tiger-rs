@@ -101,6 +101,12 @@ impl<T> Env<T> {
     }
 }
 
+impl<T> Default for Env<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
