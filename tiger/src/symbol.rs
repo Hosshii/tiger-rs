@@ -5,6 +5,8 @@ use std::{
 
 use once_cell::sync::Lazy;
 
+use crate::parser::ast::{Ident, TypeIdent};
+
 static SYMBOL_GLOBAL: Lazy<Mutex<SymbolGlobal>> = Lazy::new(|| Mutex::new(SymbolGlobal::default()));
 
 #[derive(Debug, Default)]
@@ -50,6 +52,22 @@ impl Symbol {
 
     fn as_u32(&self) -> u32 {
         self.0.private
+    }
+
+    pub fn dummy() -> Self {
+        Self(SymbolIndex { private: u32::MAX })
+    }
+}
+
+impl From<Ident> for Symbol {
+    fn from(id: Ident) -> Self {
+        Self::new(id.0)
+    }
+}
+
+impl From<TypeIdent> for Symbol {
+    fn from(id: TypeIdent) -> Self {
+        id.0.into()
     }
 }
 
