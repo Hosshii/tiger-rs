@@ -84,7 +84,7 @@ impl Display for IncompleteTypeError {
 // 0 is dummy
 static UNIQUE_INDEX: AtomicU32 = AtomicU32::new(1);
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Unique(u32);
 
 impl Unique {

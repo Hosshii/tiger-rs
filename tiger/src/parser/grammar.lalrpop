@@ -83,7 +83,7 @@ LValueNotID: ast::LValue = {
 ExprSeq = Semicolon<Expr>;
 
 BracketedExprs: ast::Expr = {
-    "(" <ExprSeq> ")" => ast::Expr::Sequence(<>),
+    <l:@L> "(" <seq:ExprSeq> ")" <r:@R> => ast::Expr::Sequence(seq, (l, r)),
 }
 
 Decls: Vec<ast::Decl> = {
@@ -160,11 +160,9 @@ NonZeroTypeFields: ast::TypeFields = {
 }
 
 VarDecl: ast::VarDecl = {
-    <l:@L> "var" <id:Ident> ":=" <e:Expr> <r:@R> => {
-        ast::VarDecl::Short(id, e, (l, r))
-    },
-    <l:@L> "var" <id:Ident> ":" <type_id:TypeIdent> ":=" <e:Expr> <r:@R> => {
-        ast::VarDecl::Long(id, type_id, e, (l, r))
+    <l:@L> "var" <id:Ident> <type_id:(":" TypeIdent)?> ":=" <e:Expr> <r:@R> => {
+        let type_id = type_id.map(|v|v.1);
+        ast::VarDecl(id, type_id, e, (l, r))
     } 
 }
 

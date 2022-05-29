@@ -1,8 +1,11 @@
-use std::fmt::{Debug, Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 use crate::{
     env::Env,
-    parser::ast::{Decl, Expr as AstExpr, LValue, Operator, Type as AstType},
+    parser::ast::{Decl, Expr as AstExpr, LValue, Operator, RecordField, Type as AstType},
     position::Positions,
     symbol::Symbol,
     translate::Expr as TransExpr,
@@ -69,6 +72,17 @@ impl Error {
         }
     }
 
+    fn new_missing_field_on_record_creation(
+        pos: Positions,
+        ty: CompleteType,
+        field: Symbol,
+    ) -> Self {
+        Self {
+            pos,
+            kind: ErrorKind::MissingFieldOnRecordCreation(ty, field),
+        }
+    }
+
     fn new_mismatch_arg_count(pos: Positions, expected: u8, actual: u8, sym: Symbol) -> Self {
         Self {
             pos,
@@ -91,6 +105,8 @@ enum ErrorKind {
     UndefinedItem(Item, Symbol),
     #[error("no field `{:?}` on type `{}`",.0, .1.name())]
     MissingFieldName(CompleteType, Symbol),
+    #[error("field `{}` on `{:?}` is not initialized",.1.name(),.0)]
+    MissingFieldOnRecordCreation(CompleteType, Symbol),
     #[error("function {}: expected {0} argument(s), found {1} argument(s)", .2.name())]
     MismatchArgCount(u8, u8, Symbol),
 }
@@ -105,6 +121,7 @@ impl Display for Error {
 enum Item {
     Var,
     Func,
+    Type,
 }
 
 impl Display for Item {
@@ -112,6 +129,7 @@ impl Display for Item {
         let name = match self {
             Item::Var => "variable",
             Item::Func => "function",
+            Item::Type => "type",
         };
         write!(f, "{}", name)
     }
@@ -146,16 +164,18 @@ impl Semant {
         }
     }
 
+    fn trans_decl(&mut self, decl: Decl) {}
+
     fn trans_expr(&mut self, expr: AstExpr) -> Result<ExprType> {
         match expr {
-            AstExpr::LValue(lvalue) => self.trans_lvalue(lvalue),
+            AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue),
 
             AstExpr::Nil(pos) => Ok(ExprType {
                 expr: TransExpr::new(),
                 ty: CompleteType::Nil,
             }),
 
-            AstExpr::Sequence(exprs) => {
+            AstExpr::Sequence(exprs, _) => {
                 // TODO: refactor
                 let mut transed = exprs
                     .into_iter()
@@ -201,7 +221,7 @@ impl Semant {
 
                         let formal_iter = formals
                             .iter()
-                            .map(|v| v.actual().map_err(|e| Error::new_incomplete_type(pos, e)))
+                            .map(|v| actual_ty(v, pos))
                             .collect::<Result<Vec<_>>>()?;
 
                         let unmatched = arg_iter
@@ -215,9 +235,7 @@ impl Semant {
                                 Error::new_unexpected_type(pos, vec![expected.clone()], actual),
                             ),
                             None => {
-                                let result = result
-                                    .actual()
-                                    .map_err(|e| Error::new_incomplete_type(pos, e))?;
+                                let result = actual_ty(result, pos)?;
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
                                     ty: result.clone(),
@@ -296,23 +314,205 @@ impl Semant {
                 let sym = Symbol::from(type_id);
                 match self.type_env.look(sym) {
                     Some(ty) => {
-                        let ty = ty
-                            .actual()
-                            .map_err(|e| Error::new_incomplete_type(pos, e))?;
+                        let ty = actual_ty(ty, pos)?;
+
                         match ty {
                             CompleteType::Record {
                                 fields: expected_fields,
-                                unique,
+                                ..
                             } => {
-                                
+                                let mut expected_map = expected_fields
+                                    .iter()
+                                    .map(|f| {
+                                        let ty = actual_ty(&f.1, pos)?;
+                                        Ok((f.0, ty.clone()))
+                                    })
+                                    .collect::<Result<HashMap<_, _>>>()?;
+
+                                let ty = ty.clone();
+                                for RecordField { id, expr, pos } in actual_fields {
+                                    let actual_sym = Symbol::from(id);
+                                    match expected_map.remove(&actual_sym) {
+                                        None => {
+                                            return Err(Error::new_missing_field(
+                                                pos, ty, actual_sym,
+                                            ))
+                                        }
+
+                                        Some(expected_field_type) => {
+                                            let ExprType {
+                                                ty: actual_field_type,
+                                                ..
+                                            } = self.trans_expr(expr)?;
+
+                                            if expected_field_type != actual_field_type {
+                                                return Err(Error::new_unexpected_type(
+                                                    pos,
+                                                    vec![expected_field_type],
+                                                    actual_field_type,
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if expected_map.is_empty() {
+                                    Ok(ExprType {
+                                        expr: TransExpr::new(),
+                                        ty,
+                                    })
+                                } else {
+                                    let sym = expected_map.iter().next().unwrap();
+                                    Err(Error::new_missing_field_on_record_creation(
+                                        pos, ty, *sym.0,
+                                    ))
+                                }
                             }
-                            other => {}
+                            other => Err(Error::new_unexpected_type(
+                                pos,
+                                vec![CompleteType::dummy_record()],
+                                other.clone(),
+                            )),
                         }
                     }
-                    None => todo!(),
+                    None => Err(Error::new_undefined_item(pos, Item::Type, sym)),
                 }
             }
-            _ => unimplemented!(),
+
+            AstExpr::ArrayCreation {
+                type_id,
+                size,
+                init,
+                pos,
+            } => {
+                let sym = Symbol::from(type_id);
+                match self.type_env.look(sym) {
+                    Some(ty) => {
+                        let ty = actual_ty(ty, pos)?;
+
+                        match ty {
+                            CompleteType::Array { ty, unique } => {
+                                let unique = *unique;
+                                let ty = ty.clone();
+
+                                let arr_ty = actual_ty(&ty, pos)?;
+
+                                let size_pos = size.pos();
+                                self.check_type(*size, (CompleteType::Int,), size_pos)?;
+
+                                let init_pos = init.pos();
+                                self.check_type(*init, (arr_ty.clone(),), init_pos)?;
+
+                                Ok(ExprType {
+                                    expr: TransExpr::new(),
+                                    ty: CompleteType::Array { ty, unique },
+                                })
+                            }
+                            other => Err(Error::new_unexpected_type(
+                                pos,
+                                vec![CompleteType::dummy_record()],
+                                other.clone(),
+                            )),
+                        }
+                    }
+                    None => Err(Error::new_undefined_item(pos, Item::Type, sym)),
+                }
+            }
+
+            AstExpr::Assign(lvalue, expr, pos) => {
+                let ExprType { ty: lhs_ty, .. } = self.trans_lvalue(lvalue)?;
+                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*expr)?;
+                if lhs_ty == rhs_ty {
+                    Ok(ExprType {
+                        expr: TransExpr::new(),
+                        ty: CompleteType::Unit,
+                    })
+                } else {
+                    Err(Error::new_unexpected_type(pos, vec![lhs_ty], rhs_ty))
+                }
+            }
+
+            AstExpr::If(cond, then, els, pos) => {
+                let cond_pos = cond.pos();
+                self.check_type(*cond, (CompleteType::Int,), cond_pos)?;
+
+                let then_pos = then.pos();
+                let ExprType { ty: then_ty, .. } = self.trans_expr(*then)?;
+                match els {
+                    Some(els) => {
+                        let els_pos = els.pos();
+                        self.check_type(*els, (then_ty.clone(),), els_pos)?;
+
+                        Ok(ExprType {
+                            expr: TransExpr::new(),
+                            ty: then_ty,
+                        })
+                    }
+                    None => {
+                        if then_ty == CompleteType::Unit {
+                            Ok(ExprType {
+                                expr: TransExpr::new(),
+                                ty: CompleteType::Unit,
+                            })
+                        } else {
+                            Err(Error::new_unexpected_type(
+                                then_pos,
+                                vec![then_ty],
+                                CompleteType::Unit,
+                            ))
+                        }
+                    }
+                }
+            }
+
+            AstExpr::While(cond, then, _) => {
+                let cond_pos = cond.pos();
+                self.check_type(*cond, (CompleteType::Int,), cond_pos)?;
+                let then_pos = then.pos();
+                self.check_type(*then, (CompleteType::Unit,), then_pos)?;
+
+                Ok(ExprType {
+                    expr: TransExpr::new(),
+                    ty: CompleteType::Unit,
+                })
+            }
+
+            AstExpr::For(id, expr1, expr2, then, _) => {
+                let expr1_pos = expr1.pos();
+                self.check_type(*expr1, (CompleteType::Int,), expr1_pos)?;
+
+                let expr2_pos = expr2.pos();
+                self.check_type(*expr2, (CompleteType::Int,), expr2_pos)?;
+
+                let then_pos = then.pos();
+                self.check_type(*then, (CompleteType::Unit,), then_pos)?;
+
+                Ok(ExprType {
+                    expr: TransExpr::new(),
+                    ty: CompleteType::Unit,
+                })
+            }
+
+            AstExpr::Break(pos) => Ok(ExprType {
+                expr: TransExpr::new(),
+                ty: CompleteType::Unit,
+            }),
+
+            AstExpr::Let(decls, exprs, pos) => {
+                self.var_env.begin_scope();
+                self.type_env.begin_scope();
+
+                decls.into_iter().for_each(|decl| self.trans_decl(decl));
+                let ExprType { ty, .. } = self.trans_expr(AstExpr::Sequence(exprs, pos))?;
+
+                self.var_env.end_scope();
+                self.type_env.end_scope();
+
+                Ok(ExprType {
+                    expr: TransExpr::new(),
+                    ty,
+                })
+            }
         }
     }
 
@@ -322,9 +522,7 @@ impl Semant {
                 let sym = Symbol::from(id);
                 match self.var_env.look(sym) {
                     Some(EnvEntry::Var { ty }) => {
-                        let ty = ty
-                            .actual()
-                            .map_err(|e| Error::new_incomplete_type(pos, e))?;
+                        let ty = actual_ty(ty, pos)?;
                         Ok(ExprType {
                             expr: TransExpr::new(),
                             ty: ty.clone(),
@@ -347,9 +545,7 @@ impl Semant {
                                 sym,
                             )),
                             Some((_, ty)) => {
-                                let ty = ty
-                                    .actual()
-                                    .map_err(|e| Error::new_incomplete_type(pos, e))?;
+                                let ty = actual_ty(ty, pos)?;
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
                                     ty: ty.clone(),
@@ -373,9 +569,7 @@ impl Semant {
                 let ExprType { ty, .. } = self.trans_lvalue(*lvar)?;
                 match ty {
                     CompleteType::Array { ty, unique: _ } => {
-                        let ty = ty
-                            .into_actual()
-                            .map_err(|e| Error::new_incomplete_type(pos, e))?;
+                        let ty = into_actual_ty(*ty, pos)?;
                         Ok(ExprType {
                             expr: TransExpr::new(),
                             ty,
@@ -391,9 +585,16 @@ impl Semant {
         }
     }
 
-    fn trans_decl(&mut self, dec: Decl) {}
-
     // fn trans_type(&mut self, ty: AstType) -> Type {}
+}
+
+fn actual_ty(ty: &Type, pos: Positions) -> Result<&CompleteType> {
+    ty.actual().map_err(|e| Error::new_incomplete_type(pos, e))
+}
+
+fn into_actual_ty(ty: Type, pos: Positions) -> Result<CompleteType> {
+    ty.into_actual()
+        .map_err(|e| Error::new_incomplete_type(pos, e))
 }
 
 /// Variable and function entry

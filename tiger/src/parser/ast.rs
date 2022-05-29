@@ -44,10 +44,7 @@ pub struct TypeField {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum VarDecl {
-    Short(Ident, Expr, Positions),
-    Long(Ident, TypeIdent, Expr, Positions),
-}
+pub struct VarDecl(pub Ident, pub Option<TypeIdent>, pub Expr, pub Positions);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FuncDecl {
