@@ -50,9 +50,12 @@ pub enum VarDecl {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum FuncDecl {
-    Short(Ident, TypeFields, Expr, Positions),
-    Long(Ident, TypeFields, TypeIdent, Expr, Positions),
+pub struct FuncDecl {
+    pub name: Ident,
+    pub params: TypeFields,
+    pub ret_type: Option<TypeIdent>,
+    pub body: Expr,
+    pub pos: Positions,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -67,9 +70,9 @@ pub enum LValue {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
-    LValue(LValue),
+    LValue(LValue, Positions),
     Nil(Positions),
-    Sequence(Vec<Expr>),
+    Sequence(Vec<Expr>, Positions),
     Int(u64, Positions),
     Str(StringLiteral, Positions),
     FuncCall(Ident, Vec<Expr>, Positions),
@@ -83,12 +86,34 @@ pub enum Expr {
         pos: Positions,
     },
     Assign(LValue, Box<Expr>, Positions),
-    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>, Positions),
-    IfThen(Box<Expr>, Box<Expr>, Positions),
+    If(Box<Expr>, Box<Expr>, Option<Box<Expr>>, Positions),
     While(Box<Expr>, Box<Expr>, Positions),
     For(Ident, Box<Expr>, Box<Expr>, Box<Expr>, Positions),
     Break(Positions),
     Let(Decls, Vec<Expr>, Positions),
+}
+
+impl Expr {
+    pub fn pos(&self) -> Positions {
+        match self {
+            Expr::LValue(_, pos) => *pos,
+            Expr::Nil(pos) => *pos,
+            Expr::Sequence(_, pos) => *pos,
+            Expr::Int(_, pos) => *pos,
+            Expr::Str(_, pos) => *pos,
+            Expr::FuncCall(_, _, pos) => *pos,
+            Expr::Op(_, _, _, pos) => *pos,
+            Expr::Neg(_, pos) => *pos,
+            Expr::RecordCreation(_, _, pos) => *pos,
+            Expr::ArrayCreation { pos, .. } => *pos,
+            Expr::Assign(_, _, pos) => *pos,
+            Expr::If(_, _, _, pos) => *pos,
+            Expr::While(_, _, pos) => *pos,
+            Expr::For(_, _, _, _, pos) => *pos,
+            Expr::Break(pos) => *pos,
+            Expr::Let(_, _, pos) => *pos,
+        }
+    }
 }
 
 pub type RecordFields = Vec<RecordField>;
