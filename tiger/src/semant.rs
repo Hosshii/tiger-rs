@@ -5,7 +5,9 @@ use std::{
 
 use crate::{
     env::Env,
-    parser::ast::{Decl, Expr as AstExpr, LValue, Operator, RecordField, Type as AstType},
+    parser::ast::{
+        Decl, Expr as AstExpr, FuncDecl, LValue, Operator, RecordField, Type as AstType, VarDecl,
+    },
     position::Positions,
     symbol::Symbol,
     translate::Expr as TransExpr,
@@ -113,7 +115,8 @@ enum ErrorKind {
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unimplemented!()
+        writeln!(f, "{:?}", self.pos)?;
+        write!(f, "{}", self.kind)
     }
 }
 
@@ -148,6 +151,13 @@ impl Semant {
         }
     }
 
+    pub fn trans_prog(&mut self, expr: AstExpr) {
+        match self.trans_expr(expr) {
+            Ok(t) => println!("success!, {:?}", t),
+            Err(e) => println!("{}", e),
+        }
+    }
+
     fn check_type<T>(&mut self, expr: AstExpr, ty: T, pos: Positions) -> Result<()>
     where
         T: TupleMatch<Item = CompleteType>,
@@ -164,7 +174,130 @@ impl Semant {
         }
     }
 
-    fn trans_decl(&mut self, decl: Decl) {}
+    fn new_scope<F>(&mut self, f: F) -> Result<ExprType>
+    where
+        F: FnOnce(&mut Self) -> Result<ExprType>,
+    {
+        self.type_env.begin_scope();
+        self.var_env.begin_scope();
+        let result = f(self);
+        self.type_env.end_scope();
+        self.var_env.end_scope();
+        result
+    }
+
+    fn trans_decl(&mut self, decl: Decl) -> Result<()> {
+        match decl {
+            Decl::Type(type_decls) => {
+                for decl in type_decls.into_iter() {
+                    let id = decl.id;
+                    let sym = Symbol::from(id);
+                    let _type = self.trans_type(decl.ty)?;
+                    self.type_env.enter(sym, _type);
+                }
+                Ok(())
+            }
+            Decl::Var(VarDecl(id, ty, expr, pos)) => {
+                let sym = Symbol::from(id);
+                let ExprType { ty: expr_ty, .. } = self.trans_expr(expr)?;
+
+                if let Some(type_id) = ty {
+                    let ty_symbol = Symbol::from(type_id);
+                    match self.type_env.look(ty_symbol) {
+                        Some(expected_ty) => {
+                            // todo recursion
+                            let expected_ty = actual_ty(expected_ty, pos)?.clone();
+                            if expected_ty != expr_ty {
+                                return Err(Error::new_unexpected_type(
+                                    pos,
+                                    vec![expected_ty],
+                                    expr_ty,
+                                ));
+                            }
+                        }
+                        None => return Err(Error::new_undefined_item(pos, Item::Type, ty_symbol)),
+                    }
+                }
+
+                self.var_env.enter(
+                    sym,
+                    EnvEntry::Var {
+                        ty: Type::Complete(expr_ty),
+                    },
+                );
+
+                Ok(())
+            }
+            Decl::Func(fn_decls) => self.trans_fn_decls(fn_decls),
+        }
+    }
+
+    fn trans_fn_decls(&mut self, func_decls: Vec<FuncDecl>) -> Result<()> {
+        for func_decl in func_decls {
+            // enter function defs
+            let func_name = Symbol::from(func_decl.name);
+            let formals = func_decl
+                .params
+                .iter()
+                .map(|f| {
+                    let ty_sym = Symbol::from(&f.type_id);
+                    match self.type_env.look(ty_sym) {
+                        Some(ty) => Ok(ty.clone()),
+                        None => Err(Error::new_undefined_item(f.pos, Item::Type, ty_sym)),
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            let ret_type = match func_decl.ret_type {
+                Some(type_id) => {
+                    let ty_sym = Symbol::from(type_id);
+                    match self.type_env.look(ty_sym) {
+                        Some(t) => t.clone(),
+                        None => {
+                            return Err(Error::new_undefined_item(
+                                func_decl.pos,
+                                Item::Type,
+                                ty_sym,
+                            ));
+                        }
+                    }
+                }
+                None => Type::Complete(CompleteType::Unit),
+            };
+
+            self.var_env.enter(
+                func_name,
+                EnvEntry::Func {
+                    formals: formals.clone(),
+                    result: ret_type.clone(),
+                },
+            );
+
+            // function body
+            let ret_type = into_actual_ty(ret_type, func_decl.pos)?;
+            self.new_scope(|_self| {
+                for (ty, id) in formals
+                    .into_iter()
+                    .zip(func_decl.params.into_iter().map(|f| f.id))
+                {
+                    let sym = Symbol::from(id);
+                    _self.var_env.enter(sym, EnvEntry::Var { ty })
+                }
+                let ty = _self.trans_expr(func_decl.body)?;
+                if ty.ty != ret_type {
+                    Err(Error::new_unexpected_type(
+                        func_decl.pos,
+                        vec![ret_type],
+                        ty.ty,
+                    ))
+                } else {
+                    Ok(ty)
+                }
+            })?;
+        }
+
+        Ok(())
+    }
 
     fn trans_expr(&mut self, expr: AstExpr) -> Result<ExprType> {
         match expr {
@@ -181,7 +314,12 @@ impl Semant {
                     .into_iter()
                     .map(|e| self.trans_expr(e))
                     .collect::<Result<Vec<_>>>()?;
-                let ty = transed.pop().expect("zero expr sequence").ty;
+
+                let ty = match transed.pop() {
+                    Some(t) => t.ty,
+                    None => CompleteType::Unit,
+                };
+
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty,
@@ -498,21 +636,16 @@ impl Semant {
                 ty: CompleteType::Unit,
             }),
 
-            AstExpr::Let(decls, exprs, pos) => {
-                self.var_env.begin_scope();
-                self.type_env.begin_scope();
-
-                decls.into_iter().for_each(|decl| self.trans_decl(decl));
-                let ExprType { ty, .. } = self.trans_expr(AstExpr::Sequence(exprs, pos))?;
-
-                self.var_env.end_scope();
-                self.type_env.end_scope();
-
+            AstExpr::Let(decls, exprs, pos) => self.new_scope(|_self| {
+                for decl in decls {
+                    _self.trans_decl(decl)?;
+                }
+                let ExprType { ty, .. } = _self.trans_expr(AstExpr::Sequence(exprs, pos))?;
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty,
                 })
-            }
+            }),
         }
     }
 
@@ -585,7 +718,54 @@ impl Semant {
         }
     }
 
-    // fn trans_type(&mut self, ty: AstType) -> Type {}
+    fn trans_type(&mut self, ast_type: AstType) -> Result<Type> {
+        match ast_type {
+            AstType::Id(type_id, pos) => {
+                let sym = Symbol::from(type_id);
+                self.type_env
+                    .look(sym)
+                    .cloned()
+                    .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))
+            }
+
+            AstType::Fields(fields, _) => {
+                let fields = fields
+                    .into_iter()
+                    .map(|f| {
+                        let name = Symbol::from(f.id);
+                        let _type = Symbol::from(f.type_id);
+                        let _type = self
+                            .type_env
+                            .look(_type)
+                            .cloned()
+                            .ok_or_else(|| Error::new_undefined_item(f.pos, Item::Type, _type));
+                        _type.map(|v| (name, v))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                let ty = CompleteType::Record {
+                    fields,
+                    unique: Unique::new(),
+                };
+
+                Ok(Type::Complete(ty))
+            }
+
+            AstType::Array(type_id, pos) => {
+                let sym = Symbol::from(type_id);
+                let elem_ty = self
+                    .type_env
+                    .look(sym)
+                    .cloned()
+                    .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))?;
+
+                Ok(Type::Complete(CompleteType::Array {
+                    ty: Box::new(elem_ty),
+                    unique: Unique::new(),
+                }))
+            }
+        }
+    }
 }
 
 fn actual_ty(ty: &Type, pos: Positions) -> Result<&CompleteType> {
@@ -603,6 +783,21 @@ pub enum EnvEntry {
     Func { formals: Vec<Type>, result: Type },
 }
 
+impl Env<Type> {
+    pub fn with_base_type(mut self) -> Self {
+        let base_types = vec![("int", CompleteType::Int), ("string", CompleteType::String)];
+
+        for (sym, ty) in base_types {
+            let sym = Symbol::new(sym);
+            let ty = Type::Complete(ty);
+            self.enter(sym, ty);
+        }
+        self.begin_scope();
+        self
+    }
+}
+
+#[derive(Debug)]
 struct ExprType {
     expr: TransExpr,
     ty: CompleteType,
