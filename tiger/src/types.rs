@@ -51,6 +51,7 @@ pub struct IncompleteType {
 }
 
 impl Type {
+    // TODO: should use `Either` instead of result
     pub fn actual(&self) -> Result<&CompleteType, IncompleteTypeError> {
         match self {
             Type::Complete(c) => Ok(c),

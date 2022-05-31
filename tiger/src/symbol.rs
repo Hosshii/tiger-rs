@@ -59,15 +59,36 @@ impl Symbol {
     }
 }
 
+impl<T> From<T> for Symbol
+where
+    T: Into<String>,
+{
+    fn from(s: T) -> Self {
+        Self::new(s)
+    }
+}
+
 impl From<Ident> for Symbol {
     fn from(id: Ident) -> Self {
         Self::new(id.0)
     }
 }
 
+impl From<&Ident> for Symbol {
+    fn from(id: &Ident) -> Self {
+        Self::new(&id.0)
+    }
+}
+
 impl From<TypeIdent> for Symbol {
     fn from(id: TypeIdent) -> Self {
         id.0.into()
+    }
+}
+
+impl From<&TypeIdent> for Symbol {
+    fn from(id: &TypeIdent) -> Self {
+        (&id.0).into()
     }
 }
 
