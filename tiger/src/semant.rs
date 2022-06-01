@@ -18,7 +18,7 @@ use thiserror::Error;
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error, PartialEq, Eq)]
-struct Error {
+pub struct Error {
     pos: Positions,
     kind: ErrorKind,
 }
@@ -91,6 +91,13 @@ impl Error {
             kind: ErrorKind::MismatchArgCount(expected, actual, sym),
         }
     }
+
+    fn new_unconstrained_nil_initialize(pos: Positions) -> Self {
+        Self {
+            pos,
+            kind: ErrorKind::UnconstrainedNilInitialize,
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -111,6 +118,8 @@ enum ErrorKind {
     MissingFieldOnRecordCreation(CompleteType, Symbol),
     #[error("function {}: expected {0} argument(s), found {1} argument(s)", .2.name())]
     MismatchArgCount(u8, u8, Symbol),
+    #[error("initializing nil expressions must be constrained by record type")]
+    UnconstrainedNilInitialize,
 }
 
 impl Display for Error {
@@ -151,11 +160,15 @@ impl Semant {
         }
     }
 
-    pub fn trans_prog(&mut self, expr: AstExpr) {
-        match self.trans_expr(expr) {
-            Ok(t) => println!("success!, {:?}", t),
-            Err(e) => println!("{}", e),
-        }
+    pub fn new_with_base() -> Self {
+        let var_env = Env::new();
+        let type_env = Env::new().with_base_type();
+
+        Self { var_env, type_env }
+    }
+
+    pub fn trans_prog(&mut self, expr: AstExpr) -> Result<ExprType> {
+        self.trans_expr(expr)
     }
 
     fn check_type<T>(&mut self, expr: AstExpr, ty: T, pos: Positions) -> Result<()>
@@ -207,7 +220,15 @@ impl Semant {
                         Some(expected_ty) => {
                             // todo recursion
                             let expected_ty = actual_ty(expected_ty, pos)?.clone();
-                            if expected_ty != expr_ty {
+                            let is_valid = match expected_ty {
+                                CompleteType::Record {
+                                    fields: _,
+                                    unique: _,
+                                } => expected_ty == expr_ty || expr_ty == CompleteType::Nil,
+                                _ => expected_ty == expr_ty,
+                            };
+
+                            if !is_valid {
                                 return Err(Error::new_unexpected_type(
                                     pos,
                                     vec![expected_ty],
@@ -216,6 +237,12 @@ impl Semant {
                             }
                         }
                         None => return Err(Error::new_undefined_item(pos, Item::Type, ty_symbol)),
+                    }
+                } else {
+                    // initializing nil expressions not constrained by record type is invalid
+                    // see test45.tig
+                    if expr_ty == CompleteType::Nil {
+                        return Err(Error::new_unconstrained_nil_initialize(pos));
                     }
                 }
 
@@ -595,8 +622,8 @@ impl Semant {
                         } else {
                             Err(Error::new_unexpected_type(
                                 then_pos,
-                                vec![then_ty],
-                                CompleteType::Unit,
+                                vec![CompleteType::Unit],
+                                then_ty,
                             ))
                         }
                     }
@@ -798,7 +825,7 @@ impl Env<Type> {
 }
 
 #[derive(Debug)]
-struct ExprType {
+pub struct ExprType {
     expr: TransExpr,
     ty: CompleteType,
 }
@@ -881,4 +908,100 @@ mod tests {
             assert_eq!(expected, tr.matches(cond));
         }
     }
+
+    macro_rules! test_file_inner {
+        ($name:ident, $path:expr) => {
+            use crate::parser::{self, ast::Program};
+            use std::fs::File;
+            let file = File::open($path).unwrap();
+            let ast = parser::parse($path, file).unwrap();
+
+            let mut semantic_analyzer = Semant::new_with_base();
+
+            match ast {
+                Program::Expr(e) => match semantic_analyzer.trans_prog(e) {
+                    Ok(t) => println!("success! {:?}", t),
+                    Err(e) => panic!("fail! {}", e),
+                },
+                Program::Decls(d) => panic!(),
+            }
+        };
+    }
+
+    macro_rules! test_file {
+        ($name:ident, $path:expr, success) => {
+            #[test]
+            fn $name() {
+                test_file_inner!($name, $path);
+            }
+        };
+        // invalid syntax
+        ($name:ident, $path:expr, invalid) => {
+            #[test]
+            #[should_panic]
+            fn $name() {
+                test_file_inner!($name, $path);
+            }
+        };
+        // valid but currently cannot compile
+        ($name:ident, $path:expr, fail) => {
+            #[test]
+            #[should_panic]
+            fn $name() {
+                test_file_inner!($name, $path);
+            }
+        };
+    }
+
+    test_file!(test_merge, "./testcases/merge.tig", fail);
+    test_file!(test_queens, "./testcases/queens.tig", fail);
+    test_file!(test_test1, "./testcases/test1.tig", success);
+    test_file!(test_test2, "./testcases/test2.tig", success);
+    test_file!(test_test3, "./testcases/test3.tig", success);
+    test_file!(test_test4, "./testcases/test4.tig", success);
+    test_file!(test_test5, "./testcases/test5.tig", fail);
+    test_file!(test_test6, "./testcases/test6.tig", fail);
+    test_file!(test_test7, "./testcases/test7.tig", fail);
+    test_file!(test_test8, "./testcases/test8.tig", success);
+    test_file!(test_test9, "./testcases/test9.tig", invalid);
+    test_file!(test_test10, "./testcases/test10.tig", invalid);
+    test_file!(test_test11, "./testcases/test11.tig", invalid);
+    test_file!(test_test12, "./testcases/test12.tig", success);
+    test_file!(test_test13, "./testcases/test13.tig", invalid);
+    test_file!(test_test14, "./testcases/test14.tig", invalid);
+    test_file!(test_test15, "./testcases/test15.tig", invalid);
+    test_file!(test_test16, "./testcases/test16.tig", invalid);
+    test_file!(test_test17, "./testcases/test17.tig", invalid);
+    test_file!(test_test18, "./testcases/test18.tig", invalid);
+    test_file!(test_test19, "./testcases/test19.tig", invalid);
+    test_file!(test_test20, "./testcases/test20.tig", invalid);
+    test_file!(test_test21, "./testcases/test21.tig", invalid);
+    test_file!(test_test22, "./testcases/test22.tig", invalid);
+    test_file!(test_test23, "./testcases/test23.tig", invalid);
+    test_file!(test_test24, "./testcases/test24.tig", invalid);
+    test_file!(test_test25, "./testcases/test25.tig", invalid);
+    test_file!(test_test26, "./testcases/test26.tig", invalid);
+    test_file!(test_test27, "./testcases/test27.tig", success);
+    test_file!(test_test28, "./testcases/test28.tig", invalid);
+    test_file!(test_test29, "./testcases/test29.tig", invalid);
+    test_file!(test_test30, "./testcases/test30.tig", success);
+    test_file!(test_test31, "./testcases/test31.tig", invalid);
+    test_file!(test_test32, "./testcases/test32.tig", invalid);
+    test_file!(test_test33, "./testcases/test33.tig", invalid);
+    test_file!(test_test34, "./testcases/test34.tig", invalid);
+    test_file!(test_test35, "./testcases/test35.tig", invalid);
+    test_file!(test_test36, "./testcases/test36.tig", invalid);
+    test_file!(test_test37, "./testcases/test37.tig", success);
+    test_file!(test_test38, "./testcases/test38.tig", invalid);
+    test_file!(test_test39, "./testcases/test39.tig", invalid);
+    test_file!(test_test40, "./testcases/test40.tig", invalid);
+    test_file!(test_test41, "./testcases/test41.tig", success);
+    test_file!(test_test42, "./testcases/test42.tig", success);
+    test_file!(test_test43, "./testcases/test43.tig", fail);
+    test_file!(test_test44, "./testcases/test44.tig", success);
+    test_file!(test_test45, "./testcases/test45.tig", invalid);
+    test_file!(test_test46, "./testcases/test46.tig", success);
+    test_file!(test_test47, "./testcases/test47.tig", success);
+    test_file!(test_test48, "./testcases/test48.tig", success);
+    test_file!(test_test49, "./testcases/test49.tig", invalid);
 }
