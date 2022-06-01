@@ -111,10 +111,11 @@ mod tests {
             ("hello world", 3),
         ];
 
+        let mut symbol_global = SymbolGlobal::default();
         for (sym_str, num) in cases {
-            let sym = Symbol::new(sym_str);
+            let sym = symbol_global.new_symbol(sym_str);
             assert_eq!(num, sym.as_u32());
-            assert_eq!(sym_str, sym.name().as_str());
+            assert_eq!(sym_str, symbol_global.name(&sym).as_str());
         }
     }
 }
