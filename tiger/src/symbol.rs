@@ -5,6 +5,8 @@ use std::{
 
 use once_cell::sync::Lazy;
 
+use crate::parser::ast::{Ident, TypeIdent};
+
 static SYMBOL_GLOBAL: Lazy<Mutex<SymbolGlobal>> = Lazy::new(|| Mutex::new(SymbolGlobal::default()));
 
 #[derive(Debug, Default)]
@@ -51,6 +53,43 @@ impl Symbol {
     fn as_u32(&self) -> u32 {
         self.0.private
     }
+
+    pub fn dummy() -> Self {
+        Self(SymbolIndex { private: u32::MAX })
+    }
+}
+
+impl<T> From<T> for Symbol
+where
+    T: Into<String>,
+{
+    fn from(s: T) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<Ident> for Symbol {
+    fn from(id: Ident) -> Self {
+        Self::new(id.0)
+    }
+}
+
+impl From<&Ident> for Symbol {
+    fn from(id: &Ident) -> Self {
+        Self::new(&id.0)
+    }
+}
+
+impl From<TypeIdent> for Symbol {
+    fn from(id: TypeIdent) -> Self {
+        id.0.into()
+    }
+}
+
+impl From<&TypeIdent> for Symbol {
+    fn from(id: &TypeIdent) -> Self {
+        (&id.0).into()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -72,10 +111,11 @@ mod tests {
             ("hello world", 3),
         ];
 
+        let mut symbol_global = SymbolGlobal::default();
         for (sym_str, num) in cases {
-            let sym = Symbol::new(sym_str);
+            let sym = symbol_global.new_symbol(sym_str);
             assert_eq!(num, sym.as_u32());
-            assert_eq!(sym_str, sym.name().as_str());
+            assert_eq!(sym_str, symbol_global.name(&sym).as_str());
         }
     }
 }

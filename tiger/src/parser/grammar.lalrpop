@@ -22,12 +22,12 @@ UnmatchedExpr: ast::Expr = {
 }
 
 MatchedIf: ast::Expr = {
-    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> <r:@R> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3), (l, r)),
+    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> <r:@R> => ast::Expr::If(Box::new(e1), Box::new(e2), Some(Box::new(e3)), (l, r)),
 }
 
 UnmatchedIf: ast::Expr = {
-    <l:@L> "if" <e1:Expr> "then" <e2:Expr> <r:@R> => ast::Expr::IfThen(Box::new(e1), Box::new(e2), (l, r)),
-    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> <r:@R> => ast::Expr::IfThenElse(Box::new(e1), Box::new(e2), Box::new(e3), (l, r)),
+    <l:@L> "if" <e1:Expr> "then" <e2:Expr> <r:@R> => ast::Expr::If(Box::new(e1), Box::new(e2), None, (l, r)),
+    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> <r:@R> => ast::Expr::If(Box::new(e1), Box::new(e2), Some(Box::new(e3)), (l, r)),
 }
 
 UnmatchedExprType: ast::Expr = {
@@ -83,7 +83,7 @@ LValueNotID: ast::LValue = {
 ExprSeq = Semicolon<Expr>;
 
 BracketedExprs: ast::Expr = {
-    "(" <ExprSeq> ")" => ast::Expr::Sequence(<>),
+    <l:@L> "(" <seq:ExprSeq> ")" <r:@R> => ast::Expr::Sequence(seq, (l, r)),
 }
 
 Decls: Vec<ast::Decl> = {
@@ -160,11 +160,9 @@ NonZeroTypeFields: ast::TypeFields = {
 }
 
 VarDecl: ast::VarDecl = {
-    <l:@L> "var" <id:Ident> ":=" <e:Expr> <r:@R> => {
-        ast::VarDecl::Short(id, e, (l, r))
-    },
-    <l:@L> "var" <id:Ident> ":" <type_id:TypeIdent> ":=" <e:Expr> <r:@R> => {
-        ast::VarDecl::Long(id, type_id, e, (l, r))
+    <l:@L> "var" <id:Ident> <type_id:(":" TypeIdent)?> ":=" <e:Expr> <r:@R> => {
+        let type_id = type_id.map(|v|v.1);
+        ast::VarDecl(id, type_id, e, (l, r))
     } 
 }
 
@@ -173,11 +171,9 @@ TypeIdent: ast::TypeIdent = {
 }
 
 FuncDecl: ast::FuncDecl = {
-    <l:@L> "function" <id:Ident> "(" <f:TypeFields> ")" "=" <e:Expr> <r:@R> => {
-        ast::FuncDecl::Short(id, f, e, (l, r))
-    },
-    <l:@L> "function" <id:Ident> "(" <f:TypeFields> ")" ":" <type_id:TypeIdent> "=" <e:Expr> <r:@R> => {
-        ast::FuncDecl::Long(id, f, type_id, e, (l, r))
+    <l:@L> "function" <id:Ident> "(" <f:TypeFields> ")" <type_id:(":" TypeIdent)?> "=" <e:Expr> <r:@R> => {
+        let type_id = type_id.map(|i| i.1);
+        ast::FuncDecl{name: id, params: f, ret_type: type_id, body: e, pos: (l, r)}
     }
 }
 
@@ -202,8 +198,8 @@ Primary: ast::Expr = {
     BracketedExprs => <>,
     <l:@L> "break" <r:@R> => ast::Expr::Break((l, r)),
     <l:@L> "let" <d:Decls> "in" <e:ExprSeq> "end" <r:@R> => ast::Expr::Let(d, e, (l, r)),
-    <LValueNotID> => ast::Expr::LValue(<>),
-    <l:@L> <id:Ident> <r:@R> => ast::Expr::LValue(ast::LValue::Var(id, (l, r))),
+    <l:@L> <lvalue:LValueNotID> <r:@R> => ast::Expr::LValue(lvalue, (l, r)),
+    <l:@L> <id:Ident> <r:@R> => ast::Expr::LValue(ast::LValue::Var(id, (l, r)), (l, r)),
     <l:@L> <id:Ident> "(" <e:Comma<Expr>> ")" <r:@R> => ast::Expr::FuncCall(id, e, (l, r)),
     <l:@L> <type_id:TypeIdent> "{" <f1:(@L Ident "=" Expr @R ("," @L Ident "="Expr @R)*)?>  "}" <r:@R> => {
         let fields = if let Some((l1, id, _, expr, r1, _fields)) = f1 {

@@ -3,6 +3,7 @@ pub mod parser;
 
 pub mod env;
 mod position;
+pub mod semant;
 pub mod symbol;
 mod translate;
-mod types;
+pub mod types;
