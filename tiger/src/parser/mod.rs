@@ -10,7 +10,7 @@ use crate::{
     position::Position,
 };
 
-lalrpop_mod!(pub grammar,"/parser/grammar.rs");
+lalrpop_mod!(#[allow(unused_imports)] pub grammar,"/parser/grammar.rs");
 
 type LalrpopError = lalrpop_util::ParseError<Position, TokenKind, LexError>;
 

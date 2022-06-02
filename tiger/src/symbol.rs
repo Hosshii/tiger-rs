@@ -51,6 +51,7 @@ impl Symbol {
         SYMBOL_GLOBAL.lock().unwrap().name(self)
     }
 
+    #[allow(dead_code)]
     fn as_u32(&self) -> u32 {
         self.0.private
     }

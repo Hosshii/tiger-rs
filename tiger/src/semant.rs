@@ -24,10 +24,6 @@ pub struct Error {
 }
 
 impl Error {
-    fn new(pos: Positions, kind: ErrorKind) -> Self {
-        Self { pos, kind }
-    }
-
     fn new_unexpected_type(
         pos: Positions,
         expected: Vec<CompleteType>,
@@ -161,12 +157,6 @@ enum Item {
     Var,
     Func,
     Type,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EnvKind {
-    Type,
-    Var,
 }
 
 impl Display for Item {
@@ -441,7 +431,7 @@ impl Semant {
         match expr {
             AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue),
 
-            AstExpr::Nil(pos) => Ok(ExprType {
+            AstExpr::Nil(_) => Ok(ExprType {
                 expr: TransExpr::new(),
                 ty: CompleteType::Nil,
             }),
@@ -708,7 +698,7 @@ impl Semant {
                 }
             }
 
-            AstExpr::If(cond, then, els, pos) => {
+            AstExpr::If(cond, then, els, _) => {
                 let cond_pos = cond.pos();
                 self.check_type(*cond, (CompleteType::Int,), cond_pos)?;
 
@@ -781,7 +771,7 @@ impl Semant {
                 })
             }),
 
-            AstExpr::Break(pos) => Ok(ExprType {
+            AstExpr::Break(_) => Ok(ExprType {
                 expr: TransExpr::new(),
                 ty: CompleteType::Unit,
             }),
