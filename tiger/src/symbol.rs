@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::{Debug, Display},
     sync::{Arc, Mutex},
 };
 
@@ -38,7 +39,7 @@ impl SymbolGlobal {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Symbol(SymbolIndex);
 
 impl Symbol {
@@ -56,6 +57,18 @@ impl Symbol {
 
     pub fn dummy() -> Self {
         Self(SymbolIndex { private: u32::MAX })
+    }
+}
+
+impl Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+impl Debug for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(index: {}, name: {})", self.0.private, self.name())
     }
 }
 

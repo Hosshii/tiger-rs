@@ -1,8 +1,11 @@
 use std::{fmt::Display, sync::atomic::AtomicU32};
 
-use crate::symbol::Symbol;
+use crate::{env::Env, symbol::Symbol};
 use thiserror::Error;
 
+/// `Type` represents tiger language's type.
+/// `Complete` can determine the type just by looking at it and it never changes.
+/// `InComplete` may be incomplete due to mutual recursion etc. And may be changed later.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
     Complete(CompleteType),
@@ -42,32 +45,36 @@ impl CompleteType {
             unique: Unique::dummy(),
         }
     }
+
+    pub fn assignable(&self, other: &Self) -> bool {
+        use self::CompleteType::*;
+        match (self, other) {
+            (Nil, Record { .. }) | (Record { .. }, Nil) => true,
+            _ => self == other,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IncompleteType {
-    sym: Symbol,
-    ty: Option<Box<Type>>,
+    pub sym: Symbol,
+    pub ty: Option<Box<Type>>,
 }
 
 impl Type {
     // TODO: should use `Either` instead of result
-    pub fn actual(&self) -> Result<&CompleteType, IncompleteTypeError> {
+    pub fn actual<'a>(
+        &'a self,
+        env: &'a Env<Type>,
+    ) -> Result<&'a CompleteType, IncompleteTypeError> {
         match self {
             Type::Complete(c) => Ok(c),
             Type::InComplete(i) => match &i.ty {
-                Some(ty) => ty.actual(),
-                None => Err(IncompleteTypeError(i.sym)),
-            },
-        }
-    }
-
-    pub fn into_actual(self) -> Result<CompleteType, IncompleteTypeError> {
-        match self {
-            Type::Complete(c) => Ok(c),
-            Type::InComplete(i) => match i.ty {
-                Some(ty) => ty.into_actual(),
-                None => Err(IncompleteTypeError(i.sym)),
+                Some(ty) => ty.actual(env),
+                None => match env.look(i.sym) {
+                    None => Err(IncompleteTypeError(i.sym)),
+                    Some(ty) => ty.actual(env),
+                },
             },
         }
     }

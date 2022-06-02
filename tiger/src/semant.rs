@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
 };
 
@@ -11,7 +11,7 @@ use crate::{
     position::Positions,
     symbol::Symbol,
     translate::Expr as TransExpr,
-    types::{CompleteType, IncompleteTypeError, Type, Unique},
+    types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
 };
 use thiserror::Error;
 
@@ -98,6 +98,27 @@ impl Error {
             kind: ErrorKind::UnconstrainedNilInitialize,
         }
     }
+
+    fn new_unit_initialize(pos: Positions) -> Self {
+        Self {
+            pos,
+            kind: ErrorKind::UnitInitialize,
+        }
+    }
+
+    fn new_same_name(item: Item, sym: Symbol, pos: Positions) -> Self {
+        Self {
+            pos,
+            kind: ErrorKind::SameNameInAdjacentDecl(item, sym),
+        }
+    }
+
+    fn new_invalid_recursion(syms: Vec<Symbol>, pos: Positions) -> Self {
+        Self {
+            pos,
+            kind: ErrorKind::InvalidRecursion(syms),
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -120,6 +141,12 @@ enum ErrorKind {
     MismatchArgCount(u8, u8, Symbol),
     #[error("initializing nil expressions must be constrained by record type")]
     UnconstrainedNilInitialize,
+    #[error("initializing with unit is invalid")]
+    UnitInitialize,
+    #[error("duplicate name `{}`: same name in the same batch of mutually recursive {0} is invalid", .1.name())]
+    SameNameInAdjacentDecl(Item, Symbol),
+    #[error("{:?} are invalid recursion",(.0).iter().map(|s|s.name()).collect::<Vec<_>>())]
+    InvalidRecursion(Vec<Symbol>),
 }
 
 impl Display for Error {
@@ -134,6 +161,12 @@ enum Item {
     Var,
     Func,
     Type,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnvKind {
+    Type,
+    Var,
 }
 
 impl Display for Item {
@@ -161,10 +194,15 @@ impl Semant {
     }
 
     pub fn new_with_base() -> Self {
-        let var_env = Env::new();
+        let var_env = Env::new().with_base_var();
         let type_env = Env::new().with_base_type();
 
         Self { var_env, type_env }
+    }
+
+    fn actual_ty<'a>(&'a self, ty: &'a Type, pos: Positions) -> Result<&'a CompleteType> {
+        ty.actual(&self.type_env)
+            .map_err(|e| Error::new_incomplete_type(pos, e))
     }
 
     pub fn trans_prog(&mut self, expr: AstExpr) -> Result<ExprType> {
@@ -187,6 +225,51 @@ impl Semant {
         }
     }
 
+    fn detect_invalid_recursion(&mut self, iter: &[(Symbol, Positions)]) -> Result<()> {
+        for &(sym, pos) in iter {
+            let mut seen = HashSet::new();
+            seen.insert(sym);
+            match self.type_env.look(sym) {
+                Some(ty) => match self.detect_invalid_recursion_inner(ty, pos, &mut seen) {
+                    Ok(_) => continue,
+                    e => return e.map(|_| ()),
+                },
+                None => return Err(Error::new_undefined_item(pos, Item::Type, sym)),
+            }
+        }
+        Ok(())
+    }
+
+    // caller must insert `ty` 's symbol into seen.
+    fn detect_invalid_recursion_inner(
+        &self,
+        ty: &Type,
+        pos: Positions,
+        seen: &mut HashSet<Symbol>,
+    ) -> Result<()> {
+        match ty {
+            Type::Complete(_) => Ok(()),
+            Type::InComplete(i) => {
+                if seen.contains(&i.sym) {
+                    return Err(Error::new_invalid_recursion(
+                        seen.iter().cloned().collect(),
+                        pos,
+                    ));
+                } else {
+                    seen.insert(i.sym);
+                    match &i.ty {
+                        Some(ty) => self.detect_invalid_recursion_inner(ty, pos, seen),
+                        None => match self.type_env.look(i.sym) {
+                            Some(ty) => self.detect_invalid_recursion_inner(ty, pos, seen),
+                            None => Err(Error::new_undefined_item(pos, Item::Type, i.sym)),
+                        },
+                    }
+                }
+            }
+        }
+        // Ok(())
+    }
+
     fn new_scope<F>(&mut self, f: F) -> Result<ExprType>
     where
         F: FnOnce(&mut Self) -> Result<ExprType>,
@@ -202,12 +285,32 @@ impl Semant {
     fn trans_decl(&mut self, decl: Decl) -> Result<()> {
         match decl {
             Decl::Type(type_decls) => {
+                let mut seen = HashSet::new();
+                for decl in type_decls.iter() {
+                    let sym = Symbol::from(&decl.id);
+                    let ty = Type::InComplete(IncompleteType { sym, ty: None });
+                    self.type_env.enter(sym, ty);
+                    if !seen.insert(sym) {
+                        return Err(Error::new_same_name(Item::Type, sym, decl.pos));
+                    }
+                }
+
+                let iter: Vec<_> = type_decls
+                    .iter()
+                    .map(|v| (Symbol::from(&v.id), v.pos))
+                    .collect();
+
                 for decl in type_decls.into_iter() {
                     let id = decl.id;
                     let sym = Symbol::from(id);
                     let _type = self.trans_type(decl.ty)?;
-                    self.type_env.enter(sym, _type);
+                    self.type_env
+                        .replace(sym, _type)
+                        .expect("binding not found");
                 }
+
+                self.detect_invalid_recursion(&iter)?;
+
                 Ok(())
             }
             Decl::Var(VarDecl(id, ty, expr, pos)) => {
@@ -218,17 +321,9 @@ impl Semant {
                     let ty_symbol = Symbol::from(type_id);
                     match self.type_env.look(ty_symbol) {
                         Some(expected_ty) => {
-                            // todo recursion
-                            let expected_ty = actual_ty(expected_ty, pos)?.clone();
-                            let is_valid = match expected_ty {
-                                CompleteType::Record {
-                                    fields: _,
-                                    unique: _,
-                                } => expected_ty == expr_ty || expr_ty == CompleteType::Nil,
-                                _ => expected_ty == expr_ty,
-                            };
+                            let expected_ty = self.actual_ty(expected_ty, pos)?.clone();
 
-                            if !is_valid {
+                            if !expected_ty.assignable(&expr_ty) {
                                 return Err(Error::new_unexpected_type(
                                     pos,
                                     vec![expected_ty],
@@ -243,6 +338,12 @@ impl Semant {
                     // see test45.tig
                     if expr_ty == CompleteType::Nil {
                         return Err(Error::new_unconstrained_nil_initialize(pos));
+                    }
+
+                    // initializing with unit is invalid
+                    // see test43.tig
+                    if expr_ty == CompleteType::Unit {
+                        return Err(Error::new_unit_initialize(pos));
                     }
                 }
 
@@ -260,9 +361,11 @@ impl Semant {
     }
 
     fn trans_fn_decls(&mut self, func_decls: Vec<FuncDecl>) -> Result<()> {
-        for func_decl in func_decls {
+        let mut header = vec![];
+        let mut seen = HashSet::new();
+        for func_decl in func_decls.iter() {
             // enter function defs
-            let func_name = Symbol::from(func_decl.name);
+            let func_name = Symbol::from(&func_decl.name);
             let formals = func_decl
                 .params
                 .iter()
@@ -275,7 +378,7 @@ impl Semant {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            let ret_type = match func_decl.ret_type {
+            let ret_type = match &func_decl.ret_type {
                 Some(type_id) => {
                     let ty_sym = Symbol::from(type_id);
                     match self.type_env.look(ty_sym) {
@@ -299,9 +402,17 @@ impl Semant {
                     result: ret_type.clone(),
                 },
             );
+            header.push((formals, ret_type));
+            if !seen.insert(func_name) {
+                return Err(Error::new_same_name(Item::Func, func_name, func_decl.pos));
+            }
+        }
 
+        assert_eq!(header.len(), func_decls.len());
+
+        for (func_decl, (formals, ret_type)) in func_decls.into_iter().zip(header.into_iter()) {
             // function body
-            let ret_type = into_actual_ty(ret_type, func_decl.pos)?;
+            let ret_type = self.actual_ty(&ret_type, func_decl.pos)?.clone();
             self.new_scope(|_self| {
                 for (ty, id) in formals
                     .into_iter()
@@ -386,7 +497,7 @@ impl Semant {
 
                         let formal_iter = formals
                             .iter()
-                            .map(|v| actual_ty(v, pos))
+                            .map(|v| self.actual_ty(v, pos))
                             .collect::<Result<Vec<_>>>()?;
 
                         let unmatched = arg_iter
@@ -400,7 +511,7 @@ impl Semant {
                                 Error::new_unexpected_type(pos, vec![expected.clone()], actual),
                             ),
                             None => {
-                                let result = actual_ty(result, pos)?;
+                                let result = self.actual_ty(result, pos)?;
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
                                     ty: result.clone(),
@@ -457,7 +568,7 @@ impl Semant {
             AstExpr::Op(Operator::Eq | Operator::Neq, lhs, rhs, pos) => {
                 let ExprType { ty: lhs_ty, .. } = self.trans_expr(*lhs)?;
                 let ExprType { ty: rhs_ty, .. } = self.trans_expr(*rhs)?;
-                if lhs_ty == rhs_ty {
+                if lhs_ty.assignable(&rhs_ty) {
                     Ok(ExprType {
                         expr: TransExpr::new(),
                         ty: CompleteType::Int,
@@ -479,7 +590,7 @@ impl Semant {
                 let sym = Symbol::from(type_id);
                 match self.type_env.look(sym) {
                     Some(ty) => {
-                        let ty = actual_ty(ty, pos)?;
+                        let ty = self.actual_ty(ty, pos)?;
 
                         match ty {
                             CompleteType::Record {
@@ -489,7 +600,7 @@ impl Semant {
                                 let mut expected_map = expected_fields
                                     .iter()
                                     .map(|f| {
-                                        let ty = actual_ty(&f.1, pos)?;
+                                        let ty = self.actual_ty(&f.1, pos)?;
                                         Ok((f.0, ty.clone()))
                                     })
                                     .collect::<Result<HashMap<_, _>>>()?;
@@ -510,7 +621,7 @@ impl Semant {
                                                 ..
                                             } = self.trans_expr(expr)?;
 
-                                            if expected_field_type != actual_field_type {
+                                            if !expected_field_type.assignable(&actual_field_type) {
                                                 return Err(Error::new_unexpected_type(
                                                     pos,
                                                     vec![expected_field_type],
@@ -553,20 +664,20 @@ impl Semant {
                 let sym = Symbol::from(type_id);
                 match self.type_env.look(sym) {
                     Some(ty) => {
-                        let ty = actual_ty(ty, pos)?;
+                        let ty = self.actual_ty(ty, pos)?;
 
                         match ty {
                             CompleteType::Array { ty, unique } => {
                                 let unique = *unique;
                                 let ty = ty.clone();
 
-                                let arr_ty = actual_ty(&ty, pos)?;
+                                let arr_ty = self.actual_ty(&ty, pos)?.clone();
 
                                 let size_pos = size.pos();
                                 self.check_type(*size, (CompleteType::Int,), size_pos)?;
 
                                 let init_pos = init.pos();
-                                self.check_type(*init, (arr_ty.clone(),), init_pos)?;
+                                self.check_type(*init, (arr_ty,), init_pos)?;
 
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
@@ -606,12 +717,16 @@ impl Semant {
                 match els {
                     Some(els) => {
                         let els_pos = els.pos();
-                        self.check_type(*els, (then_ty.clone(),), els_pos)?;
+                        let ExprType { ty: else_ty, .. } = self.trans_expr(*els)?;
 
-                        Ok(ExprType {
-                            expr: TransExpr::new(),
-                            ty: then_ty,
-                        })
+                        if !then_ty.assignable(&else_ty) {
+                            Err(Error::new_unexpected_type(els_pos, vec![then_ty], else_ty))
+                        } else {
+                            Ok(ExprType {
+                                expr: TransExpr::new(),
+                                ty: then_ty,
+                            })
+                        }
                     }
                     None => {
                         if then_ty == CompleteType::Unit {
@@ -642,21 +757,29 @@ impl Semant {
                 })
             }
 
-            AstExpr::For(id, expr1, expr2, then, _) => {
+            AstExpr::For(id, expr1, expr2, then, _) => self.new_scope(|_self| {
+                let sym = Symbol::from(id);
+                _self.var_env.enter(
+                    sym,
+                    EnvEntry::Var {
+                        ty: Type::Complete(CompleteType::Int),
+                    },
+                );
+
                 let expr1_pos = expr1.pos();
-                self.check_type(*expr1, (CompleteType::Int,), expr1_pos)?;
+                _self.check_type(*expr1, (CompleteType::Int,), expr1_pos)?;
 
                 let expr2_pos = expr2.pos();
-                self.check_type(*expr2, (CompleteType::Int,), expr2_pos)?;
+                _self.check_type(*expr2, (CompleteType::Int,), expr2_pos)?;
 
                 let then_pos = then.pos();
-                self.check_type(*then, (CompleteType::Unit,), then_pos)?;
+                _self.check_type(*then, (CompleteType::Unit,), then_pos)?;
 
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty: CompleteType::Unit,
                 })
-            }
+            }),
 
             AstExpr::Break(pos) => Ok(ExprType {
                 expr: TransExpr::new(),
@@ -682,7 +805,7 @@ impl Semant {
                 let sym = Symbol::from(id);
                 match self.var_env.look(sym) {
                     Some(EnvEntry::Var { ty }) => {
-                        let ty = actual_ty(ty, pos)?;
+                        let ty = self.actual_ty(ty, pos)?;
                         Ok(ExprType {
                             expr: TransExpr::new(),
                             ty: ty.clone(),
@@ -705,7 +828,7 @@ impl Semant {
                                 sym,
                             )),
                             Some((_, ty)) => {
-                                let ty = actual_ty(ty, pos)?;
+                                let ty = self.actual_ty(ty, pos)?;
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
                                     ty: ty.clone(),
@@ -729,10 +852,10 @@ impl Semant {
                 let ExprType { ty, .. } = self.trans_lvalue(*lvar)?;
                 match ty {
                     CompleteType::Array { ty, unique: _ } => {
-                        let ty = into_actual_ty(*ty, pos)?;
+                        let ty = self.actual_ty(&ty, pos)?;
                         Ok(ExprType {
                             expr: TransExpr::new(),
-                            ty,
+                            ty: ty.clone(),
                         })
                     }
                     other => Err(Error::new_unexpected_type(
@@ -795,15 +918,6 @@ impl Semant {
     }
 }
 
-fn actual_ty(ty: &Type, pos: Positions) -> Result<&CompleteType> {
-    ty.actual().map_err(|e| Error::new_incomplete_type(pos, e))
-}
-
-fn into_actual_ty(ty: Type, pos: Positions) -> Result<CompleteType> {
-    ty.into_actual()
-        .map_err(|e| Error::new_incomplete_type(pos, e))
-}
-
 /// Variable and function entry
 pub enum EnvEntry {
     Var { ty: Type },
@@ -819,6 +933,34 @@ impl Env<Type> {
             let ty = Type::Complete(ty);
             self.enter(sym, ty);
         }
+        self.begin_scope();
+        self
+    }
+}
+
+impl Env<EnvEntry> {
+    pub fn with_base_var(mut self) -> Self {
+        use self::CompleteType::*;
+        let base_func = vec![
+            ("print", vec![String], Unit),
+            ("flush", vec![], Unit),
+            ("getchar", vec![], String),
+            ("ord", vec![String], Int),
+            ("chr", vec![Int], String),
+            ("size", vec![String], Int),
+            ("substring", vec![String, Int, Int], String),
+            ("concat", vec![String, String], String),
+            ("not", vec![Int], Int),
+            ("exit", vec![Int], Unit),
+        ];
+
+        for (sym, formals, ret_type) in base_func {
+            let sym = Symbol::from(sym);
+            let formals = formals.into_iter().map(Type::Complete).collect();
+            let result = Type::Complete(ret_type);
+            self.enter(sym, EnvEntry::Func { formals, result });
+        }
+
         self.begin_scope();
         self
     }
@@ -953,15 +1095,15 @@ mod tests {
         };
     }
 
-    test_file!(test_merge, "./testcases/merge.tig", fail);
-    test_file!(test_queens, "./testcases/queens.tig", fail);
+    test_file!(test_merge, "./testcases/merge.tig", success);
+    test_file!(test_queens, "./testcases/queens.tig", success);
     test_file!(test_test1, "./testcases/test1.tig", success);
     test_file!(test_test2, "./testcases/test2.tig", success);
     test_file!(test_test3, "./testcases/test3.tig", success);
     test_file!(test_test4, "./testcases/test4.tig", success);
-    test_file!(test_test5, "./testcases/test5.tig", fail);
-    test_file!(test_test6, "./testcases/test6.tig", fail);
-    test_file!(test_test7, "./testcases/test7.tig", fail);
+    test_file!(test_test5, "./testcases/test5.tig", success);
+    test_file!(test_test6, "./testcases/test6.tig", success);
+    test_file!(test_test7, "./testcases/test7.tig", success);
     test_file!(test_test8, "./testcases/test8.tig", success);
     test_file!(test_test9, "./testcases/test9.tig", invalid);
     test_file!(test_test10, "./testcases/test10.tig", invalid);
@@ -997,7 +1139,7 @@ mod tests {
     test_file!(test_test40, "./testcases/test40.tig", invalid);
     test_file!(test_test41, "./testcases/test41.tig", success);
     test_file!(test_test42, "./testcases/test42.tig", success);
-    test_file!(test_test43, "./testcases/test43.tig", fail);
+    test_file!(test_test43, "./testcases/test43.tig", invalid);
     test_file!(test_test44, "./testcases/test44.tig", success);
     test_file!(test_test45, "./testcases/test45.tig", invalid);
     test_file!(test_test46, "./testcases/test46.tig", success);
