@@ -115,6 +115,13 @@ impl Error {
             kind: ErrorKind::InvalidRecursion(syms),
         }
     }
+
+    fn new_invalid_break(pos: Positions) -> Self {
+        Self {
+            pos,
+            kind: ErrorKind::InvalidBreak,
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -143,6 +150,8 @@ enum ErrorKind {
     SameNameInAdjacentDecl(Item, Symbol),
     #[error("{:?} are invalid recursion",(.0).iter().map(|s|s.name()).collect::<Vec<_>>())]
     InvalidRecursion(Vec<Symbol>),
+    #[error("break statement must be inside `for` or `while` statement")]
+    InvalidBreak,
 }
 
 impl Display for Error {
@@ -173,6 +182,7 @@ impl Display for Item {
 pub struct Semant {
     var_env: Env<EnvEntry>, // var and func env
     type_env: Env<Type>,    // type env
+    break_count: u32, // 0 means not inside break or while. greater than 1 means inside break or while
 }
 
 impl Semant {
@@ -180,6 +190,7 @@ impl Semant {
         Self {
             var_env: var_base,
             type_env: type_base,
+            break_count: 0,
         }
     }
 
@@ -187,7 +198,11 @@ impl Semant {
         let var_env = Env::new().with_base_var();
         let type_env = Env::new().with_base_type();
 
-        Self { var_env, type_env }
+        Self {
+            var_env,
+            type_env,
+            break_count: 0,
+        }
     }
 
     fn actual_ty<'a>(&'a self, ty: &'a Type, pos: Positions) -> Result<&'a CompleteType> {
@@ -260,6 +275,10 @@ impl Semant {
         // Ok(())
     }
 
+    fn is_brekable(&self) -> bool {
+        self.break_count > 0
+    }
+
     fn new_scope<F>(&mut self, f: F) -> Result<ExprType>
     where
         F: FnOnce(&mut Self) -> Result<ExprType>,
@@ -269,6 +288,16 @@ impl Semant {
         let result = f(self);
         self.type_env.end_scope();
         self.var_env.end_scope();
+        result
+    }
+
+    fn new_break_scope<F>(&mut self, f: F) -> Result<ExprType>
+    where
+        F: FnOnce(&mut Self) -> Result<ExprType>,
+    {
+        self.break_count += 1;
+        let result = f(self);
+        self.break_count -= 1;
         result
     }
 
@@ -735,33 +764,9 @@ impl Semant {
                 }
             }
 
-            AstExpr::While(cond, then, _) => {
+            AstExpr::While(cond, then, _) => self.new_break_scope(|_self| {
                 let cond_pos = cond.pos();
-                self.check_type(*cond, (CompleteType::Int,), cond_pos)?;
-                let then_pos = then.pos();
-                self.check_type(*then, (CompleteType::Unit,), then_pos)?;
-
-                Ok(ExprType {
-                    expr: TransExpr::new(),
-                    ty: CompleteType::Unit,
-                })
-            }
-
-            AstExpr::For(id, expr1, expr2, then, _) => self.new_scope(|_self| {
-                let sym = Symbol::from(id);
-                _self.var_env.enter(
-                    sym,
-                    EnvEntry::Var {
-                        ty: Type::Complete(CompleteType::Int),
-                    },
-                );
-
-                let expr1_pos = expr1.pos();
-                _self.check_type(*expr1, (CompleteType::Int,), expr1_pos)?;
-
-                let expr2_pos = expr2.pos();
-                _self.check_type(*expr2, (CompleteType::Int,), expr2_pos)?;
-
+                _self.check_type(*cond, (CompleteType::Int,), cond_pos)?;
                 let then_pos = then.pos();
                 _self.check_type(*then, (CompleteType::Unit,), then_pos)?;
 
@@ -771,10 +776,42 @@ impl Semant {
                 })
             }),
 
-            AstExpr::Break(_) => Ok(ExprType {
-                expr: TransExpr::new(),
-                ty: CompleteType::Unit,
+            AstExpr::For(id, expr1, expr2, then, _) => self.new_scope(|_self| {
+                _self.new_break_scope(|_self| {
+                    let sym = Symbol::from(id);
+                    _self.var_env.enter(
+                        sym,
+                        EnvEntry::Var {
+                            ty: Type::Complete(CompleteType::Int),
+                        },
+                    );
+
+                    let expr1_pos = expr1.pos();
+                    _self.check_type(*expr1, (CompleteType::Int,), expr1_pos)?;
+
+                    let expr2_pos = expr2.pos();
+                    _self.check_type(*expr2, (CompleteType::Int,), expr2_pos)?;
+
+                    let then_pos = then.pos();
+                    _self.check_type(*then, (CompleteType::Unit,), then_pos)?;
+
+                    Ok(ExprType {
+                        expr: TransExpr::new(),
+                        ty: CompleteType::Unit,
+                    })
+                })
             }),
+
+            AstExpr::Break(pos) => {
+                if self.is_brekable() {
+                    Ok(ExprType {
+                        expr: TransExpr::new(),
+                        ty: CompleteType::Unit,
+                    })
+                } else {
+                    Err(Error::new_invalid_break(pos))
+                }
+            }
 
             AstExpr::Let(decls, exprs, pos) => self.new_scope(|_self| {
                 for decl in decls {
@@ -1136,4 +1173,10 @@ mod tests {
     test_file!(test_test47, "./testcases/test47.tig", success);
     test_file!(test_test48, "./testcases/test48.tig", success);
     test_file!(test_test49, "./testcases/test49.tig", invalid);
+    test_file!(test_test60, "./testcases/test60.tig", invalid);
+    test_file!(test_test61, "./testcases/test61.tig", success);
+    test_file!(test_test62, "./testcases/test62.tig", success);
+    test_file!(test_test63, "./testcases/test63.tig", success);
+    test_file!(test_test64, "./testcases/test64.tig", success);
+    test_file!(test_test65, "./testcases/test65.tig", invalid);
 }
