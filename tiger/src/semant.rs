@@ -1093,7 +1093,7 @@ mod tests {
                     Ok(t) => println!("success! {:?}", t),
                     Err(e) => panic!("fail! {}", e),
                 },
-                Program::Decls(d) => panic!(),
+                Program::Decls(_) => panic!(),
             }
         };
     }
