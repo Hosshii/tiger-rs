@@ -7,23 +7,33 @@ use std::{
 use once_cell::sync::Lazy;
 
 use crate::parser::ast::{Ident, TypeIdent};
+const INVALID_SYM_NAME: &str = ".invalid_symbol";
 
-static SYMBOL_GLOBAL: Lazy<Mutex<SymbolGlobal>> = Lazy::new(|| Mutex::new(SymbolGlobal::default()));
+static SYMBOL_GLOBAL: Lazy<Mutex<SymbolGlobal>> =
+    Lazy::new(|| Mutex::new(SymbolGlobal::new(INVALID_SYM_NAME)));
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct SymbolGlobal {
     count: u32,
     table: HashMap<Arc<String>, SymbolIndex>,
     name: Vec<Arc<String>>,
+    invalid_sym_name: Arc<String>,
 }
 
 impl SymbolGlobal {
+    fn new(invalid_sym_name: impl Into<String>) -> Self {
+        Self {
+            count: 0,
+            table: HashMap::default(),
+            name: Vec::default(),
+            invalid_sym_name: Arc::new(invalid_sym_name.into()),
+        }
+    }
+
     fn new_symbol(&mut self, s: impl Into<String>) -> Symbol {
         let s = Arc::new(s.into());
         let idx = self.table.entry(s.clone()).or_insert_with(|| {
-            let sym = SymbolIndex {
-                private: self.count,
-            };
+            let sym = SymbolIndex::new(self.count);
             self.count += 1;
             self.name.push(s);
             sym
@@ -35,7 +45,11 @@ impl SymbolGlobal {
     }
 
     fn name(&self, s: &Symbol) -> Arc<String> {
-        self.name[s.0.private as usize].clone()
+        if s.0.is_invalid() {
+            self.invalid_sym_name.clone()
+        } else {
+            self.name[s.0.private as usize].clone()
+        }
     }
 }
 
@@ -57,7 +71,7 @@ impl Symbol {
     }
 
     pub fn dummy() -> Self {
-        Self(SymbolIndex { private: u32::MAX })
+        Self(SymbolIndex::new_invalid())
     }
 }
 
@@ -111,6 +125,20 @@ struct SymbolIndex {
     private: u32,
 }
 
+impl SymbolIndex {
+    pub fn new(v: u32) -> Self {
+        Self { private: v }
+    }
+
+    pub fn new_invalid() -> Self {
+        Self { private: u32::MAX }
+    }
+
+    pub fn is_invalid(&self) -> bool {
+        self.private == u32::MAX
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,7 +153,7 @@ mod tests {
             ("hello world", 3),
         ];
 
-        let mut symbol_global = SymbolGlobal::default();
+        let mut symbol_global = SymbolGlobal::new(INVALID_SYM_NAME);
         for (sym_str, num) in cases {
             let sym = symbol_global.new_symbol(sym_str);
             assert_eq!(num, sym.as_u32());
