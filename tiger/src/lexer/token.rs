@@ -15,6 +15,19 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    pub fn is_empty(&self) -> bool {
+        use TokenKind::*;
+
+        match self {
+            Reserved(r) => r.is_empty(),
+            Separator(s) => s.is_empty(),
+            Str(s) => s.is_empty(),
+            Int(num) => num.to_string().is_empty(),
+            Ident(ident) => ident.is_empty(),
+            Eof => true,
+        }
+    }
+
     pub fn len(&self) -> usize {
         use TokenKind::*;
 
@@ -91,6 +104,10 @@ impl StringLiteral {
         self.0.chars().count()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn new(v: impl Into<String>) -> Self {
         Self(v.into())
     }
@@ -139,6 +156,10 @@ impl Reserved {
             If => "if",
             Array => "array",
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        false
     }
 
     pub fn len(&self) -> usize {
@@ -240,6 +261,10 @@ impl Separator {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
     pub fn len(&self) -> usize {
         self.as_str().chars().count()
     }
@@ -293,6 +318,10 @@ impl FromStr for Separator {
 pub struct Ident(pub String);
 
 impl Ident {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.0.chars().count()
     }

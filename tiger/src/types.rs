@@ -96,6 +96,7 @@ static UNIQUE_INDEX: AtomicU32 = AtomicU32::new(1);
 pub struct Unique(u32);
 
 impl Unique {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Unique(UNIQUE_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
     }

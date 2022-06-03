@@ -10,7 +10,7 @@ use crate::{
     position::Position,
 };
 
-lalrpop_mod!(#[allow(unused_imports)] pub grammar,"/parser/grammar.rs");
+lalrpop_mod!(#[allow(unused_imports, clippy::all)] pub grammar,"/parser/grammar.rs");
 
 type LalrpopError = lalrpop_util::ParseError<Position, TokenKind, LexError>;
 
@@ -53,7 +53,7 @@ impl From<LalrpopError> for Error {
                 token: (loc, kind, _),
             } => Error {
                 kind: ErrorKind::ExtraToken(kind),
-                loc: loc,
+                loc,
             },
             lalrpop_util::ParseError::InvalidToken { location } => Error {
                 kind: ErrorKind::InvalidToken,
@@ -68,13 +68,13 @@ impl From<LalrpopError> for Error {
                 expected,
             } => Error {
                 kind: ErrorKind::UnrecognizedToken(kind, expected),
-                loc: loc,
+                loc,
             },
             lalrpop_util::ParseError::User { error } => {
                 let loc = error.meta.cursor;
                 Error {
                     kind: ErrorKind::Lexical(error),
-                    loc: loc,
+                    loc,
                 }
             }
         }

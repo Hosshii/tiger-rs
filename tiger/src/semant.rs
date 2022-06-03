@@ -995,6 +995,7 @@ impl Env<EnvEntry> {
 
 #[derive(Debug)]
 pub struct ExprType {
+    #[allow(dead_code)]
     expr: TransExpr,
     ty: CompleteType,
 }
