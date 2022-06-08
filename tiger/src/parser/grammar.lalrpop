@@ -45,7 +45,7 @@ UnmatchedExprType: ast::Expr = {
 
     <l:@L> "while" <e1:Expr> "do" <e2:UnmatchedExpr> <r:@R> => ast::Expr::While(Box::new(e1), Box::new(e2), (l, r)),
     <l:@L> "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:UnmatchedExpr> <r:@R> => {
-        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
+        ast::Expr::For(id, true, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
     },
 }
 
@@ -65,7 +65,7 @@ MatchedExprType: ast::Expr = {
 
     <l:@L> "while" <e1:Expr> "do" <e2:MatchedExpr> <r:@R> => ast::Expr::While(Box::new(e1), Box::new(e2), (l, r)),
     <l:@L> "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedExpr> <r:@R> => {
-        ast::Expr::For(id, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
+        ast::Expr::For(id, true, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
     },
 }
 
@@ -151,9 +151,9 @@ TypeFields: ast::TypeFields = {
 NonZeroTypeFields: ast::TypeFields = {
     <l:@L> <i1:Ident> ":" <i2:TypeIdent> <r:@R> <f2:("," @L Ident ":" TypeIdent @R)*> => {
         let mut fields = Vec::new();
-        fields.push(ast::TypeField {id: i1, type_id: i2, pos: (l, r)});
+        fields.push(ast::TypeField {id: i1, is_escape: true, type_id: i2, pos: (l, r)});
         for (_, l2, id, _, type_id, r2) in f2 {
-            fields.push(ast::TypeField {id: id, type_id: type_id, pos: (l2, r2)});
+            fields.push(ast::TypeField {id: id, is_escape: true, type_id: type_id, pos: (l2, r2)});
         }
         fields
     }
@@ -162,7 +162,7 @@ NonZeroTypeFields: ast::TypeFields = {
 VarDecl: ast::VarDecl = {
     <l:@L> "var" <id:Ident> <type_id:(":" TypeIdent)?> ":=" <e:Expr> <r:@R> => {
         let type_id = type_id.map(|v|v.1);
-        ast::VarDecl(id, type_id, e, (l, r))
+        ast::VarDecl(id, true, type_id, e, (l, r))
     } 
 }
 

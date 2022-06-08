@@ -39,12 +39,19 @@ pub type TypeFields = Vec<TypeField>;
 #[derive(Debug, PartialEq, Eq)]
 pub struct TypeField {
     pub id: Ident,
+    pub is_escape: bool,
     pub type_id: TypeIdent,
     pub pos: Positions,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct VarDecl(pub Ident, pub Option<TypeIdent>, pub Expr, pub Positions);
+pub struct VarDecl(
+    pub Ident,
+    pub bool,
+    pub Option<TypeIdent>,
+    pub Expr,
+    pub Positions,
+);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FuncDecl {
@@ -85,7 +92,7 @@ pub enum Expr {
     Assign(LValue, Box<Expr>, Positions),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>, Positions),
     While(Box<Expr>, Box<Expr>, Positions),
-    For(Ident, Box<Expr>, Box<Expr>, Box<Expr>, Positions),
+    For(Ident, bool, Box<Expr>, Box<Expr>, Box<Expr>, Positions),
     Break(Positions),
     Let(Decls, Vec<Expr>, Positions),
 }
@@ -106,7 +113,7 @@ impl Expr {
             Expr::Assign(_, _, pos) => *pos,
             Expr::If(_, _, _, pos) => *pos,
             Expr::While(_, _, pos) => *pos,
-            Expr::For(_, _, _, _, pos) => *pos,
+            Expr::For(_, _, _, _, _, pos) => *pos,
             Expr::Break(pos) => *pos,
             Expr::Let(_, _, pos) => *pos,
         }

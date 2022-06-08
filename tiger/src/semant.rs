@@ -332,7 +332,7 @@ impl Semant {
 
                 Ok(())
             }
-            Decl::Var(VarDecl(id, ty, expr, pos)) => {
+            Decl::Var(VarDecl(id, _, ty, expr, pos)) => {
                 let sym = Symbol::from(id);
                 let ExprType { ty: expr_ty, .. } = self.trans_expr(expr)?;
 
@@ -776,7 +776,7 @@ impl Semant {
                 })
             }),
 
-            AstExpr::For(id, expr1, expr2, then, _) => self.new_scope(|_self| {
+            AstExpr::For(id, _, expr1, expr2, then, _) => self.new_scope(|_self| {
                 _self.new_break_scope(|_self| {
                     let sym = Symbol::from(id);
                     _self.var_env.enter(
