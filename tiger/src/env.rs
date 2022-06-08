@@ -62,6 +62,10 @@ impl<T> EnvTable<T> {
         self.inner.get(&sym).and_then(|v| v.last())
     }
 
+    fn look_mut(&mut self, sym: Symbol) -> Option<&mut T> {
+        self.inner.get_mut(&sym).and_then(|v| v.last_mut())
+    }
+
     fn remove(&mut self, sym: Symbol) {
         if let Some(bucket) = self.inner.get_mut(&sym) {
             bucket.pop();
@@ -72,7 +76,7 @@ impl<T> EnvTable<T> {
     }
 }
 
-/// Correspond `Symbol` to `T`
+/// Maps `Symbol` to `T`
 pub struct Env<T> {
     inner: EnvTable<T>,
     scope_stack: Stack<Symbol>,
@@ -103,6 +107,10 @@ impl<T> Env<T> {
     /// If there are more than two bindings, the latest (last of the bindings that have not yet been deleted) added binding is returned.
     pub fn look(&self, sym: Symbol) -> Option<&T> {
         self.inner.look(sym)
+    }
+
+    pub fn look_mut(&mut self, sym: Symbol) -> Option<&mut T> {
+        self.inner.look_mut(sym)
     }
 
     /// Create new scope.
