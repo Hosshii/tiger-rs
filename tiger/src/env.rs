@@ -113,6 +113,17 @@ impl<T> Env<T> {
         self.inner.look_mut(sym)
     }
 
+    /// Create a new scope, then call `f`, and finally destroy scope.
+    pub fn new_scope<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        self.begin_scope();
+        let r = f(self);
+        self.end_scope();
+        r
+    }
+
     /// Create new scope.
     /// After this operation, the bindings with the same name are shadowed.
     pub fn begin_scope(&mut self) {
