@@ -727,7 +727,12 @@ impl Semant {
                 }
             }
 
-            AstExpr::If(cond, then, els, _) => {
+            AstExpr::If {
+                cond,
+                then,
+                els,
+                pos: _,
+            } => {
                 let cond_pos = cond.pos();
                 self.check_type(*cond, (CompleteType::Int,), cond_pos)?;
 
@@ -776,7 +781,14 @@ impl Semant {
                 })
             }),
 
-            AstExpr::For(id, _, expr1, expr2, then, _) => self.new_scope(|_self| {
+            AstExpr::For {
+                id,
+                is_escape: _,
+                from: expr1,
+                to: expr2,
+                then,
+                pos: _,
+            } => self.new_scope(|_self| {
                 _self.new_break_scope(|_self| {
                     let sym = Symbol::from(id);
                     _self.var_env.enter(

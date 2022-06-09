@@ -105,7 +105,12 @@ where
                 self.traverse_var(depth, lvalue);
                 self.traverse_expr(depth, expr);
             }
-            Expr::If(cond, then, els, _) => {
+            Expr::If {
+                cond,
+                then,
+                els,
+                pos: _,
+            } => {
                 self.traverse_expr(depth, cond);
                 self.traverse_expr(depth, then);
                 if let Some(els) = els {
@@ -116,7 +121,14 @@ where
                 self.traverse_expr(depth, cond);
                 self.traverse_expr(depth, then);
             }
-            Expr::For(ref id, is_escape, from, to, then, _) => self.new_scope(|_self| {
+            Expr::For {
+                ref id,
+                is_escape,
+                from,
+                to,
+                then,
+                pos: _,
+            } => self.new_scope(|_self| {
                 let sym = Symbol::from(id);
                 _self.esc_env.enter(sym, (depth, is_escape));
                 _self.traverse_expr(depth, from);

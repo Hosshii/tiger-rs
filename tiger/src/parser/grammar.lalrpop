@@ -22,12 +22,12 @@ UnmatchedExpr: ast::Expr = {
 }
 
 MatchedIf: ast::Expr = {
-    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> <r:@R> => ast::Expr::If(Box::new(e1), Box::new(e2), Some(Box::new(e3)), (l, r)),
+    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:MatchedExpr> <r:@R> => ast::Expr::If{cond: Box::new(e1), then: Box::new(e2), els: Some(Box::new(e3)), pos: (l, r)},
 }
 
 UnmatchedIf: ast::Expr = {
-    <l:@L> "if" <e1:Expr> "then" <e2:Expr> <r:@R> => ast::Expr::If(Box::new(e1), Box::new(e2), None, (l, r)),
-    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> <r:@R> => ast::Expr::If(Box::new(e1), Box::new(e2), Some(Box::new(e3)), (l, r)),
+    <l:@L> "if" <e1:Expr> "then" <e2:Expr> <r:@R> => ast::Expr::If{cond: Box::new(e1), then: Box::new(e2), els: None, pos: (l, r)},
+    <l:@L> "if" <e1:Expr> "then" <e2:MatchedExpr> "else" <e3:UnmatchedExpr> <r:@R> => ast::Expr::If{cond: Box::new(e1), then: Box::new(e2), els: Some(Box::new(e3)), pos: (l, r)},
 }
 
 UnmatchedExprType: ast::Expr = {
@@ -45,7 +45,7 @@ UnmatchedExprType: ast::Expr = {
 
     <l:@L> "while" <e1:Expr> "do" <e2:UnmatchedExpr> <r:@R> => ast::Expr::While(Box::new(e1), Box::new(e2), (l, r)),
     <l:@L> "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:UnmatchedExpr> <r:@R> => {
-        ast::Expr::For(id, false, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
+        ast::Expr::For{id, is_escape: false, from: Box::new(e1), to: Box::new(e2), then: Box::new(e3), pos: (l, r)}
     },
 }
 
@@ -65,7 +65,7 @@ MatchedExprType: ast::Expr = {
 
     <l:@L> "while" <e1:Expr> "do" <e2:MatchedExpr> <r:@R> => ast::Expr::While(Box::new(e1), Box::new(e2), (l, r)),
     <l:@L> "for" <id:Ident> ":=" <e1:Expr> "to" <e2:Expr> "do" <e3:MatchedExpr> <r:@R> => {
-        ast::Expr::For(id, false, Box::new(e1), Box::new(e2), Box::new(e3), (l, r))
+        ast::Expr::For{id, is_escape: false, from: Box::new(e1), to: Box::new(e2), then: Box::new(e3), pos: (l, r)}
     },
 }
 
