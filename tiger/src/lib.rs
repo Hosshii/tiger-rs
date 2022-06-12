@@ -8,5 +8,5 @@ mod position;
 pub mod semant;
 pub mod symbol;
 pub mod temp;
-mod translate;
+pub mod translate;
 pub mod types;
