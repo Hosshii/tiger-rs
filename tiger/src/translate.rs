@@ -53,7 +53,7 @@ impl<F: Frame> Translate for Translator<F> {
             .collect()
     }
 
-    fn alloc_local(level: Self::Level, is_escape: bool) -> Self::Access {
+    fn alloc_local(mut level: Self::Level, is_escape: bool) -> Self::Access {
         let frame = level.frame.alloc_local(is_escape);
         (level, frame)
     }

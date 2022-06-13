@@ -9,5 +9,5 @@ pub trait Frame: Clone {
     fn new(name: Label, formals: Vec<bool>) -> Self;
     fn name(&self) -> &Label;
     fn formals(&self) -> &[Self::Access];
-    fn alloc_local(&self, is_escape: bool) -> Self::Access;
+    fn alloc_local(&mut self, is_escape: bool) -> Self::Access;
 }

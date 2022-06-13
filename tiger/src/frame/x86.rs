@@ -1,27 +1,50 @@
+use crate::temp::{Label, Temp};
+
 use super::Frame;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct X86 {}
+pub struct X86 {
+    name: Label,
+    formals: Vec<Access>,
+    pointer: i64,
+}
+
+const PTR_SIZE: i64 = 8;
 
 impl Frame for X86 {
     type Access = Access;
 
-    fn new(name: crate::temp::Label, formals: Vec<bool>) -> Self {
-        todo!()
+    fn new(name: Label, formals: Vec<bool>) -> Self {
+        let mut frame = Self {
+            name,
+            formals: vec![],
+            pointer: 0,
+        };
+        let formals = formals.into_iter().map(|v| frame.alloc_local(v)).collect();
+        frame.formals = formals;
+        frame
     }
 
-    fn name(&self) -> &crate::temp::Label {
-        todo!()
+    fn name(&self) -> &Label {
+        &self.name
     }
 
     fn formals(&self) -> &[Self::Access] {
-        todo!()
+        &self.formals
     }
 
-    fn alloc_local(&self, is_escape: bool) -> Self::Access {
-        todo!()
+    fn alloc_local(&mut self, is_escape: bool) -> Self::Access {
+        if is_escape {
+            self.pointer += PTR_SIZE;
+            Access::InFrame(self.pointer)
+        } else {
+            Access::InReg(Temp::new())
+        }
     }
 }
 
-#[derive(Clone)]
-pub struct Access {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Access {
+    InFrame(i64),
+    InReg(Temp),
+}
