@@ -380,7 +380,7 @@ impl<T: Translate> Semant<T> {
                     }
                 }
 
-                let access = T::alloc_local(parent_level, is_escape);
+                let access = T::alloc_local(parent_level.clone(), is_escape);
                 self.var_env
                     .enter(sym, EnvEntry::new_var(access, Type::Complete(expr_ty)));
 
@@ -453,7 +453,7 @@ impl<T: Translate> Semant<T> {
             self.new_scope(|_self| {
                 for (ty, f) in formals.into_iter().zip(func_decl.params.into_iter()) {
                     let sym = Symbol::from(f.id);
-                    let access = T::alloc_local(&level, f.is_escape);
+                    let access = T::alloc_local(level.clone(), f.is_escape);
                     _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
                 }
                 let ty = _self.trans_expr(func_decl.body, parent_level)?;
@@ -817,7 +817,7 @@ impl<T: Translate> Semant<T> {
             } => self.new_scope(|_self| {
                 _self.new_break_scope(|_self| {
                     let sym = Symbol::from(id);
-                    let access = T::alloc_local(parent_level, is_escape);
+                    let access = T::alloc_local(parent_level.clone(), is_escape);
                     _self.var_env.enter(
                         sym,
                         EnvEntry::new_var(access, Type::Complete(CompleteType::Int)),

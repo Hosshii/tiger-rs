@@ -1,5 +1,6 @@
 use super::Frame;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct X86 {}
 
 impl Frame for X86 {
