@@ -39,7 +39,12 @@ impl<F: Frame> Translate for Translator<F> {
         Level::outermost()
     }
 
-    fn new_level(parent: Self::Level, name: Label, formals: Vec<bool>) -> Self::Level {
+    fn new_level(parent: Self::Level, name: Label, mut formals: Vec<bool>) -> Self::Level {
+        // nested function
+        if parent.parent.is_some() {
+            // for static link
+            formals.push(true);
+        }
         let frame = F::new(name, formals);
         Level::new(parent, frame)
     }
