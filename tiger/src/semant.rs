@@ -386,90 +386,90 @@ impl<T: Translate> Semant<T> {
 
                 Ok(())
             }
-            Decl::Func(fn_decls) => self.trans_fn_decls(fn_decls, parent_level),
-        }
-    }
+            Decl::Func(fn_decls) => {
+                let mut header = vec![];
+                let mut seen = HashSet::new();
+                let mut levels = vec![];
+                for func_decl in fn_decls.iter() {
+                    // enter function defs
+                    let func_name = Symbol::from(&func_decl.name);
+                    let formals = func_decl
+                        .params
+                        .iter()
+                        .map(|f| {
+                            let ty_sym = Symbol::from(&f.type_id);
+                            match self.type_env.look(ty_sym) {
+                                Some(ty) => Ok(ty.clone()),
+                                None => Err(Error::new_undefined_item(f.pos, Item::Type, ty_sym)),
+                            }
+                        })
+                        .collect::<Result<Vec<_>>>()?;
 
-    fn trans_fn_decls(&mut self, func_decls: Vec<FuncDecl>, parent_level: &T::Level) -> Result<()> {
-        let mut header = vec![];
-        let mut seen = HashSet::new();
-        let mut levels = vec![];
-        for func_decl in func_decls.iter() {
-            // enter function defs
-            let func_name = Symbol::from(&func_decl.name);
-            let formals = func_decl
-                .params
-                .iter()
-                .map(|f| {
-                    let ty_sym = Symbol::from(&f.type_id);
-                    match self.type_env.look(ty_sym) {
-                        Some(ty) => Ok(ty.clone()),
-                        None => Err(Error::new_undefined_item(f.pos, Item::Type, ty_sym)),
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
+                    let formals_is_escape: Vec<_> =
+                        func_decl.params.iter().map(|p| p.is_escape).collect();
 
-            let formals_is_escape: Vec<_> = func_decl.params.iter().map(|p| p.is_escape).collect();
-
-            let ret_type = match &func_decl.ret_type {
-                Some(type_id) => {
-                    let ty_sym = Symbol::from(type_id);
-                    match self.type_env.look(ty_sym) {
-                        Some(t) => t.clone(),
-                        None => {
-                            return Err(Error::new_undefined_item(
-                                func_decl.pos,
-                                Item::Type,
-                                ty_sym,
-                            ));
+                    let ret_type = match &func_decl.ret_type {
+                        Some(type_id) => {
+                            let ty_sym = Symbol::from(type_id);
+                            match self.type_env.look(ty_sym) {
+                                Some(t) => t.clone(),
+                                None => {
+                                    return Err(Error::new_undefined_item(
+                                        func_decl.pos,
+                                        Item::Type,
+                                        ty_sym,
+                                    ));
+                                }
+                            }
                         }
+                        None => Type::Complete(CompleteType::Unit),
+                    };
+
+                    let label = Label::new();
+                    let level =
+                        T::new_level(parent_level.clone(), label.clone(), formals_is_escape);
+                    levels.push(level.clone());
+                    self.var_env.enter(
+                        func_name,
+                        EnvEntry::new_func(level, label, formals.clone(), ret_type.clone()),
+                    );
+                    header.push((formals, ret_type));
+                    if !seen.insert(func_name) {
+                        return Err(Error::new_same_name(Item::Func, func_name, func_decl.pos));
                     }
                 }
-                None => Type::Complete(CompleteType::Unit),
-            };
 
-            let label = Label::new();
-            let level = T::new_level(parent_level.clone(), label.clone(), formals_is_escape);
-            levels.push(level.clone());
-            self.var_env.enter(
-                func_name,
-                EnvEntry::new_func(level, label, formals.clone(), ret_type.clone()),
-            );
-            header.push((formals, ret_type));
-            if !seen.insert(func_name) {
-                return Err(Error::new_same_name(Item::Func, func_name, func_decl.pos));
+                assert_eq!(header.len(), fn_decls.len());
+
+                for ((func_decl, (formals, ret_type)), level) in fn_decls
+                    .into_iter()
+                    .zip(header.into_iter())
+                    .zip(levels.into_iter())
+                {
+                    // function body
+                    let ret_type = self.actual_ty(&ret_type, func_decl.pos)?.clone();
+                    self.new_scope(|_self| {
+                        for (ty, f) in formals.into_iter().zip(func_decl.params.into_iter()) {
+                            let sym = Symbol::from(f.id);
+                            let access = T::alloc_local(level.clone(), f.is_escape);
+                            _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
+                        }
+                        let ty = _self.trans_expr(func_decl.body, parent_level)?;
+                        if ty.ty != ret_type {
+                            Err(Error::new_unexpected_type(
+                                func_decl.pos,
+                                vec![ret_type],
+                                ty.ty,
+                            ))
+                        } else {
+                            Ok(ty)
+                        }
+                    })?;
+                }
+
+                Ok(())
             }
         }
-
-        assert_eq!(header.len(), func_decls.len());
-
-        for ((func_decl, (formals, ret_type)), level) in func_decls
-            .into_iter()
-            .zip(header.into_iter())
-            .zip(levels.into_iter())
-        {
-            // function body
-            let ret_type = self.actual_ty(&ret_type, func_decl.pos)?.clone();
-            self.new_scope(|_self| {
-                for (ty, f) in formals.into_iter().zip(func_decl.params.into_iter()) {
-                    let sym = Symbol::from(f.id);
-                    let access = T::alloc_local(level.clone(), f.is_escape);
-                    _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
-                }
-                let ty = _self.trans_expr(func_decl.body, parent_level)?;
-                if ty.ty != ret_type {
-                    Err(Error::new_unexpected_type(
-                        func_decl.pos,
-                        vec![ret_type],
-                        ty.ty,
-                    ))
-                } else {
-                    Ok(ty)
-                }
-            })?;
-        }
-
-        Ok(())
     }
 
     fn trans_expr(&mut self, expr: AstExpr, parent_level: &T::Level) -> Result<ExprType> {
