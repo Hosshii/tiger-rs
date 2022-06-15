@@ -225,12 +225,12 @@ impl<F: Frame> Semant<F> {
         expr: AstExpr,
         ty: U,
         pos: Positions,
-        parent_level: &Level<F>,
+        level: &Level<F>,
     ) -> Result<()>
     where
         U: TupleMatch<Item = CompleteType>,
     {
-        let ExprType { ty: got, .. } = self.trans_expr(expr, parent_level)?;
+        let ExprType { ty: got, .. } = self.trans_expr(expr, level)?;
 
         if ty.matches(&got) {
             Ok(())
@@ -473,9 +473,9 @@ impl<F: Frame> Semant<F> {
         }
     }
 
-    fn trans_expr(&mut self, expr: AstExpr, parent_level: &Level<F>) -> Result<ExprType> {
+    fn trans_expr(&mut self, expr: AstExpr, level: &Level<F>) -> Result<ExprType> {
         match expr {
-            AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue, parent_level),
+            AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue, level),
 
             AstExpr::Nil(_) => Ok(ExprType {
                 expr: TransExpr::new(),
@@ -486,7 +486,7 @@ impl<F: Frame> Semant<F> {
                 // TODO: refactor
                 let mut transed = exprs
                     .into_iter()
-                    .map(|e| self.trans_expr(e, parent_level))
+                    .map(|e| self.trans_expr(e, level))
                     .collect::<Result<Vec<_>>>()?;
 
                 let ty = match transed.pop() {
@@ -517,7 +517,7 @@ impl<F: Frame> Semant<F> {
                 // proceed trans_expr first for ownership reason.
                 let arg_iter = args
                     .into_iter()
-                    .map(|e| self.trans_expr(e, parent_level))
+                    .map(|e| self.trans_expr(e, level))
                     .collect::<Result<Vec<_>>>()?;
 
                 match self.var_env.look(sym) {
@@ -578,8 +578,8 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                self.check_type(*lhs, (CompleteType::Int,), pos, parent_level)?;
-                self.check_type(*rhs, (CompleteType::Int,), pos, parent_level)?;
+                self.check_type(*lhs, (CompleteType::Int,), pos, level)?;
+                self.check_type(*rhs, (CompleteType::Int,), pos, level)?;
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty: CompleteType::Int,
@@ -593,8 +593,8 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                let ExprType { ty: lhs_ty, .. } = self.trans_expr(*lhs, parent_level)?;
-                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*rhs, parent_level)?;
+                let ExprType { ty: lhs_ty, .. } = self.trans_expr(*lhs, level)?;
+                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*rhs, level)?;
                 match (lhs_ty, rhs_ty) {
                     (CompleteType::Int, CompleteType::Int)
                     | (CompleteType::String, CompleteType::String) => Ok(ExprType {
@@ -607,8 +607,8 @@ impl<F: Frame> Semant<F> {
 
             // compare two type
             AstExpr::Op(Operator::Eq | Operator::Neq, lhs, rhs, pos) => {
-                let ExprType { ty: lhs_ty, .. } = self.trans_expr(*lhs, parent_level)?;
-                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*rhs, parent_level)?;
+                let ExprType { ty: lhs_ty, .. } = self.trans_expr(*lhs, level)?;
+                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*rhs, level)?;
                 if lhs_ty.assignable(&rhs_ty) {
                     Ok(ExprType {
                         expr: TransExpr::new(),
@@ -620,7 +620,7 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Neg(e, _) => {
-                let ExprType { ty, .. } = self.trans_expr(*e, parent_level)?;
+                let ExprType { ty, .. } = self.trans_expr(*e, level)?;
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty,
@@ -660,7 +660,7 @@ impl<F: Frame> Semant<F> {
                                             let ExprType {
                                                 ty: actual_field_type,
                                                 ..
-                                            } = self.trans_expr(expr, parent_level)?;
+                                            } = self.trans_expr(expr, level)?;
 
                                             if !expected_field_type.assignable(&actual_field_type) {
                                                 return Err(Error::new_unexpected_type(
@@ -715,15 +715,10 @@ impl<F: Frame> Semant<F> {
                                 let arr_ty = self.actual_ty(&ty, pos)?.clone();
 
                                 let size_pos = size.pos();
-                                self.check_type(
-                                    *size,
-                                    (CompleteType::Int,),
-                                    size_pos,
-                                    parent_level,
-                                )?;
+                                self.check_type(*size, (CompleteType::Int,), size_pos, level)?;
 
                                 let init_pos = init.pos();
-                                self.check_type(*init, (arr_ty,), init_pos, parent_level)?;
+                                self.check_type(*init, (arr_ty,), init_pos, level)?;
 
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
@@ -742,8 +737,8 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Assign(lvalue, expr, pos) => {
-                let ExprType { ty: lhs_ty, .. } = self.trans_lvalue(lvalue, parent_level)?;
-                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*expr, parent_level)?;
+                let ExprType { ty: lhs_ty, .. } = self.trans_lvalue(lvalue, level)?;
+                let ExprType { ty: rhs_ty, .. } = self.trans_expr(*expr, level)?;
                 if lhs_ty == rhs_ty {
                     Ok(ExprType {
                         expr: TransExpr::new(),
@@ -761,14 +756,14 @@ impl<F: Frame> Semant<F> {
                 pos: _,
             } => {
                 let cond_pos = cond.pos();
-                self.check_type(*cond, (CompleteType::Int,), cond_pos, parent_level)?;
+                self.check_type(*cond, (CompleteType::Int,), cond_pos, level)?;
 
                 let then_pos = then.pos();
-                let ExprType { ty: then_ty, .. } = self.trans_expr(*then, parent_level)?;
+                let ExprType { ty: then_ty, .. } = self.trans_expr(*then, level)?;
                 match els {
                     Some(els) => {
                         let els_pos = els.pos();
-                        let ExprType { ty: else_ty, .. } = self.trans_expr(*els, parent_level)?;
+                        let ExprType { ty: else_ty, .. } = self.trans_expr(*els, level)?;
 
                         if !then_ty.assignable(&else_ty) {
                             Err(Error::new_unexpected_type(els_pos, vec![then_ty], else_ty))
@@ -798,9 +793,9 @@ impl<F: Frame> Semant<F> {
 
             AstExpr::While(cond, then, _) => self.new_break_scope(|_self| {
                 let cond_pos = cond.pos();
-                _self.check_type(*cond, (CompleteType::Int,), cond_pos, parent_level)?;
+                _self.check_type(*cond, (CompleteType::Int,), cond_pos, level)?;
                 let then_pos = then.pos();
-                _self.check_type(*then, (CompleteType::Unit,), then_pos, parent_level)?;
+                _self.check_type(*then, (CompleteType::Unit,), then_pos, level)?;
 
                 Ok(ExprType {
                     expr: TransExpr::new(),
@@ -818,20 +813,20 @@ impl<F: Frame> Semant<F> {
             } => self.new_scope(|_self| {
                 _self.new_break_scope(|_self| {
                     let sym = Symbol::from(id);
-                    let access = translate::alloc_local(parent_level.clone(), is_escape);
+                    let access = translate::alloc_local(level.clone(), is_escape);
                     _self.var_env.enter(
                         sym,
                         EnvEntry::new_var(access, Type::Complete(CompleteType::Int)),
                     );
 
                     let expr1_pos = expr1.pos();
-                    _self.check_type(*expr1, (CompleteType::Int,), expr1_pos, parent_level)?;
+                    _self.check_type(*expr1, (CompleteType::Int,), expr1_pos, level)?;
 
                     let expr2_pos = expr2.pos();
-                    _self.check_type(*expr2, (CompleteType::Int,), expr2_pos, parent_level)?;
+                    _self.check_type(*expr2, (CompleteType::Int,), expr2_pos, level)?;
 
                     let then_pos = then.pos();
-                    _self.check_type(*then, (CompleteType::Unit,), then_pos, parent_level)?;
+                    _self.check_type(*then, (CompleteType::Unit,), then_pos, level)?;
 
                     Ok(ExprType {
                         expr: TransExpr::new(),
@@ -853,10 +848,9 @@ impl<F: Frame> Semant<F> {
 
             AstExpr::Let(decls, exprs, pos) => self.new_scope(|_self| {
                 for decl in decls {
-                    _self.trans_decl(decl, parent_level)?;
+                    _self.trans_decl(decl, level)?;
                 }
-                let ExprType { ty, .. } =
-                    _self.trans_expr(AstExpr::Sequence(exprs, pos), parent_level)?;
+                let ExprType { ty, .. } = _self.trans_expr(AstExpr::Sequence(exprs, pos), level)?;
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty,
@@ -865,7 +859,7 @@ impl<F: Frame> Semant<F> {
         }
     }
 
-    fn trans_lvalue(&mut self, var: LValue, parent_level: &Level<F>) -> Result<ExprType> {
+    fn trans_lvalue(&mut self, var: LValue, level: &Level<F>) -> Result<ExprType> {
         match var {
             LValue::Var(id, pos) => {
                 let sym = Symbol::from(id);
@@ -873,7 +867,7 @@ impl<F: Frame> Semant<F> {
                     Some(EnvEntry::Var { access, ty }) => {
                         let ty = self.actual_ty(ty, pos)?;
                         Ok(ExprType {
-                            expr: translate::simple_var(access.clone(), parent_level.clone()),
+                            expr: translate::simple_var(access.clone(), level.clone()),
                             ty: ty.clone(),
                         })
                     }
@@ -882,7 +876,7 @@ impl<F: Frame> Semant<F> {
                 }
             }
             LValue::RecordField(lvar, id, pos) => {
-                let ExprType { ty, .. } = self.trans_lvalue(*lvar, parent_level)?;
+                let ExprType { ty, .. } = self.trans_lvalue(*lvar, level)?;
                 let sym = Symbol::from(id);
                 match ty {
                     CompleteType::Record { fields, unique } => {
@@ -910,12 +904,12 @@ impl<F: Frame> Semant<F> {
                 }
             }
             LValue::Array(lvar, expr, pos) => {
-                let ExprType { ty, .. } = self.trans_expr(*expr, parent_level)?;
+                let ExprType { ty, .. } = self.trans_expr(*expr, level)?;
                 if ty != CompleteType::Int {
                     return Err(Error::new_unexpected_type(pos, vec![CompleteType::Int], ty));
                 }
 
-                let ExprType { ty, .. } = self.trans_lvalue(*lvar, parent_level)?;
+                let ExprType { ty, .. } = self.trans_lvalue(*lvar, level)?;
                 match ty {
                     CompleteType::Array { ty, unique: _ } => {
                         let ty = self.actual_ty(&ty, pos)?;
