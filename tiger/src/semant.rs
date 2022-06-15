@@ -873,7 +873,7 @@ impl<F: Frame> Semant<F> {
                     Some(EnvEntry::Var { access, ty }) => {
                         let ty = self.actual_ty(ty, pos)?;
                         Ok(ExprType {
-                            expr: TransExpr::new(),
+                            expr: translate::simple_var(access.clone(), parent_level.clone()),
                             ty: ty.clone(),
                         })
                     }

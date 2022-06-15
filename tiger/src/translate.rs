@@ -1,7 +1,7 @@
-use std::{fmt::Debug, marker::PhantomData, sync::atomic::AtomicU32};
+use std::{fmt::Debug, sync::atomic::AtomicU32};
 
 use crate::{
-    frame::{Frame, X86 as X86Frame},
+    frame::Frame,
     ir::{Expr as IrExpr, RelOp, Stmt},
     temp::{Label, Temp},
 };
@@ -117,9 +117,27 @@ pub fn alloc_local<F: Frame>(mut level: Level<F>, is_escape: bool) -> Access<F> 
     (level, frame)
 }
 
+pub fn simple_var<F: Frame>(access: Access<F>, mut fn_level: Level<F>) -> Expr {
+    let mut mem = F::exp(access.1, IrExpr::Temp(F::fp()));
+    let var_level = access.0;
+
+    while var_level != fn_level {
+        fn_level = *fn_level.parent.expect("function should have parent level");
+        let access = fn_level
+            .frame
+            .formals()
+            .last()
+            .expect("static link")
+            .clone();
+        mem = F::exp(access, mem);
+    }
+
+    Expr::Ex(mem)
+}
+
 static LEVEL_GLOBAL: AtomicU32 = AtomicU32::new(1);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct Level<F: Frame> {
     current: u32, // unique value
     frame: F,
@@ -143,5 +161,11 @@ impl<F: Frame> Level<F> {
             frame: F::new(Label::new(), vec![]),
             parent: None,
         }
+    }
+}
+
+impl<F: Frame> PartialEq for Level<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.current == other.current
     }
 }
