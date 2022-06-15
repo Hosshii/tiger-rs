@@ -5,14 +5,12 @@ use std::{
 
 use crate::{
     env::Env,
-    frame::X86,
-    parser::ast::{
-        Decl, Expr as AstExpr, FuncDecl, LValue, Operator, RecordField, Type as AstType, VarDecl,
-    },
+    frame::{Frame, X86},
+    parser::ast::{Decl, Expr as AstExpr, LValue, Operator, RecordField, Type as AstType, VarDecl},
     position::Positions,
     symbol::Symbol,
     temp::Label,
-    translate::{Expr as TransExpr, Translate, Translator},
+    translate::{self, Access, Expr as TransExpr, Level},
     types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
 };
 use thiserror::Error;
@@ -181,20 +179,20 @@ impl Display for Item {
     }
 }
 
-pub struct Semant<T: Translate> {
-    var_env: Env<EnvEntry<T>>, // var and func env
+pub struct Semant<F: Frame> {
+    var_env: Env<EnvEntry<F>>, // var and func env
     type_env: Env<Type>,       // type env
     break_count: u32, // 0 means not inside break or while. greater than 1 means inside break or while
 }
 
-impl Semant<Translator<X86>> {
+impl Semant<X86> {
     pub fn new_x86() -> Self {
         Self::new_with_base()
     }
 }
 
-impl<T: Translate> Semant<T> {
-    pub fn new(var_base: Env<EnvEntry<T>>, type_base: Env<Type>) -> Self {
+impl<F: Frame> Semant<F> {
+    pub fn new(var_base: Env<EnvEntry<F>>, type_base: Env<Type>) -> Self {
         Self {
             var_env: var_base,
             type_env: type_base,
@@ -219,7 +217,7 @@ impl<T: Translate> Semant<T> {
     }
 
     pub fn trans_prog(&mut self, expr: AstExpr) -> Result<ExprType> {
-        self.trans_expr(expr, &T::outermost())
+        self.trans_expr(expr, &Level::outermost())
     }
 
     fn check_type<U>(
@@ -227,7 +225,7 @@ impl<T: Translate> Semant<T> {
         expr: AstExpr,
         ty: U,
         pos: Positions,
-        parent_level: &T::Level,
+        parent_level: &Level<F>,
     ) -> Result<()>
     where
         U: TupleMatch<Item = CompleteType>,
@@ -293,21 +291,21 @@ impl<T: Translate> Semant<T> {
         self.break_count > 0
     }
 
-    fn new_scope<F>(&mut self, f: F) -> Result<ExprType>
+    fn new_scope<G>(&mut self, g: G) -> Result<ExprType>
     where
-        F: FnOnce(&mut Self) -> Result<ExprType>,
+        G: FnOnce(&mut Self) -> Result<ExprType>,
     {
         self.type_env.begin_scope();
         self.var_env.begin_scope();
-        let result = f(self);
+        let result = g(self);
         self.type_env.end_scope();
         self.var_env.end_scope();
         result
     }
 
-    fn new_break_scope<F>(&mut self, f: F) -> Result<ExprType>
+    fn new_break_scope<G>(&mut self, f: G) -> Result<ExprType>
     where
-        F: FnOnce(&mut Self) -> Result<ExprType>,
+        G: FnOnce(&mut Self) -> Result<ExprType>,
     {
         self.break_count += 1;
         let result = f(self);
@@ -315,7 +313,7 @@ impl<T: Translate> Semant<T> {
         result
     }
 
-    fn trans_decl(&mut self, decl: Decl, parent_level: &T::Level) -> Result<()> {
+    fn trans_decl(&mut self, decl: Decl, parent_level: &Level<F>) -> Result<()> {
         match decl {
             Decl::Type(type_decls) => {
                 let mut seen = HashSet::new();
@@ -380,7 +378,7 @@ impl<T: Translate> Semant<T> {
                     }
                 }
 
-                let access = T::alloc_local(parent_level.clone(), is_escape);
+                let access = translate::alloc_local(parent_level.clone(), is_escape);
                 self.var_env
                     .enter(sym, EnvEntry::new_var(access, Type::Complete(expr_ty)));
 
@@ -426,8 +424,11 @@ impl<T: Translate> Semant<T> {
                     };
 
                     let label = Label::new();
-                    let level =
-                        T::new_level(parent_level.clone(), label.clone(), formals_is_escape);
+                    let level = translate::new_level(
+                        parent_level.clone(),
+                        label.clone(),
+                        formals_is_escape,
+                    );
                     levels.push(level.clone());
                     self.var_env.enter(
                         func_name,
@@ -451,7 +452,7 @@ impl<T: Translate> Semant<T> {
                     self.new_scope(|_self| {
                         for (ty, f) in formals.into_iter().zip(func_decl.params.into_iter()) {
                             let sym = Symbol::from(f.id);
-                            let access = T::alloc_local(level.clone(), f.is_escape);
+                            let access = translate::alloc_local(level.clone(), f.is_escape);
                             _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
                         }
                         let ty = _self.trans_expr(func_decl.body, parent_level)?;
@@ -472,7 +473,7 @@ impl<T: Translate> Semant<T> {
         }
     }
 
-    fn trans_expr(&mut self, expr: AstExpr, parent_level: &T::Level) -> Result<ExprType> {
+    fn trans_expr(&mut self, expr: AstExpr, parent_level: &Level<F>) -> Result<ExprType> {
         match expr {
             AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue, parent_level),
 
@@ -817,7 +818,7 @@ impl<T: Translate> Semant<T> {
             } => self.new_scope(|_self| {
                 _self.new_break_scope(|_self| {
                     let sym = Symbol::from(id);
-                    let access = T::alloc_local(parent_level.clone(), is_escape);
+                    let access = translate::alloc_local(parent_level.clone(), is_escape);
                     _self.var_env.enter(
                         sym,
                         EnvEntry::new_var(access, Type::Complete(CompleteType::Int)),
@@ -864,7 +865,7 @@ impl<T: Translate> Semant<T> {
         }
     }
 
-    fn trans_lvalue(&mut self, var: LValue, parent_level: &T::Level) -> Result<ExprType> {
+    fn trans_lvalue(&mut self, var: LValue, parent_level: &Level<F>) -> Result<ExprType> {
         match var {
             LValue::Var(id, pos) => {
                 let sym = Symbol::from(id);
@@ -984,25 +985,25 @@ impl<T: Translate> Semant<T> {
 }
 
 /// Variable and function entry
-pub enum EnvEntry<T: Translate> {
+pub enum EnvEntry<F: Frame> {
     Var {
-        access: T::Access,
+        access: Access<F>,
         ty: Type,
     },
     Func {
-        level: T::Level,
+        level: Level<F>,
         label: Label,
         formals: Vec<Type>,
         result: Type,
     },
 }
 
-impl<T: Translate> EnvEntry<T> {
-    pub fn new_var(access: T::Access, ty: Type) -> Self {
+impl<F: Frame> EnvEntry<F> {
+    pub fn new_var(access: Access<F>, ty: Type) -> Self {
         Self::Var { access, ty }
     }
 
-    pub fn new_func(level: T::Level, label: Label, formals: Vec<Type>, result: Type) -> Self {
+    pub fn new_func(level: Level<F>, label: Label, formals: Vec<Type>, result: Type) -> Self {
         Self::Func {
             level,
             label,
@@ -1026,7 +1027,7 @@ impl Env<Type> {
     }
 }
 
-impl<T: Translate> Env<EnvEntry<T>> {
+impl<F: Frame> Env<EnvEntry<F>> {
     pub fn with_base_var(mut self) -> Self {
         use self::CompleteType::*;
         let base_func = vec![
@@ -1049,7 +1050,7 @@ impl<T: Translate> Env<EnvEntry<T>> {
             let result = Type::Complete(ret_type);
             self.enter(
                 sym,
-                EnvEntry::new_func(T::outermost(), label, formals, result),
+                EnvEntry::new_func(Level::outermost(), label, formals, result),
             );
         }
 
@@ -1149,13 +1150,12 @@ mod tests {
             use crate::{
                 frame::X86,
                 parser::{self, ast::Program},
-                translate::Translator,
             };
             use std::fs::File;
             let file = File::open($path).unwrap();
             let ast = parser::parse($path, file).unwrap();
 
-            let mut semantic_analyzer = Semant::<Translator<X86>>::new_with_base();
+            let mut semantic_analyzer = Semant::<X86>::new_with_base();
 
             match ast {
                 Program::Expr(e) => match semantic_analyzer.trans_prog(e) {

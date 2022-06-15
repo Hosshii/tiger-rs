@@ -6,17 +6,6 @@ use crate::{
     temp::{Label, Temp},
 };
 
-pub trait Translate {
-    type Level: Clone;
-    type Access: Clone;
-
-    fn outermost() -> Self::Level;
-    fn new_level(parent: Self::Level, name: Label, formals: Vec<bool>) -> Self::Level;
-
-    fn formals(level: Self::Level) -> Vec<Self::Access>;
-    fn alloc_local(level: Self::Level, is_escape: bool) -> Self::Access;
-}
-
 type CxFn<'a> = dyn (FnOnce(Label, Label) -> Stmt) + 'a;
 
 pub enum Expr {
@@ -102,43 +91,30 @@ impl Debug for Expr {
     }
 }
 
-pub struct X86(Translator<X86Frame>);
+pub type Access<F> = (Level<F>, <F as Frame>::Access);
 
-pub struct Translator<F: Frame> {
-    _phantomdata: PhantomData<fn() -> F>,
+pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>) -> Level<F> {
+    // nested function
+    if parent.parent.is_some() {
+        // for static link
+        formals.push(true);
+    }
+    let frame = F::new(name, formals);
+    Level::new(parent, frame)
 }
 
-impl<F: Frame> Translate for Translator<F> {
-    type Level = Level<F>;
-    type Access = (Self::Level, F::Access);
+pub fn formals<F: Frame>(level: Level<F>) -> Vec<Access<F>> {
+    level
+        .frame
+        .formals()
+        .iter()
+        .map(|access| (level.clone(), access.clone()))
+        .collect()
+}
 
-    fn outermost() -> Self::Level {
-        Level::outermost()
-    }
-
-    fn new_level(parent: Self::Level, name: Label, mut formals: Vec<bool>) -> Self::Level {
-        // nested function
-        if parent.parent.is_some() {
-            // for static link
-            formals.push(true);
-        }
-        let frame = F::new(name, formals);
-        Level::new(parent, frame)
-    }
-
-    fn formals(level: Self::Level) -> Vec<Self::Access> {
-        level
-            .frame
-            .formals()
-            .iter()
-            .map(|access| (level.clone(), access.clone()))
-            .collect()
-    }
-
-    fn alloc_local(mut level: Self::Level, is_escape: bool) -> Self::Access {
-        let frame = level.frame.alloc_local(is_escape);
-        (level, frame)
-    }
+pub fn alloc_local<F: Frame>(mut level: Level<F>, is_escape: bool) -> Access<F> {
+    let frame = level.frame.alloc_local(is_escape);
+    (level, frame)
 }
 
 static LEVEL_GLOBAL: AtomicU32 = AtomicU32::new(1);
