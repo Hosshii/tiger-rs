@@ -876,21 +876,24 @@ impl<F: Frame> Semant<F> {
                 }
             }
             LValue::RecordField(lvar, id, pos) => {
-                let ExprType { ty, .. } = self.trans_lvalue(*lvar, level)?;
+                let ExprType { ty, expr } = self.trans_lvalue(*lvar, level)?;
                 let sym = Symbol::from(id);
                 match ty {
                     CompleteType::Record { fields, unique } => {
-                        let field = fields.iter().find(|v| v.0 == sym);
+                        let field = fields
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (_sym, _))| _sym == &sym);
                         match field {
                             None => Err(Error::new_missing_field(
                                 pos,
                                 CompleteType::Record { fields, unique },
                                 sym,
                             )),
-                            Some((_, ty)) => {
+                            Some((field_index, (_, ty))) => {
                                 let ty = self.actual_ty(ty, pos)?;
                                 Ok(ExprType {
-                                    expr: TransExpr::new(),
+                                    expr: translate::record_field::<F>(expr, field_index),
                                     ty: ty.clone(),
                                 })
                             }
@@ -904,17 +907,20 @@ impl<F: Frame> Semant<F> {
                 }
             }
             LValue::Array(lvar, expr, pos) => {
-                let ExprType { ty, .. } = self.trans_expr(*expr, level)?;
+                let ExprType {
+                    ty,
+                    expr: subscript,
+                } = self.trans_expr(*expr, level)?;
                 if ty != CompleteType::Int {
                     return Err(Error::new_unexpected_type(pos, vec![CompleteType::Int], ty));
                 }
 
-                let ExprType { ty, .. } = self.trans_lvalue(*lvar, level)?;
+                let ExprType { ty, expr: var } = self.trans_lvalue(*lvar, level)?;
                 match ty {
                     CompleteType::Array { ty, unique: _ } => {
                         let ty = self.actual_ty(&ty, pos)?;
                         Ok(ExprType {
-                            expr: TransExpr::new(),
+                            expr: translate::array_subscript::<F>(var, subscript),
                             ty: ty.clone(),
                         })
                     }

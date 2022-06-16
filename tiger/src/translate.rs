@@ -2,7 +2,7 @@ use std::{fmt::Debug, sync::atomic::AtomicU32};
 
 use crate::{
     frame::Frame,
-    ir::{Expr as IrExpr, RelOp, Stmt},
+    ir::{BinOp, Expr as IrExpr, RelOp, Stmt},
     temp::{Label, Temp},
 };
 
@@ -133,6 +133,32 @@ pub fn simple_var<F: Frame>(access: Access<F>, mut fn_level: Level<F>) -> Expr {
     }
 
     Expr::Ex(mem)
+}
+
+pub fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
+    Expr::Ex(IrExpr::Mem(
+        Box::new(IrExpr::BinOp(
+            BinOp::Plus,
+            Box::new(var.unwrap_ex()),
+            Box::new(IrExpr::Const(F::WORD_SIZE as i64 * field_index as i64)),
+        )),
+        F::WORD_SIZE,
+    ))
+}
+
+pub fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
+    Expr::Ex(IrExpr::Mem(
+        Box::new(IrExpr::BinOp(
+            BinOp::Plus,
+            Box::new(var.unwrap_ex()),
+            Box::new(IrExpr::BinOp(
+                BinOp::Mul,
+                Box::new(subscript.unwrap_ex()),
+                Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
+            )),
+        )),
+        F::WORD_SIZE,
+    ))
 }
 
 static LEVEL_GLOBAL: AtomicU32 = AtomicU32::new(1);
