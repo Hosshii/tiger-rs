@@ -2,7 +2,7 @@ use crate::temp::{Label, Temp};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
-    Const(i64),
+    Const(i64), // TODO: maybe u64 is better
     Name(Label),
     Temp(Temp),
     BinOp(BinOp, Box<Expr>, Box<Expr>),

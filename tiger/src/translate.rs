@@ -1,8 +1,9 @@
-use std::{fmt::Debug, sync::atomic::AtomicU32};
+use std::{collections::HashMap, fmt::Debug, sync::atomic::AtomicU32};
 
 use crate::{
     frame::Frame,
     ir::{BinOp, Expr as IrExpr, RelOp, Stmt},
+    symbol::Symbol,
     temp::{Label, Temp},
 };
 
@@ -117,21 +118,10 @@ pub fn alloc_local<F: Frame>(mut level: Level<F>, is_escape: bool) -> Access<F> 
     (level, frame)
 }
 
+// `access` in which variable is defined and `fn_level` in which variable is used.
 pub fn simple_var<F: Frame>(access: Access<F>, mut fn_level: Level<F>) -> Expr {
-    let mut mem = F::exp(access.1, IrExpr::Temp(F::fp()));
-    let var_level = access.0;
-
-    while var_level != fn_level {
-        fn_level = *fn_level.parent.expect("function should have parent level");
-        let access = fn_level
-            .frame
-            .formals()
-            .last()
-            .expect("static link")
-            .clone();
-        mem = F::exp(access, mem);
-    }
-
+    let access_link = calc_static_link(fn_level, access.0);
+    let mem = F::exp(access.1, access_link);
     Expr::Ex(mem)
 }
 
@@ -159,6 +149,91 @@ pub fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
         )),
         F::WORD_SIZE,
     ))
+}
+
+pub fn num(v: i64) -> Expr {
+    Expr::Ex(IrExpr::Const(v))
+}
+
+/// The length of argument must be greater than 1.
+pub fn sequence(mut exprs: Vec<Expr>) -> Expr {
+    assert!(exprs.len() > 1);
+
+    let last = exprs.pop().unwrap();
+    let last_1 = exprs.pop().unwrap();
+
+    let stmt =
+        exprs
+            .into_iter()
+            .rev()
+            .fold(Stmt::Expr(Box::new(last_1.unwrap_ex())), |acc, cur| {
+                Stmt::Seq(
+                    Box::new(Stmt::Expr(Box::new(cur.unwrap_ex()))),
+                    Box::new(acc),
+                )
+            });
+
+    let e_seq = IrExpr::ESeq(Box::new(stmt), Box::new(last.unwrap_ex()));
+
+    Expr::Ex(e_seq)
+}
+
+pub fn fn_call<F: Frame>(
+    fn_label: Label,
+    fn_level: Level<F>,
+    cur_level: Level<F>,
+    args: Vec<Expr>,
+) -> Expr {
+    // recursion
+    let link = calc_static_link(cur_level, *fn_level.parent.expect("fn must have parent"));
+    let mut args: Vec<_> = args.into_iter().map(|v| v.unwrap_ex()).collect();
+    args.push(link);
+    Expr::Ex(IrExpr::Call(Box::new(IrExpr::Name(fn_label)), args))
+}
+
+/// Calculate static link that is used by `cur_level` to access `ancestor_level`.
+/// `ancestor_level` must be ancestor of `cur_level`.
+fn calc_static_link<F: Frame>(mut cur_level: Level<F>, ancestor_level: Level<F>) -> IrExpr {
+    let mut link = IrExpr::Temp(F::fp());
+    while cur_level != ancestor_level {
+        let link_access = cur_level.frame.formals().last().expect("static link");
+        link = F::exp(link_access.clone(), link);
+        cur_level = *(cur_level
+            .parent
+            .expect("cur_level is not descendants of parent"));
+    }
+    link
+}
+
+pub struct Translator {
+    string_literal_map: HashMap<Symbol, Label>,
+}
+
+impl Translator {
+    pub fn new() -> Self {
+        Self {
+            string_literal_map: HashMap::new(),
+        }
+    }
+
+    pub fn string_literal(&mut self, string: String) -> Expr {
+        let sym = Symbol::new(string);
+        let label = match self.string_literal_map.get(&sym) {
+            Some(label) => label.clone(),
+            None => {
+                let label = Label::new();
+                self.string_literal_map.insert(sym, label.clone());
+                label
+            }
+        };
+        Expr::Nx(Stmt::Label(label))
+    }
+}
+
+impl Default for Translator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 static LEVEL_GLOBAL: AtomicU32 = AtomicU32::new(1);

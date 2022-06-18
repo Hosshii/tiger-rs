@@ -31,6 +31,6 @@ pub trait Frame: Clone {
     fn alloc_local(&mut self, is_escape: bool) -> Self::Access;
 
     /// Convert an `Access` to IR Tree.
-    /// The second argument means stack address in which `Access` is allocated.
+    /// The second argument means frame pointer in which `Access` is allocated.
     fn exp(access: Self::Access, stack_addr: Expr) -> Expr;
 }

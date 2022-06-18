@@ -10,7 +10,7 @@ use crate::{
     position::Positions,
     symbol::Symbol,
     temp::Label,
-    translate::{self, Access, Expr as TransExpr, Level},
+    translate::{self, Access, Expr as TransExpr, Level, Translator},
     types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
 };
 use thiserror::Error;
@@ -183,6 +183,7 @@ pub struct Semant<F: Frame> {
     var_env: Env<EnvEntry<F>>, // var and func env
     type_env: Env<Type>,       // type env
     break_count: u32, // 0 means not inside break or while. greater than 1 means inside break or while
+    translator: Translator,
 }
 
 impl Semant<X86> {
@@ -197,6 +198,7 @@ impl<F: Frame> Semant<F> {
             var_env: var_base,
             type_env: type_base,
             break_count: 0,
+            translator: Translator::default(),
         }
     }
 
@@ -208,6 +210,7 @@ impl<F: Frame> Semant<F> {
             var_env,
             type_env,
             break_count: 0,
+            translator: Translator::default(),
         }
     }
 
@@ -478,10 +481,11 @@ impl<F: Frame> Semant<F> {
             AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue, level),
 
             AstExpr::Nil(_) => Ok(ExprType {
-                expr: TransExpr::new(),
+                expr: translate::num(0),
                 ty: CompleteType::Nil,
             }),
 
+            // exprs.len() may be 0.
             AstExpr::Sequence(exprs, _) => {
                 // TODO: refactor
                 let mut transed = exprs
@@ -489,24 +493,30 @@ impl<F: Frame> Semant<F> {
                     .map(|e| self.trans_expr(e, level))
                     .collect::<Result<Vec<_>>>()?;
 
-                let ty = match transed.pop() {
-                    Some(t) => t.ty,
-                    None => CompleteType::Unit,
+                let expr_type = match transed.len() {
+                    0 => ExprType {
+                        expr: translate::num(0),
+                        ty: CompleteType::Unit,
+                    },
+                    1 => (transed.pop().unwrap()),
+                    _ => {
+                        let ty = transed.last().unwrap().ty.clone();
+                        let exprs = transed.into_iter().map(|e| e.expr).collect();
+                        let expr = translate::sequence(exprs);
+                        ExprType { expr, ty }
+                    }
                 };
 
-                Ok(ExprType {
-                    expr: TransExpr::new(),
-                    ty,
-                })
+                Ok(expr_type)
             }
 
-            AstExpr::Int(_, _) => Ok(ExprType {
-                expr: TransExpr::new(),
+            AstExpr::Int(num, _) => Ok(ExprType {
+                expr: translate::num(num as i64),
                 ty: CompleteType::Int,
             }),
 
-            AstExpr::Str(_, _) => Ok(ExprType {
-                expr: TransExpr::new(),
+            AstExpr::Str(lit, _) => Ok(ExprType {
+                expr: self.translator.string_literal(lit.to_string()),
                 ty: CompleteType::String,
             }),
 
@@ -522,7 +532,7 @@ impl<F: Frame> Semant<F> {
 
                 match self.var_env.look(sym) {
                     Some(EnvEntry::Func {
-                        level,
+                        level: fn_level,
                         label,
                         formals,
                         result,
@@ -542,19 +552,31 @@ impl<F: Frame> Semant<F> {
                             .collect::<Result<Vec<_>>>()?;
 
                         let unmatched = arg_iter
-                            .into_iter()
+                            .iter()
                             .zip(formal_iter.iter())
                             .enumerate()
                             .find(|(_, (ExprType { ty: lhs, .. }, rhs))| lhs != **rhs);
 
                         match unmatched {
-                            Some((_, (ExprType { ty: actual, .. }, &expected))) => Err(
-                                Error::new_unexpected_type(pos, vec![expected.clone()], actual),
-                            ),
+                            Some((_, (ExprType { ty: actual, .. }, &expected))) => {
+                                Err(Error::new_unexpected_type(
+                                    pos,
+                                    vec![expected.clone()],
+                                    actual.clone(),
+                                ))
+                            }
                             None => {
                                 let result = self.actual_ty(result, pos)?;
+
+                                let args = arg_iter.into_iter().map(|v| v.expr).collect();
+                                let fn_exp = translate::fn_call(
+                                    label.clone(),
+                                    fn_level.clone(),
+                                    level.clone(),
+                                    args,
+                                );
                                 Ok(ExprType {
-                                    expr: TransExpr::new(),
+                                    expr: fn_exp,
                                     ty: result.clone(),
                                 })
                             }
