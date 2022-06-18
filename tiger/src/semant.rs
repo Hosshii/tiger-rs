@@ -223,24 +223,18 @@ impl<F: Frame> Semant<F> {
         self.trans_expr(expr, &Level::outermost())
     }
 
-    fn check_type<U>(
-        &mut self,
-        expr: AstExpr,
-        ty: U,
+    fn check_type(
+        &self,
+        actual: &CompleteType,
+        expected: &[CompleteType],
         pos: Positions,
-        level: &Level<F>,
-    ) -> Result<()>
-    where
-        U: TupleMatch<Item = CompleteType>,
-    {
-        let ExprType { ty: got, .. } = self.trans_expr(expr, level)?;
-
-        if ty.matches(&got) {
+    ) -> Result<()> {
+        if expected.iter().any(|e| e == actual) {
             Ok(())
         } else {
             Err(Error {
                 pos,
-                kind: ErrorKind::UnExpectedType(ty.to_vec(), got),
+                kind: ErrorKind::UnExpectedType(expected.to_vec(), actual.clone()),
             })
         }
     }
@@ -600,8 +594,10 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                self.check_type(*lhs, (CompleteType::Int,), pos, level)?;
-                self.check_type(*rhs, (CompleteType::Int,), pos, level)?;
+                let lhs = self.trans_expr(*lhs, level)?;
+                let rhs = self.trans_expr(*rhs, level)?;
+                self.check_type(&lhs.ty, &[CompleteType::Int], pos)?;
+                self.check_type(&rhs.ty, &[CompleteType::Int], pos)?;
                 Ok(ExprType {
                     expr: TransExpr::new(),
                     ty: CompleteType::Int,
@@ -737,10 +733,12 @@ impl<F: Frame> Semant<F> {
                                 let arr_ty = self.actual_ty(&ty, pos)?.clone();
 
                                 let size_pos = size.pos();
-                                self.check_type(*size, (CompleteType::Int,), size_pos, level)?;
+                                let size = self.trans_expr(*size, level)?;
+                                self.check_type(&size.ty, &[CompleteType::Int], size_pos)?;
 
                                 let init_pos = init.pos();
-                                self.check_type(*init, (arr_ty,), init_pos, level)?;
+                                let init = self.trans_expr(*init, level)?;
+                                self.check_type(&init.ty, &[arr_ty], init_pos)?;
 
                                 Ok(ExprType {
                                     expr: TransExpr::new(),
@@ -778,7 +776,8 @@ impl<F: Frame> Semant<F> {
                 pos: _,
             } => {
                 let cond_pos = cond.pos();
-                self.check_type(*cond, (CompleteType::Int,), cond_pos, level)?;
+                let cond = self.trans_expr(*cond, level)?;
+                self.check_type(&cond.ty, &[CompleteType::Int], cond_pos)?;
 
                 let then_pos = then.pos();
                 let ExprType { ty: then_ty, .. } = self.trans_expr(*then, level)?;
@@ -815,9 +814,11 @@ impl<F: Frame> Semant<F> {
 
             AstExpr::While(cond, then, _) => self.new_break_scope(|_self| {
                 let cond_pos = cond.pos();
-                _self.check_type(*cond, (CompleteType::Int,), cond_pos, level)?;
+                let cond = _self.trans_expr(*cond, level)?;
+                _self.check_type(&cond.ty, &[CompleteType::Int], cond_pos)?;
                 let then_pos = then.pos();
-                _self.check_type(*then, (CompleteType::Unit,), then_pos, level)?;
+                let then = _self.trans_expr(*then, level)?;
+                _self.check_type(&then.ty, &[CompleteType::Unit], then_pos)?;
 
                 Ok(ExprType {
                     expr: TransExpr::new(),
@@ -842,13 +843,16 @@ impl<F: Frame> Semant<F> {
                     );
 
                     let expr1_pos = expr1.pos();
-                    _self.check_type(*expr1, (CompleteType::Int,), expr1_pos, level)?;
+                    let expr1 = _self.trans_expr(*expr1, level)?;
+                    _self.check_type(&expr1.ty, &[CompleteType::Int], expr1_pos)?;
 
                     let expr2_pos = expr2.pos();
-                    _self.check_type(*expr2, (CompleteType::Int,), expr2_pos, level)?;
+                    let expr2 = _self.trans_expr(*expr2, level)?;
+                    _self.check_type(&expr2.ty, &[CompleteType::Int], expr2_pos)?;
 
                     let then_pos = then.pos();
-                    _self.check_type(*then, (CompleteType::Unit,), then_pos, level)?;
+                    let then = _self.trans_expr(*then, level)?;
+                    _self.check_type(&then.ty, &[CompleteType::Unit], then_pos)?;
 
                     Ok(ExprType {
                         expr: TransExpr::new(),
@@ -1088,84 +1092,9 @@ pub struct ExprType {
     ty: CompleteType,
 }
 
-trait TupleMatch: Debug {
-    type Item;
-
-    fn matches(&self, item: &Self::Item) -> bool;
-    fn to_vec(self) -> Vec<Self::Item>;
-}
-
-macro_rules! impl_tuple {
-    ($t:ty, $(($n:tt, $t2:ty)),*) => {
-        impl TupleMatch for ($($t2,)*) {
-            type Item = $t;
-
-            fn matches(&self, item: &Self::Item) -> bool {
-                $(item == &self.$n || )* false
-            }
-
-            fn to_vec(self)-> Vec<Self::Item>{
-                vec![
-                    $(self.$n,)*
-                ]
-            }
-        }
-    }
-}
-
-impl_tuple!(CompleteType, (0, CompleteType));
-impl_tuple!(CompleteType, (0, CompleteType), (1, CompleteType));
-impl_tuple!(
-    CompleteType,
-    (0, CompleteType),
-    (1, CompleteType),
-    (2, CompleteType)
-);
-impl_tuple!(
-    CompleteType,
-    (0, CompleteType),
-    (1, CompleteType),
-    (2, CompleteType),
-    (3, CompleteType)
-);
-impl_tuple!(
-    CompleteType,
-    (0, CompleteType),
-    (1, CompleteType),
-    (2, CompleteType),
-    (3, CompleteType),
-    (4, CompleteType)
-);
-
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    #[test]
-    fn test_tuple_match() {
-        let case: Vec<(&dyn TupleMatch<Item = CompleteType>, CompleteType, bool)> = vec![
-            (
-                &(CompleteType::Int, CompleteType::String) as &dyn TupleMatch<Item = CompleteType>,
-                CompleteType::Int,
-                true,
-            ),
-            (
-                &(CompleteType::Nil, CompleteType::Unit, CompleteType::String)
-                    as &dyn TupleMatch<Item = CompleteType>,
-                CompleteType::Int,
-                false,
-            ),
-            (
-                &(CompleteType::Nil,) as &dyn TupleMatch<Item = CompleteType>,
-                CompleteType::Int,
-                false,
-            ),
-        ];
-
-        for (tr, ref cond, expected) in case {
-            assert_eq!(expected, tr.matches(cond));
-        }
-    }
 
     macro_rules! test_file_inner {
         ($name:ident, $path:expr) => {
