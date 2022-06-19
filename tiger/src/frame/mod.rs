@@ -33,4 +33,7 @@ pub trait Frame: Clone {
     /// Convert an `Access` to IR Tree.
     /// The second argument means frame pointer in which `Access` is allocated.
     fn exp(access: Self::Access, stack_addr: Expr) -> Expr;
+
+    /// Call extern function which name is `name` with `args`.
+    fn extern_call(name: &str, args: Vec<Expr>) -> Expr;
 }

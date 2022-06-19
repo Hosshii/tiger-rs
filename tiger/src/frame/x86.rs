@@ -67,6 +67,10 @@ impl Frame for X86 {
     fn fp() -> Temp {
         REGISTERS_GLOBAL.rbp
     }
+
+    fn extern_call(name: &str, args: Vec<Expr>) -> Expr {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

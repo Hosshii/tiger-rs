@@ -1,6 +1,9 @@
-use crate::temp::{Label, Temp};
+use crate::{
+    parser::ast::Operator,
+    temp::{Label, Temp},
+};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
     Const(i64), // TODO: maybe u64 is better
     Name(Label),
@@ -12,7 +15,7 @@ pub enum Expr {
     ESeq(Box<Stmt>, Box<Expr>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Stmt {
     Move(Box<Expr>, Box<Expr>),
     Expr(Box<Expr>),
@@ -38,7 +41,7 @@ impl Stmt {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BinOp {
     Plus,
     Minus,
@@ -52,7 +55,23 @@ pub enum BinOp {
     XOr,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl TryFrom<Operator> for BinOp {
+    type Error = ();
+
+    fn try_from(value: Operator) -> Result<Self, Self::Error> {
+        match value {
+            Operator::Plus => Ok(Self::Plus),
+            Operator::Minus => Ok(Self::Minus),
+            Operator::Mul => Ok(Self::Mul),
+            Operator::Div => Ok(Self::Div),
+            Operator::And => Ok(Self::And),
+            Operator::Or => Ok(Self::Or),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RelOp {
     Eq,
     Ne,
@@ -64,4 +83,20 @@ pub enum RelOp {
     Ule,
     Ugt,
     Uge,
+}
+
+impl TryFrom<Operator> for RelOp {
+    type Error = ();
+
+    fn try_from(value: Operator) -> Result<Self, Self::Error> {
+        match value {
+            Operator::Eq => Ok(RelOp::Eq),
+            Operator::Neq => Ok(RelOp::Ne),
+            Operator::Ge => Ok(RelOp::Ge),
+            Operator::Gt => Ok(RelOp::Gt),
+            Operator::Le => Ok(RelOp::Le),
+            Operator::Lt => Ok(RelOp::Lt),
+            _ => Err(()),
+        }
+    }
 }

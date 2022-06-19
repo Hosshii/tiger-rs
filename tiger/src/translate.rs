@@ -205,6 +205,215 @@ fn calc_static_link<F: Frame>(mut cur_level: Level<F>, ancestor_level: Level<F>)
     link
 }
 
+pub fn bin_op(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+    Expr::Ex(IrExpr::BinOp(
+        op,
+        Box::new(lhs.unwrap_ex()),
+        Box::new(rhs.unwrap_ex()),
+    ))
+}
+
+pub fn rel_op(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
+    let f = move |t: Label, f: Label| -> Stmt {
+        Stmt::CJump(
+            op,
+            Box::new(lhs.unwrap_ex()),
+            Box::new(rhs.unwrap_ex()),
+            t,
+            f,
+        )
+    };
+    Expr::Cx(Box::new(f))
+}
+
+/// `op` must be Eq or Ne.
+pub fn string_eq<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
+    // stringEqual returns 0 if equal and 1 if not equal.
+    let result = F::extern_call("stringEqual", vec![lhs.unwrap_ex(), rhs.unwrap_ex()]);
+
+    let result = match op {
+        RelOp::Eq => result,
+        RelOp::Ne => IrExpr::BinOp(BinOp::Minus, Box::new(IrExpr::Const(1)), Box::new(result)),
+        _ => panic!("unexpected op"),
+    };
+
+    let f = |t: Label, f: Label| -> Stmt {
+        Stmt::CJump(
+            RelOp::Eq,
+            Box::new(IrExpr::Const(0)),
+            Box::new(result),
+            t,
+            f,
+        )
+    };
+    Expr::Cx(Box::new(f))
+}
+
+/// `op` must be one of the le, lt, ge, gt.
+pub fn string_ord<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
+    let num = match op {
+        RelOp::Le => 1,
+        RelOp::Lt => 2,
+        RelOp::Ge => 3,
+        RelOp::Gt => 4,
+        _ => panic!("unexpected op"),
+    };
+
+    // `stringOrd` take op as const.
+    // It returns 0 if condition is satisfied, and 1 if not.
+    let result = F::extern_call(
+        "stringOrd",
+        vec![IrExpr::Const(num), lhs.unwrap_ex(), rhs.unwrap_ex()],
+    );
+
+    let f = |t: Label, f: Label| -> Stmt {
+        Stmt::CJump(
+            RelOp::Eq,
+            Box::new(IrExpr::Const(0)),
+            Box::new(result),
+            t,
+            f,
+        )
+    };
+    Expr::Cx(Box::new(f))
+}
+
+pub fn neg(e: Expr) -> Expr {
+    Expr::Ex(IrExpr::BinOp(
+        BinOp::Minus,
+        Box::new(IrExpr::Const(0)),
+        Box::new(e.unwrap_ex()),
+    ))
+}
+
+/// Create record.
+/// For simplicity, the size of each record field must be 1 WORD.
+pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
+    let ptr = Temp::new();
+    let record_size = exprs.len();
+
+    // allocRecord take size of record.
+    let allocated = F::extern_call("allocRecord", vec![IrExpr::Const(record_size as i64)]);
+    let result = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
+
+    let sequence = exprs
+        .into_iter()
+        .enumerate()
+        .fold(result, |acc, (idx, expr)| {
+            Stmt::Seq(
+                Box::new(acc),
+                Box::new(Stmt::Move(
+                    Box::new(IrExpr::Mem(
+                        Box::new(IrExpr::BinOp(
+                            BinOp::Plus,
+                            Box::new(IrExpr::Temp(ptr)),
+                            Box::new(IrExpr::Const(idx as i64)),
+                        )),
+                        F::WORD_SIZE,
+                    )),
+                    Box::new(expr.unwrap_ex()),
+                )),
+            )
+        });
+
+    Expr::Ex(IrExpr::ESeq(
+        Box::new(sequence),
+        Box::new(IrExpr::Temp(ptr)),
+    ))
+}
+
+// pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
+// let ptr = Temp::new();
+
+// // allocRecord take size of record.
+// let allocated = F::extern_call("allocRecord", vec![len.unwrap_ex()]);
+// let result = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
+
+// let sequence = exprs
+//     .into_iter()
+//     .enumerate()
+//     .fold(result, |acc, (idx, expr)| {
+//         Stmt::Seq(
+//             Box::new(acc),
+//             Box::new(Stmt::Move(
+//                 Box::new(IrExpr::Mem(
+//                     Box::new(IrExpr::BinOp(
+//                         BinOp::Plus,
+//                         Box::new(IrExpr::Temp(ptr)),
+//                         Box::new(IrExpr::Const(idx as i64)),
+//                     )),
+//                     F::WORD_SIZE,
+//                 )),
+//                 Box::new(expr.unwrap_ex()),
+//             )),
+//         )
+//     });
+
+// Expr::Ex(IrExpr::ESeq(
+//     Box::new(sequence),
+//     Box::new(IrExpr::Temp(ptr)),
+// ))
+// }
+
+pub fn assign(lhs: Expr, rhs: Expr) -> Expr {
+    Expr::Nx(Stmt::Move(
+        Box::new(lhs.unwrap_ex()),
+        Box::new(rhs.unwrap_ex()),
+    ))
+}
+
+pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Option<Expr>) -> Expr {
+    let t = Label::new();
+    let f = Label::new();
+    let merge = Label::new();
+    let access = level.frame.alloc_local(false);
+    let result = F::exp(access.clone(), IrExpr::Temp(F::fp()));
+
+    let true_stmt = Stmt::Seq(
+        Box::new(Stmt::Label(t.clone())),
+        Box::new(Stmt::Seq(
+            Box::new(Stmt::Move(
+                Box::new(result.clone()),
+                Box::new(then.unwrap_ex()),
+            )),
+            Box::new(Stmt::Jump(
+                Box::new(IrExpr::Name(merge.clone())),
+                vec![merge.clone()],
+            )),
+        )),
+    );
+
+    let els = els.unwrap_or_else(unit);
+    let false_stmt = Stmt::Seq(
+        Box::new(Stmt::Label(f.clone())),
+        Box::new(Stmt::Seq(
+            Box::new(Stmt::Move(
+                Box::new(result.clone()),
+                Box::new(els.unwrap_ex()),
+            )),
+            Box::new(Stmt::Jump(
+                Box::new(IrExpr::Name(merge.clone())),
+                vec![merge],
+            )),
+        )),
+    );
+
+    let stmt = cond.unwrap_cx()(t, f);
+    Expr::Ex(IrExpr::ESeq(
+        Box::new(Stmt::Seq(
+            Box::new(stmt),
+            Box::new(Stmt::Seq(Box::new(true_stmt), Box::new(false_stmt))),
+        )),
+        Box::new(result),
+    ))
+}
+
+pub fn while_expr() {}
+
+pub fn unit() -> Expr {
+    Expr::Ex(IrExpr::Const(0))
+}
+
 pub struct Translator {
     string_literal_map: HashMap<Symbol, Label>,
 }
