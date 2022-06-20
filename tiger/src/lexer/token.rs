@@ -331,10 +331,14 @@ impl Ident {
     pub fn len(&self) -> usize {
         self.0.chars().count()
     }
+
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
 }
 
-impl ToString for Ident {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }

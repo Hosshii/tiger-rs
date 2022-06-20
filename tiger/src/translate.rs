@@ -384,7 +384,7 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
     let f = Label::new();
     let merge = Label::new();
     let access = level.inner.frame.alloc_local(false);
-    let result = F::exp(access.clone(), IrExpr::Temp(F::fp()));
+    let result = F::exp(access, IrExpr::Temp(F::fp()));
 
     let true_stmt = Stmt::Seq(
         Box::new(Stmt::Label(t.clone())),
@@ -425,7 +425,30 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
     ))
 }
 
-pub fn while_expr() {}
+pub fn while_expr(cond: Expr, body: Expr, break_label: Label) -> Expr {
+    let test = Label::new();
+    let body_label = Label::new();
+
+    let cond = cond.unwrap_cx()(body_label.clone(), break_label);
+
+    let body = Stmt::seq(
+        Stmt::Label(body_label),
+        Stmt::Expr(Box::new(body.unwrap_ex())),
+        vec![Stmt::Jump(
+            Box::new(IrExpr::Name(test.clone())),
+            vec![test.clone()],
+        )],
+    );
+
+    Expr::Nx(Stmt::seq(Stmt::Label(test), cond, vec![body]))
+}
+
+pub fn break_expr(break_label: Label) -> Expr {
+    Expr::Nx(Stmt::Jump(
+        Box::new(IrExpr::Name(break_label.clone())),
+        vec![break_label],
+    ))
+}
 
 pub fn unit() -> Expr {
     Expr::Ex(IrExpr::Const(0))
