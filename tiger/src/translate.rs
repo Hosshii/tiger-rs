@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, sync::atomic::AtomicU32};
+use std::{
+    cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc, sync::atomic::AtomicU32,
+};
 
 use crate::{
     frame::Frame,
@@ -96,7 +98,7 @@ pub type Access<F> = (Level<F>, <F as Frame>::Access);
 
 pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>) -> Level<F> {
     // nested function
-    if parent.parent.is_some() {
+    if parent.inner.parent.is_some() {
         // for static link
         formals.push(true);
     }
@@ -106,6 +108,7 @@ pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>
 
 pub fn formals<F: Frame>(level: Level<F>) -> Vec<Access<F>> {
     level
+        .inner
         .frame
         .formals()
         .iter()
@@ -114,13 +117,13 @@ pub fn formals<F: Frame>(level: Level<F>) -> Vec<Access<F>> {
 }
 
 pub fn alloc_local<F: Frame>(mut level: Level<F>, is_escape: bool) -> Access<F> {
-    let frame = level.frame.alloc_local(is_escape);
+    let frame = level.inner.frame.alloc_local(is_escape);
     (level, frame)
 }
 
 // `access` in which variable is defined and `fn_level` in which variable is used.
-pub fn simple_var<F: Frame>(access: Access<F>, mut fn_level: Level<F>) -> Expr {
-    let access_link = calc_static_link(fn_level, access.0);
+pub fn simple_var<F: Frame>(access: Access<F>, fn_level: &Level<F>) -> Expr {
+    let access_link = calc_static_link(fn_level, &access.0);
     let mem = F::exp(access.1, access_link);
     Expr::Ex(mem)
 }
@@ -180,12 +183,15 @@ pub fn sequence(mut exprs: Vec<Expr>) -> Expr {
 
 pub fn fn_call<F: Frame>(
     fn_label: Label,
-    fn_level: Level<F>,
-    cur_level: Level<F>,
+    fn_level: &Level<F>,
+    cur_level: &Level<F>,
     args: Vec<Expr>,
 ) -> Expr {
     // recursion
-    let link = calc_static_link(cur_level, *fn_level.parent.expect("fn must have parent"));
+    let link = calc_static_link(
+        cur_level,
+        fn_level.inner.parent.as_ref().expect("fn must have parent"),
+    );
     let mut args: Vec<_> = args.into_iter().map(|v| v.unwrap_ex()).collect();
     args.push(link);
     Expr::Ex(IrExpr::Call(Box::new(IrExpr::Name(fn_label)), args))
@@ -193,14 +199,25 @@ pub fn fn_call<F: Frame>(
 
 /// Calculate static link that is used by `cur_level` to access `ancestor_level`.
 /// `ancestor_level` must be ancestor of `cur_level`.
-fn calc_static_link<F: Frame>(mut cur_level: Level<F>, ancestor_level: Level<F>) -> IrExpr {
+fn calc_static_link<F: Frame>(cur_level: &Level<F>, ancestor_level: &Level<F>) -> IrExpr {
     let mut link = IrExpr::Temp(F::fp());
+
+    if cur_level == ancestor_level {
+        return link;
+    }
+    let mut cur_level = Rc::new(cur_level.clone());
+    let ancestor_level = Rc::new(ancestor_level.clone());
+
     while cur_level != ancestor_level {
-        let link_access = cur_level.frame.formals().last().expect("static link");
+        let link_access = cur_level.inner.frame.formals().last().expect("static link");
         link = F::exp(link_access.clone(), link);
-        cur_level = *(cur_level
+
+        let parent = cur_level
+            .inner
             .parent
-            .expect("cur_level is not descendants of parent"));
+            .clone()
+            .expect("cur_level is not descendants of parent");
+        cur_level = parent;
     }
     link
 }
@@ -366,7 +383,7 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
     let t = Label::new();
     let f = Label::new();
     let merge = Label::new();
-    let access = level.frame.alloc_local(false);
+    let access = level.inner.frame.alloc_local(false);
     let result = F::exp(access.clone(), IrExpr::Temp(F::fp()));
 
     let true_stmt = Stmt::Seq(
@@ -449,15 +466,40 @@ static LEVEL_GLOBAL: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Debug, Clone, Eq)]
 pub struct Level<F: Frame> {
-    current: u32, // unique value
-    frame: F,
-    parent: Option<Box<Level<F>>>,
+    inner: LevelInner<F>,
 }
 
 impl<F: Frame> Level<F> {
+    pub fn new(parent: Level<F>, frame: F) -> Self {
+        Self {
+            inner: LevelInner::new(parent, frame),
+        }
+    }
+
+    pub fn outermost() -> Self {
+        Self {
+            inner: LevelInner::outermost(),
+        }
+    }
+}
+
+impl<F: Frame> PartialEq for Level<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.eq(&other.inner)
+    }
+}
+
+#[derive(Debug, Clone, Eq)]
+struct LevelInner<F: Frame> {
+    current: u32, // unique value
+    frame: F,
+    parent: Option<Rc<Level<F>>>,
+}
+
+impl<F: Frame> LevelInner<F> {
     fn new(parent: Level<F>, frame: F) -> Self {
         let current = LEVEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let parent = Some(Box::new(parent));
+        let parent = Some(Rc::new(parent));
         Self {
             current,
             frame,
@@ -474,7 +516,7 @@ impl<F: Frame> Level<F> {
     }
 }
 
-impl<F: Frame> PartialEq for Level<F> {
+impl<F: Frame> PartialEq for LevelInner<F> {
     fn eq(&self, other: &Self) -> bool {
         self.current == other.current
     }

@@ -563,12 +563,8 @@ impl<F: Frame> Semant<F> {
                                 let result = self.actual_ty(result, pos)?;
 
                                 let args = arg_iter.into_iter().map(|v| v.expr).collect();
-                                let fn_exp = translate::fn_call(
-                                    label.clone(),
-                                    fn_level.clone(),
-                                    level.clone(),
-                                    args,
-                                );
+                                let fn_exp =
+                                    translate::fn_call(label.clone(), fn_level, level, args);
                                 Ok(ExprType {
                                     expr: fn_exp,
                                     ty: result.clone(),
@@ -923,7 +919,7 @@ impl<F: Frame> Semant<F> {
                     Some(EnvEntry::Var { access, ty }) => {
                         let ty = self.actual_ty(ty, pos)?;
                         Ok(ExprType {
-                            expr: translate::simple_var(access.clone(), level.clone()),
+                            expr: translate::simple_var(access.clone(), level),
                             ty: ty.clone(),
                         })
                     }
