@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::atomic::AtomicU32};
+use std::{collections::HashMap, fmt::Debug, ops::Deref, rc::Rc, sync::atomic::AtomicU32};
 
 use crate::{
     frame::{Fragment, Frame},
@@ -172,10 +172,10 @@ pub fn fn_call<F: Frame>(
     cur_level: &Level<F>,
     args: Vec<Expr>,
 ) -> Expr {
-    // recursion
     let link = calc_static_link(
         cur_level,
-        fn_level.inner.parent.as_ref().expect("fn must have parent"),
+        // if fn_level is outermost, use cur_level so that FP is returned.
+        fn_level.inner.parent.as_deref().unwrap_or(cur_level),
     );
     let mut args: Vec<_> = args.into_iter().map(|v| v.unwrap_ex()).collect();
     args.push(link);

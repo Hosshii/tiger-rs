@@ -76,11 +76,11 @@ impl Frame for X86 {
     }
 
     fn extern_call(_name: &str, _args: Vec<Expr>) -> Expr {
-        todo!()
+        todo!("extern call")
     }
 
     fn proc_entry_exit1(&mut self, _stmt: Stmt) -> Stmt {
-        todo!()
+        todo!("proc_entry_exit1")
     }
 }
 

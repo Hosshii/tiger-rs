@@ -449,7 +449,7 @@ impl<F: Frame> Semant<F> {
 
                 assert_eq!(header.len(), fn_decls.len());
 
-                for ((func_decl, (formals, ret_type)), level) in fn_decls
+                for ((func_decl, (formals, ret_type)), mut level) in fn_decls
                     .into_iter()
                     .zip(header.into_iter())
                     .zip(levels.into_iter())
@@ -465,7 +465,7 @@ impl<F: Frame> Semant<F> {
                         }
 
                         let ty =
-                            _self.trans_expr(func_decl.body, parent_level, break_label.clone())?;
+                            _self.trans_expr(func_decl.body, &mut level, break_label.clone())?;
 
                         if ty.ty != ret_type {
                             Err(Error::new_unexpected_type(
@@ -662,7 +662,7 @@ impl<F: Frame> Semant<F> {
                             rhs.expr,
                         )
                     } else {
-                        translate::bin_op(op.try_into().expect("convert op"), lhs.expr, rhs.expr)
+                        translate::rel_op(op.try_into().expect("convert op"), lhs.expr, rhs.expr)
                     };
                     Ok(ExprType {
                         expr,
