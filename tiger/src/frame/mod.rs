@@ -1,12 +1,14 @@
 mod x86;
 
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     ir::{Expr, Stmt},
     temp::{Label, Temp},
 };
 pub use x86::X86;
 
-pub trait Frame: Clone {
+pub trait Frame {
     /// Represents an access to variable.
     /// Typically implemented like `enum {InReg(Temp), InFrame(offset)}`.
     type Access: Clone;
@@ -44,6 +46,6 @@ pub trait Frame: Clone {
 }
 
 pub enum Fragment<F: Frame> {
-    Proc(Stmt, F),
+    Proc(Stmt, Rc<RefCell<F>>),
     String(Label, String),
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, ops::Deref, rc::Rc, sync::atomic::AtomicU32};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, sync::atomic::AtomicU32};
 
 use crate::{
     frame::{Fragment, Frame},
@@ -95,14 +95,15 @@ pub fn formals<F: Frame>(level: Level<F>) -> Vec<Access<F>> {
     level
         .inner
         .frame
+        .borrow()
         .formals()
         .iter()
         .map(|access| (level.clone(), access.clone()))
         .collect()
 }
 
-pub fn alloc_local<F: Frame>(mut level: Level<F>, is_escape: bool) -> Access<F> {
-    let frame = level.inner.frame.alloc_local(is_escape);
+pub fn alloc_local<F: Frame>(level: Level<F>, is_escape: bool) -> Access<F> {
+    let frame = level.inner.frame.borrow_mut().alloc_local(is_escape);
     (level, frame)
 }
 
@@ -184,23 +185,22 @@ pub fn fn_call<F: Frame>(
 
 /// Calculate static link that is used by `cur_level` to access `ancestor_level`.
 /// `ancestor_level` must be ancestor of `cur_level`.
-fn calc_static_link<F: Frame>(cur_level: &Level<F>, ancestor_level: &Level<F>) -> IrExpr {
+fn calc_static_link<F: Frame>(mut cur_level: &Level<F>, ancestor_level: &Level<F>) -> IrExpr {
     let mut link = IrExpr::Temp(F::fp());
 
     if cur_level == ancestor_level {
         return link;
     }
-    let mut cur_level = Rc::new(cur_level.clone());
-    let ancestor_level = Rc::new(ancestor_level.clone());
 
     while cur_level != ancestor_level {
-        let link_access = cur_level.inner.frame.formals().last().expect("static link");
+        let frame = cur_level.inner.frame.borrow();
+        let link_access = frame.formals().last().expect("static link");
         link = F::exp(link_access.clone(), link);
 
         let parent = cur_level
             .inner
             .parent
-            .clone()
+            .as_ref()
             .expect("cur_level is not descendants of parent");
         cur_level = parent;
     }
@@ -412,7 +412,7 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
     let t = Label::new();
     let f = Label::new();
     let merge = Label::new();
-    let access = level.inner.frame.alloc_local(false);
+    let access = level.inner.frame.borrow_mut().alloc_local(false);
     let result = F::exp(access, IrExpr::Temp(F::fp()));
 
     let true_stmt = Stmt::Seq(
@@ -552,7 +552,7 @@ impl<F: Frame> Default for Translator<F> {
 
 static LEVEL_GLOBAL: AtomicU32 = AtomicU32::new(1);
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Eq)]
 pub struct Level<F: Frame> {
     inner: LevelInner<F>,
 }
@@ -577,17 +577,26 @@ impl<F: Frame> PartialEq for Level<F> {
     }
 }
 
-#[derive(Debug, Clone, Eq)]
+impl<F: Frame> Clone for Level<F> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Eq)]
 struct LevelInner<F: Frame> {
     current: u32, // unique value
-    frame: F,
-    parent: Option<Rc<Level<F>>>,
+    frame: Rc<RefCell<F>>,
+    parent: Option<Box<Level<F>>>,
 }
 
 impl<F: Frame> LevelInner<F> {
     fn new(parent: Level<F>, frame: F) -> Self {
         let current = LEVEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let parent = Some(Rc::new(parent));
+        let parent = Some(Box::new(parent));
+        let frame = Rc::new(RefCell::new(frame));
         Self {
             current,
             frame,
@@ -598,7 +607,7 @@ impl<F: Frame> LevelInner<F> {
     pub fn outermost() -> Self {
         Self {
             current: 0,
-            frame: F::new(Label::new(), vec![]),
+            frame: Rc::new(RefCell::new(F::new(Label::new(), vec![]))),
             parent: None,
         }
     }
@@ -607,5 +616,15 @@ impl<F: Frame> LevelInner<F> {
 impl<F: Frame> PartialEq for LevelInner<F> {
     fn eq(&self, other: &Self) -> bool {
         self.current == other.current
+    }
+}
+
+impl<F: Frame> Clone for LevelInner<F> {
+    fn clone(&self) -> Self {
+        Self {
+            current: self.current,
+            frame: self.frame.clone(),
+            parent: self.parent.clone(),
+        }
     }
 }
