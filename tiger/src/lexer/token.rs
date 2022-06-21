@@ -1,4 +1,4 @@
-use std::{str::FromStr, string::ToString};
+use std::{fmt::Display, str::FromStr, string::ToString};
 
 use strum::{EnumIter, IntoEnumIterator};
 
@@ -97,7 +97,7 @@ impl Token {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StringLiteral(pub(crate) String);
+pub struct StringLiteral(pub(super) String);
 
 impl StringLiteral {
     pub fn len(&self) -> usize {
@@ -110,6 +110,12 @@ impl StringLiteral {
 
     pub fn new(v: impl Into<String>) -> Self {
         Self(v.into())
+    }
+}
+
+impl Display for StringLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -325,10 +331,14 @@ impl Ident {
     pub fn len(&self) -> usize {
         self.0.chars().count()
     }
+
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
 }
 
-impl ToString for Ident {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }

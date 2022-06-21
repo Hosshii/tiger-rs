@@ -1,4 +1,9 @@
-use crate::temp::{Label, Temp};
+use once_cell::sync::Lazy;
+
+use crate::{
+    ir::{BinOp, Expr, Stmt},
+    temp::{Label, Temp},
+};
 
 use super::Frame;
 
@@ -10,9 +15,15 @@ pub struct X86 {
 }
 
 const PTR_SIZE: i64 = 8;
+static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
+    rbp: Temp::new(),
+    rax: Temp::new(),
+});
 
 impl Frame for X86 {
     type Access = Access;
+
+    const WORD_SIZE: u64 = 8;
 
     fn new(name: Label, formals: Vec<bool>) -> Self {
         let mut frame = Self {
@@ -41,10 +52,45 @@ impl Frame for X86 {
             Access::InReg(Temp::new())
         }
     }
+
+    fn exp(access: Self::Access, stack_addr: Expr) -> Expr {
+        match access {
+            Access::InFrame(offset) => Expr::Mem(
+                Box::new(Expr::BinOp(
+                    BinOp::Plus,
+                    Box::new(stack_addr),
+                    Box::new(Expr::Const(offset)),
+                )),
+                Self::WORD_SIZE,
+            ),
+            Access::InReg(reg) => Expr::Temp(reg),
+        }
+    }
+
+    fn fp() -> Temp {
+        REGISTERS_GLOBAL.rbp
+    }
+
+    fn rv() -> Temp {
+        REGISTERS_GLOBAL.rax
+    }
+
+    fn extern_call(_name: &str, _args: Vec<Expr>) -> Expr {
+        todo!("extern call")
+    }
+
+    fn proc_entry_exit1(&mut self, _stmt: Stmt) -> Stmt {
+        todo!("proc_entry_exit1")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Access {
     InFrame(i64),
     InReg(Temp),
+}
+
+struct Registers {
+    rbp: Temp,
+    rax: Temp,
 }
