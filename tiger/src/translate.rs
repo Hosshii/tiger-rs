@@ -26,17 +26,11 @@ impl Expr {
                 let f = Label::new();
                 IrExpr::ESeq(
                     Box::new(Stmt::seq(
-                        Stmt::Move(
-                            Box::new(IrExpr::Temp(r.clone())),
-                            Box::new(IrExpr::Const(1)),
-                        ),
+                        Stmt::Move(Box::new(IrExpr::Temp(r)), Box::new(IrExpr::Const(1))),
                         cx_fn(t.clone(), f.clone()),
                         vec![
                             Stmt::Label(f),
-                            Stmt::Move(
-                                Box::new(IrExpr::Temp(r.clone())),
-                                Box::new(IrExpr::Const(0)),
-                            ),
+                            Stmt::Move(Box::new(IrExpr::Temp(r)), Box::new(IrExpr::Const(0))),
                             Stmt::Label(t),
                         ],
                     )),

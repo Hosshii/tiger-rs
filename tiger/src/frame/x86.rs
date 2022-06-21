@@ -75,11 +75,11 @@ impl Frame for X86 {
         REGISTERS_GLOBAL.rax
     }
 
-    fn extern_call(name: &str, args: Vec<Expr>) -> Expr {
+    fn extern_call(_name: &str, _args: Vec<Expr>) -> Expr {
         todo!()
     }
 
-    fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt {
+    fn proc_entry_exit1(&mut self, _stmt: Stmt) -> Stmt {
         todo!()
     }
 }
