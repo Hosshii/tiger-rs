@@ -1,9 +1,7 @@
-use std::{
-    cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc, sync::atomic::AtomicU32,
-};
+use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::atomic::AtomicU32};
 
 use crate::{
-    frame::Frame,
+    frame::{Fragment, Frame},
     ir::{BinOp, Expr as IrExpr, RelOp, Stmt},
     symbol::Symbol,
     temp::{Label, Temp},
@@ -74,13 +72,6 @@ impl Expr {
             Expr::Nx(_) => unreachable!(),
             Expr::Cx(f) => f,
         }
-    }
-}
-
-impl Expr {
-    pub fn new() -> Self {
-        todo!()
-        // Self {}
     }
 }
 
@@ -311,12 +302,14 @@ pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
 
     // allocRecord take size of record.
     let allocated = F::extern_call("allocRecord", vec![IrExpr::Const(record_size as i64)]);
-    let result = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
+
+    // move allocated ptr to reg.
+    let init = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
 
     let sequence = exprs
         .into_iter()
         .enumerate()
-        .fold(result, |acc, (idx, expr)| {
+        .fold(init, |acc, (idx, expr)| {
             Stmt::Seq(
                 Box::new(acc),
                 Box::new(Stmt::Move(
@@ -339,38 +332,80 @@ pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
     ))
 }
 
-// pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
-// let ptr = Temp::new();
+pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
+    let ptr = Temp::new();
+    let len_var = Temp::new();
+    let move_len = Stmt::Move(Box::new(IrExpr::Temp(len_var)), Box::new(len.unwrap_ex()));
 
-// // allocRecord take size of record.
-// let allocated = F::extern_call("allocRecord", vec![len.unwrap_ex()]);
-// let result = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
+    // allocRecord take size of record.
+    let allocated = F::extern_call("allocRecord", vec![IrExpr::Temp(len_var)]);
 
-// let sequence = exprs
-//     .into_iter()
-//     .enumerate()
-//     .fold(result, |acc, (idx, expr)| {
-//         Stmt::Seq(
-//             Box::new(acc),
-//             Box::new(Stmt::Move(
-//                 Box::new(IrExpr::Mem(
-//                     Box::new(IrExpr::BinOp(
-//                         BinOp::Plus,
-//                         Box::new(IrExpr::Temp(ptr)),
-//                         Box::new(IrExpr::Const(idx as i64)),
-//                     )),
-//                     F::WORD_SIZE,
-//                 )),
-//                 Box::new(expr.unwrap_ex()),
-//             )),
-//         )
-//     });
+    // move allocated ptr to reg.
+    let move_result = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
 
-// Expr::Ex(IrExpr::ESeq(
-//     Box::new(sequence),
-//     Box::new(IrExpr::Temp(ptr)),
-// ))
-// }
+    // while i < len {
+    //   allocated[i] = init;
+    //   i++
+    // }
+    let test = IrExpr::Temp(Temp::new());
+    let cond = {
+        let test = test.clone();
+
+        move |t: Label, f: Label| -> Stmt {
+            Stmt::CJump(
+                RelOp::Lt,
+                Box::new(test),
+                Box::new(IrExpr::Temp(len_var)),
+                t,
+                f,
+            )
+        }
+    };
+    let cond = Expr::Cx(Box::new(cond));
+
+    let body = Stmt::Seq(
+        Box::new(Stmt::Move(
+            Box::new(IrExpr::Mem(
+                Box::new(IrExpr::BinOp(
+                    BinOp::Plus,
+                    Box::new(IrExpr::Temp(ptr)),
+                    Box::new(IrExpr::BinOp(
+                        BinOp::Mul,
+                        Box::new(test.clone()),
+                        Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
+                    )),
+                )),
+                F::WORD_SIZE,
+            )),
+            Box::new(init.unwrap_ex()),
+        )),
+        Box::new(Stmt::Expr(Box::new(IrExpr::BinOp(
+            BinOp::Plus,
+            Box::new(test),
+            Box::new(IrExpr::Const(1)),
+        )))),
+    );
+    let body = Expr::Nx(body);
+
+    let end_label = Label::new();
+    let init = while_expr(cond, body, end_label.clone());
+
+    let expr = IrExpr::ESeq(
+        Box::new(Stmt::Seq(
+            Box::new(move_len),
+            Box::new(Stmt::Seq(
+                Box::new(move_result),
+                Box::new(Stmt::Seq(
+                    Box::new(init.unwrap_nx()),
+                    Box::new(Stmt::Label(end_label)),
+                )),
+            )),
+        )),
+        Box::new(IrExpr::Temp(ptr)),
+    );
+
+    Expr::Ex(expr)
+}
 
 pub fn assign(lhs: Expr, rhs: Expr) -> Expr {
     Expr::Nx(Stmt::Move(
@@ -450,36 +485,72 @@ pub fn break_expr(break_label: Label) -> Expr {
     ))
 }
 
+pub fn let_expr(decls: Vec<Expr>, body: Expr) -> Expr {
+    let mut decls: Vec<_> = decls.into_iter().map(|v| v.unwrap_nx()).collect();
+    let decls = match decls.len() {
+        0 => Stmt::Expr(Box::new(IrExpr::Const(0))),
+        1 => decls.swap_remove(0),
+        _ => {
+            let tail = decls.split_off(2);
+            let second = decls.pop().unwrap();
+            let first = decls.pop().unwrap();
+            Stmt::seq(first, second, tail)
+        }
+    };
+
+    let expr = IrExpr::ESeq(Box::new(decls), Box::new(body.unwrap_ex()));
+
+    Expr::Ex(expr)
+}
+
+pub fn var_decl<F: Frame>(access: Access<F>, value: Expr) -> Expr {
+    let lhs = F::exp(access.1, IrExpr::Temp(F::fp()));
+    Expr::Nx(Stmt::Move(Box::new(lhs), Box::new(value.unwrap_ex())))
+}
+
 pub fn unit() -> Expr {
-    Expr::Ex(IrExpr::Const(0))
+    Expr::Nx(Stmt::Expr(Box::new(IrExpr::Const(0))))
 }
 
-pub struct Translator {
+pub struct Translator<F: Frame> {
     string_literal_map: HashMap<Symbol, Label>,
+    fragments: Vec<Fragment<F>>,
 }
 
-impl Translator {
+impl<F: Frame> Translator<F> {
     pub fn new() -> Self {
         Self {
             string_literal_map: HashMap::new(),
+            fragments: Vec::new(),
         }
     }
 
     pub fn string_literal(&mut self, string: String) -> Expr {
-        let sym = Symbol::new(string);
+        let sym = Symbol::new(string.clone());
         let label = match self.string_literal_map.get(&sym) {
             Some(label) => label.clone(),
             None => {
                 let label = Label::new();
                 self.string_literal_map.insert(sym, label.clone());
+                self.fragments.push(Fragment::String(label.clone(), string));
                 label
             }
         };
         Expr::Nx(Stmt::Label(label))
     }
+
+    pub fn proc_entry_exit(&mut self, level: Level<F>, body: Expr) {
+        let body = Stmt::Move(Box::new(IrExpr::Temp(F::rv())), Box::new(body.unwrap_ex()));
+
+        self.fragments.push(Fragment::Proc(body, level.inner.frame))
+    }
+
+    pub fn get_result(&self) -> &[Fragment<F>] {
+        self.fragments.as_slice()
+    }
 }
 
-impl Default for Translator {
+impl<F: Frame> Default for Translator<F> {
     fn default() -> Self {
         Self::new()
     }

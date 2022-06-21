@@ -1,7 +1,7 @@
 mod x86;
 
 use crate::{
-    ir::Expr,
+    ir::{Expr, Stmt},
     temp::{Label, Temp},
 };
 pub use x86::X86;
@@ -16,6 +16,8 @@ pub trait Frame: Clone {
 
     /// Represents frame pointer.
     fn fp() -> Temp;
+    /// Represents return value register.
+    fn rv() -> Temp;
 
     /// Create new frame with given name and the escape information of arguments.
     fn new(name: Label, formals: Vec<bool>) -> Self;
@@ -36,4 +38,12 @@ pub trait Frame: Clone {
 
     /// Call extern function which name is `name` with `args`.
     fn extern_call(name: &str, args: Vec<Expr>) -> Expr;
+
+    /// Does view shift.
+    fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt;
+}
+
+pub enum Fragment<F: Frame> {
+    Proc(Stmt, F),
+    String(Label, String),
 }

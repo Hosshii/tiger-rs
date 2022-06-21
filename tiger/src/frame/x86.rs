@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 
 use crate::{
-    ir::{BinOp, Expr},
+    ir::{BinOp, Expr, Stmt},
     temp::{Label, Temp},
 };
 
@@ -15,7 +15,10 @@ pub struct X86 {
 }
 
 const PTR_SIZE: i64 = 8;
-static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers { rbp: Temp::new() });
+static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
+    rbp: Temp::new(),
+    rax: Temp::new(),
+});
 
 impl Frame for X86 {
     type Access = Access;
@@ -68,7 +71,15 @@ impl Frame for X86 {
         REGISTERS_GLOBAL.rbp
     }
 
+    fn rv() -> Temp {
+        REGISTERS_GLOBAL.rax
+    }
+
     fn extern_call(name: &str, args: Vec<Expr>) -> Expr {
+        todo!()
+    }
+
+    fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt {
         todo!()
     }
 }
@@ -81,4 +92,5 @@ pub enum Access {
 
 struct Registers {
     rbp: Temp,
+    rax: Temp,
 }

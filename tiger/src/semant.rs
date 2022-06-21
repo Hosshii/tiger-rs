@@ -185,7 +185,7 @@ pub struct Semant<F: Frame> {
     var_env: Env<EnvEntry<F>>, // var and func env
     type_env: Env<Type>,       // type env
     break_count: u32, // 0 means not inside break or while. greater than 1 means inside break or while
-    translator: Translator,
+    translator: Translator<F>,
 }
 
 impl Semant<X86> {
@@ -290,9 +290,9 @@ impl<F: Frame> Semant<F> {
         self.break_count > 0
     }
 
-    fn new_scope<G>(&mut self, g: G) -> Result<ExprType>
+    fn new_scope<G, R>(&mut self, g: G) -> Result<R>
     where
-        G: FnOnce(&mut Self) -> Result<ExprType>,
+        G: FnOnce(&mut Self) -> Result<R>,
     {
         self.type_env.begin_scope();
         self.var_env.begin_scope();
@@ -317,7 +317,7 @@ impl<F: Frame> Semant<F> {
         decl: Decl,
         parent_level: &mut Level<F>,
         break_label: Option<Label>,
-    ) -> Result<()> {
+    ) -> Result<Option<TransExpr>> {
         match decl {
             Decl::Type(type_decls) => {
                 let mut seen = HashSet::new();
@@ -346,12 +346,11 @@ impl<F: Frame> Semant<F> {
 
                 self.detect_invalid_recursion(&iter)?;
 
-                Ok(())
+                Ok(None)
             }
             Decl::Var(VarDecl(id, is_escape, ty, expr, pos)) => {
                 let sym = Symbol::from(id);
-                let ExprType { ty: expr_ty, .. } =
-                    self.trans_expr(expr, parent_level, break_label)?;
+                let expr = self.trans_expr(expr, parent_level, break_label)?;
 
                 if let Some(type_id) = ty {
                     let ty_symbol = Symbol::from(type_id);
@@ -359,11 +358,11 @@ impl<F: Frame> Semant<F> {
                         Some(expected_ty) => {
                             let expected_ty = self.actual_ty(expected_ty, pos)?.clone();
 
-                            if !expected_ty.assignable(&expr_ty) {
+                            if !expected_ty.assignable(&expr.ty) {
                                 return Err(Error::new_unexpected_type(
                                     pos,
                                     vec![expected_ty],
-                                    expr_ty,
+                                    expr.ty,
                                 ));
                             }
                         }
@@ -372,22 +371,25 @@ impl<F: Frame> Semant<F> {
                 } else {
                     // initializing nil expressions not constrained by record type is invalid
                     // see test45.tig
-                    if expr_ty == CompleteType::Nil {
+                    if expr.ty == CompleteType::Nil {
                         return Err(Error::new_unconstrained_nil_initialize(pos));
                     }
 
                     // initializing with unit is invalid
                     // see test43.tig
-                    if expr_ty == CompleteType::Unit {
+                    if expr.ty == CompleteType::Unit {
                         return Err(Error::new_unit_initialize(pos));
                     }
                 }
 
                 let access = translate::alloc_local(parent_level.clone(), is_escape);
-                self.var_env
-                    .enter(sym, EnvEntry::new_var(access, Type::Complete(expr_ty)));
+                self.var_env.enter(
+                    sym,
+                    EnvEntry::new_var(access.clone(), Type::Complete(expr.ty)),
+                );
+                let lhs = translate::var_decl(access, expr.expr);
 
-                Ok(())
+                Ok(Some(lhs))
             }
             Decl::Func(fn_decls) => {
                 let mut header = vec![];
@@ -454,14 +456,17 @@ impl<F: Frame> Semant<F> {
                 {
                     // function body
                     let ret_type = self.actual_ty(&ret_type, func_decl.pos)?.clone();
+
                     self.new_scope(|_self| {
                         for (ty, f) in formals.into_iter().zip(func_decl.params.into_iter()) {
                             let sym = Symbol::from(f.id);
                             let access = translate::alloc_local(level.clone(), f.is_escape);
                             _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
                         }
+
                         let ty =
                             _self.trans_expr(func_decl.body, parent_level, break_label.clone())?;
+
                         if ty.ty != ret_type {
                             Err(Error::new_unexpected_type(
                                 func_decl.pos,
@@ -469,12 +474,13 @@ impl<F: Frame> Semant<F> {
                                 ty.ty,
                             ))
                         } else {
-                            Ok(ty)
+                            _self.translator.proc_entry_exit(level, ty.expr);
+                            Ok(())
                         }
                     })?;
                 }
 
-                Ok(())
+                Ok(None)
             }
         }
     }
@@ -777,7 +783,7 @@ impl<F: Frame> Semant<F> {
                                 self.check_type(&init.ty, &[arr_ty], init_pos)?;
 
                                 Ok(ExprType {
-                                    expr: TransExpr::new(),
+                                    expr: translate::array_creation::<F>(size.expr, init.expr),
                                     ty: CompleteType::Array { ty, unique },
                                 })
                             }
@@ -926,14 +932,17 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Let(decls, exprs, pos) => self.new_scope(|_self| {
+                let mut decls_expr = Vec::new();
                 for decl in decls {
-                    _self.trans_decl(decl, level, break_label.clone())?;
+                    let decl = _self.trans_decl(decl, level, break_label.clone())?;
+                    if let Some(stmt) = decl {
+                        decls_expr.push(stmt);
+                    }
                 }
-                let ExprType { ty, .. } =
-                    _self.trans_expr(AstExpr::Sequence(exprs, pos), level, break_label)?;
+                let body = _self.trans_expr(AstExpr::Sequence(exprs, pos), level, break_label)?;
                 Ok(ExprType {
-                    expr: TransExpr::new(),
-                    ty,
+                    expr: translate::let_expr(decls_expr, body.expr),
+                    ty: body.ty,
                 })
             }),
         }
