@@ -1275,4 +1275,5 @@ mod tests {
     test_file!(test_test63, "./testcases/test63.tig", success);
     test_file!(test_test64, "./testcases/test64.tig", success);
     test_file!(test_test65, "./testcases/test65.tig", invalid);
+    test_file!(test_test66, "./testcases/test66.tig", success);
 }

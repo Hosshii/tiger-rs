@@ -82,11 +82,9 @@ impl Debug for Expr {
 pub type Access<F> = (Level<F>, <F as Frame>::Access);
 
 pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>) -> Level<F> {
-    // nested function
-    if parent.inner.parent.is_some() {
-        // for static link
-        formals.push(true);
-    }
+    // for static link
+    formals.push(true);
+
     let frame = F::new(name, formals);
     Level::new(parent, frame)
 }
@@ -183,7 +181,10 @@ fn calc_static_link<F: Frame>(mut cur_level: &Level<F>, ancestor_level: &Level<F
 
     while cur_level != ancestor_level {
         let frame = cur_level.inner.frame.borrow();
-        let link_access = frame.formals().last().expect("static link");
+        let link_access = frame
+            .formals()
+            .last()
+            .expect("static link does not exists in formals");
         link = F::exp(link_access.clone(), link);
 
         let parent = cur_level
