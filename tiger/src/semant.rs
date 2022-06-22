@@ -5,7 +5,8 @@ use std::{
 
 use crate::{
     env::Env,
-    frame::{Frame, X86},
+    escape::EscapeFinder,
+    frame::{Fragment, Frame, X86},
     parser::ast::{
         Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
     },
@@ -221,8 +222,11 @@ impl<F: Frame> Semant<F> {
             .map_err(|e| Error::new_incomplete_type(pos, e))
     }
 
-    pub fn trans_prog(&mut self, expr: AstExpr) -> Result<ExprType> {
-        self.trans_expr(expr, &mut Level::outermost(), None)
+    pub fn trans_prog(mut self, mut expr: AstExpr) -> Result<Vec<Fragment<F>>> {
+        EscapeFinder::find_escape(&mut expr);
+
+        self.trans_expr(expr, &mut Level::outermost(), None)?;
+        Ok(self.translator.get_result())
     }
 
     fn check_type(
@@ -458,9 +462,12 @@ impl<F: Frame> Semant<F> {
                     let ret_type = self.actual_ty(&ret_type, func_decl.pos)?.clone();
 
                     self.new_scope(|_self| {
-                        for (ty, f) in formals.into_iter().zip(func_decl.params.into_iter()) {
+                        for ((ty, f), access) in formals
+                            .into_iter()
+                            .zip(func_decl.params.into_iter())
+                            .zip(level.formals())
+                        {
                             let sym = Symbol::from(f.id);
-                            let access = translate::alloc_local(level.clone(), f.is_escape);
                             _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
                         }
 
@@ -1174,11 +1181,11 @@ mod tests {
             let file = File::open($path).unwrap();
             let ast = parser::parse($path, file).unwrap();
 
-            let mut semantic_analyzer = Semant::<X86>::new_with_base();
+            let semantic_analyzer = Semant::<X86>::new_with_base();
 
             match ast {
                 Program::Expr(e) => match semantic_analyzer.trans_prog(e) {
-                    Ok(t) => println!("success! {:?}", t),
+                    Ok(_) => println!("success!"),
                     Err(e) => panic!("fail! {}", e),
                 },
                 Program::Decls(_) => panic!(),

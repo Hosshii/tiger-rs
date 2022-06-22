@@ -91,17 +91,6 @@ pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>
     Level::new(parent, frame)
 }
 
-pub fn formals<F: Frame>(level: Level<F>) -> Vec<Access<F>> {
-    level
-        .inner
-        .frame
-        .borrow()
-        .formals()
-        .iter()
-        .map(|access| (level.clone(), access.clone()))
-        .collect()
-}
-
 pub fn alloc_local<F: Frame>(level: Level<F>, is_escape: bool) -> Access<F> {
     let frame = level.inner.frame.borrow_mut().alloc_local(is_escape);
     (level, frame)
@@ -539,8 +528,8 @@ impl<F: Frame> Translator<F> {
         self.fragments.push(Fragment::Proc(body, level.inner.frame))
     }
 
-    pub fn get_result(&self) -> &[Fragment<F>] {
-        self.fragments.as_slice()
+    pub fn get_result(self) -> Vec<Fragment<F>> {
+        self.fragments
     }
 }
 
@@ -568,6 +557,16 @@ impl<F: Frame> Level<F> {
         Self {
             inner: LevelInner::outermost(),
         }
+    }
+
+    pub fn formals(&self) -> Vec<Access<F>> {
+        self.inner
+            .frame
+            .borrow()
+            .formals()
+            .iter()
+            .map(|access| (self.clone(), access.clone()))
+            .collect()
     }
 }
 
