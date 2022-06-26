@@ -1,11 +1,19 @@
-use std::{collections::VecDeque, iter::Peekable, ops::Deref};
+use crate::{ir::Stmt, temp::Label};
 
-use crate::{
-    ir::{Expr, Stmt},
-    temp::{Label, Temp},
-};
+pub use blocks::basic_blocks;
+pub use linearize::linearize;
 
-pub fn linearize(stmt: Stmt) -> Vec<Stmt> {
+mod linearize {
+    use crate::{
+        ir::{Expr, Stmt},
+        temp::Temp,
+    };
+    use std::collections::VecDeque;
+
+    pub fn linearize(stmt: Stmt) -> Vec<Stmt> {
+        linear(Vec::new(), do_stmt(stmt))
+    }
+
     fn commute(expr: &Expr, stmt: &Stmt) -> bool {
         matches!((expr, stmt), (Expr::Const(_), _) | (Expr::Name(_), _))
     }
@@ -227,13 +235,23 @@ pub fn linearize(stmt: Stmt) -> Vec<Stmt> {
             concat_stmt(self, other)
         }
     }
-
-    linear(Vec::new(), do_stmt(stmt))
 }
 
-type Block = Vec<Stmt>;
+mod blocks {
+    use crate::{
+        ir::{Expr, Stmt},
+        temp::Label,
+    };
+    use std::collections::VecDeque;
 
-pub fn basic_blocks(stmts: VecDeque<Stmt>) -> (Vec<Block>, Label) {
+    type Block = Vec<Stmt>;
+
+    pub fn basic_blocks(stmts: VecDeque<Stmt>) -> (Vec<Block>, Label) {
+        let done_label = Label::new();
+        let blocks = BlockBuilder::basic_blocks(stmts, done_label.clone());
+        (blocks, done_label)
+    }
+
     struct BlockBuilder {
         iter: VecDeque<Stmt>,
         done: Label,
@@ -251,7 +269,7 @@ pub fn basic_blocks(stmts: VecDeque<Stmt>) -> (Vec<Block>, Label) {
             }
         }
 
-        fn linearize(stmts: impl Into<VecDeque<Stmt>>, done_label: Label) -> Vec<Block> {
+        fn basic_blocks(stmts: impl Into<VecDeque<Stmt>>, done_label: Label) -> Vec<Block> {
             let mut builder = Self::new(stmts, done_label);
             builder.blocks();
             builder.result
@@ -303,10 +321,6 @@ pub fn basic_blocks(stmts: VecDeque<Stmt>) -> (Vec<Block>, Label) {
             }
         }
     }
-
-    let done_label = Label::new();
-    let blocks = BlockBuilder::linearize(stmts, done_label.clone());
-    (blocks, done_label)
 }
 
 pub fn trace_schedule(stmts: Vec<Vec<Stmt>>, label: Label) -> Vec<Stmt> {
