@@ -39,6 +39,10 @@ impl Stmt {
             })
             .unwrap()
     }
+
+    pub fn nop() -> Stmt {
+        Stmt::Expr(Box::new(Expr::Const(0)))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

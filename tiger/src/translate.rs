@@ -419,7 +419,7 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
         )),
     );
 
-    let els = els.unwrap_or_else(unit);
+    let els = els.unwrap_or_else(nop);
     let false_stmt = Stmt::Seq(
         Box::new(Stmt::Label(f.clone())),
         Box::new(Stmt::Seq(
@@ -492,8 +492,8 @@ pub fn var_decl<F: Frame>(access: Access<F>, value: Expr) -> Expr {
     Expr::Nx(Stmt::Move(Box::new(lhs), Box::new(value.unwrap_ex())))
 }
 
-pub fn unit() -> Expr {
-    Expr::Nx(Stmt::Expr(Box::new(IrExpr::Const(0))))
+pub fn nop() -> Expr {
+    Expr::Nx(Stmt::nop())
 }
 
 pub struct Translator<F: Frame> {
