@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::Deref};
+use std::{collections::VecDeque, iter::Peekable, ops::Deref};
 
 use crate::{
     ir::{Expr, Stmt},
@@ -231,8 +231,82 @@ pub fn linearize(stmt: Stmt) -> Vec<Stmt> {
     linear(Vec::new(), do_stmt(stmt))
 }
 
-pub fn basic_blocks(stmts: Vec<Stmt>) -> (Vec<Vec<Stmt>>, Label) {
-    todo!()
+type Block = Vec<Stmt>;
+
+pub fn basic_blocks(stmts: VecDeque<Stmt>) -> (Vec<Block>, Label) {
+    struct BlockBuilder {
+        iter: VecDeque<Stmt>,
+        done: Label,
+        result: Vec<Block>,
+        cur_block: Block,
+    }
+
+    impl BlockBuilder {
+        fn new(stmts: impl Into<VecDeque<Stmt>>, done_label: Label) -> Self {
+            Self {
+                iter: stmts.into(),
+                done: done_label,
+                result: Vec::default(),
+                cur_block: Vec::default(),
+            }
+        }
+
+        fn linearize(stmts: impl Into<VecDeque<Stmt>>, done_label: Label) -> Vec<Block> {
+            let mut builder = Self::new(stmts, done_label);
+            builder.blocks();
+            builder.result
+        }
+
+        fn next(&mut self) {
+            match self.iter.pop_front() {
+                None => {
+                    self.iter.push_front(Stmt::Jump(
+                        Box::new(Expr::Name(self.done.clone())),
+                        vec![self.done.clone()],
+                    ));
+                    self.next();
+                }
+                Some(stmt @ (Stmt::CJump(_, _, _, _, _) | Stmt::Jump(_, _))) => {
+                    self.cur_block.push(stmt);
+                    self.end_block();
+                }
+                Some(Stmt::Label(label)) => {
+                    self.iter
+                        .push_front(Stmt::Jump(Box::new(Expr::Name(label.clone())), vec![label]));
+                    self.next();
+                }
+                Some(s) => {
+                    self.cur_block.push(s);
+                    self.next();
+                }
+            }
+        }
+
+        fn end_block(&mut self) {
+            let block = std::mem::take(&mut self.cur_block);
+            self.result.push(block);
+            self.blocks();
+        }
+
+        fn blocks(&mut self) {
+            match self.iter.pop_front() {
+                Some(label @ Stmt::Label(_)) => {
+                    self.cur_block.push(label);
+                    self.next();
+                }
+                Some(s) => {
+                    self.iter.push_front(s);
+                    self.iter.push_front(Stmt::Label(Label::new()));
+                    self.blocks();
+                }
+                None => (),
+            }
+        }
+    }
+
+    let done_label = Label::new();
+    let blocks = BlockBuilder::linearize(stmts, done_label.clone());
+    (blocks, done_label)
 }
 
 pub fn trace_schedule(stmts: Vec<Vec<Stmt>>, label: Label) -> Vec<Stmt> {
