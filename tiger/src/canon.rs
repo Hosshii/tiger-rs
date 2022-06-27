@@ -2,6 +2,7 @@ use crate::{ir::Stmt, temp::Label};
 
 pub use blocks::basic_blocks;
 pub use linearize::linearize;
+pub use trace::trace_schedule;
 
 mod linearize {
     use crate::{
@@ -237,6 +238,8 @@ mod linearize {
     }
 }
 
+type Block = Vec<Stmt>;
+
 mod blocks {
     use crate::{
         ir::{Expr, Stmt},
@@ -244,7 +247,7 @@ mod blocks {
     };
     use std::collections::VecDeque;
 
-    type Block = Vec<Stmt>;
+    use super::Block;
 
     pub fn basic_blocks(stmts: VecDeque<Stmt>) -> (Vec<Block>, Label) {
         let done_label = Label::new();
@@ -323,6 +326,99 @@ mod blocks {
     }
 }
 
-pub fn trace_schedule(stmts: Vec<Vec<Stmt>>, label: Label) -> Vec<Stmt> {
-    todo!()
+mod trace {
+    use std::collections::HashMap;
+
+    use crate::{
+        ir::{Expr, RelOp, Stmt},
+        temp::Label,
+    };
+
+    use super::Block;
+
+    pub fn trace_schedule(mut blocks: Vec<Block>, label: Label) -> Vec<Stmt> {
+        let mut table = HashMap::new();
+        for (idx, block) in blocks.iter().enumerate() {
+            match block.first().expect("block should have at least 1 element") {
+                Stmt::Label(label) => {
+                    if table.insert(label.clone(), idx).is_some() {
+                        panic!("exists same label in multiple place.")
+                    }
+                }
+                _ => panic!("first element of block must be label."),
+            }
+        }
+
+        let mut seen = vec![false; blocks.len()];
+
+        let mut result = Vec::with_capacity(blocks.len());
+
+        for idx in 0..blocks.len() {
+            if seen[idx] {
+                continue;
+            }
+
+            enter_block(&mut table, &mut seen, &mut result, &mut blocks, idx)
+        }
+
+        result.into_iter().flatten().collect()
+    }
+
+    fn enter_block(
+        table: &mut HashMap<Label, usize>,
+        seen: &mut [bool],
+        result: &mut Vec<Block>,
+        blocks: &mut Vec<Block>,
+        idx: usize,
+    ) {
+        let mut block = std::mem::take(&mut blocks[idx]);
+        seen[idx] = true;
+
+        let next_idx = match block.pop().expect("block should have at least 1 element") {
+            Stmt::CJump(op, lhs, rhs, t, f) => {
+                if let Some(idx) = table.remove(&f) {
+                    block.push(Stmt::CJump(op, lhs, rhs, t, f));
+                    Some(idx)
+                } else if let Some(idx) = table.remove(&t) {
+                    // exchange label and cond
+                    block.push(Stmt::CJump(negate_condition(op), lhs, rhs, f, t));
+                    Some(idx)
+                } else {
+                    let new_label = Label::new();
+                    block.push(Stmt::CJump(op, lhs, rhs, t, new_label.clone()));
+                    block.push(Stmt::Label(new_label.clone()));
+                    block.push(Stmt::Jump(
+                        Box::new(Expr::Name(new_label.clone())),
+                        vec![new_label],
+                    ));
+                    None
+                }
+            }
+            Stmt::Jump(_, labels) => labels
+                .iter()
+                .fold(None, |acc, label| acc.or_else(|| table.remove(label))),
+            _ => panic!("last element of block must be CJump or Jump"),
+        };
+
+        result.push(block);
+
+        if let Some(next_idx) = next_idx {
+            enter_block(table, seen, result, blocks, next_idx)
+        }
+    }
+
+    fn negate_condition(op: RelOp) -> RelOp {
+        match op {
+            RelOp::Eq => RelOp::Ne,
+            RelOp::Ge => RelOp::Lt,
+            RelOp::Gt => RelOp::Le,
+            RelOp::Le => RelOp::Gt,
+            RelOp::Lt => RelOp::Ge,
+            RelOp::Ne => RelOp::Eq,
+            RelOp::Uge => RelOp::Ult,
+            RelOp::Ugt => RelOp::Ule,
+            RelOp::Ule => RelOp::Ugt,
+            RelOp::Ult => RelOp::Uge,
+        }
+    }
 }

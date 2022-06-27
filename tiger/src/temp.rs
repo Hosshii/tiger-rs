@@ -29,7 +29,7 @@ impl Default for Temp {
 
 static LABEL_GLOBAL: AtomicU32 = AtomicU32::new(0);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Label {
     num: u32,
 }
