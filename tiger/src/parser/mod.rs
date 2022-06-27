@@ -6,8 +6,8 @@ use lalrpop_util::lalrpop_mod;
 use thiserror::Error;
 
 use crate::{
+    common::Position,
     lexer::{self, Error as LexError, TokenKind},
-    position::Position,
 };
 
 lalrpop_mod!(#[allow(unused_imports, clippy::all)] pub grammar,"/parser/grammar.rs");

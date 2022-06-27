@@ -1,4 +1,4 @@
-use crate::{ir::Stmt, temp::Label};
+use crate::ir::Stmt;
 
 pub use blocks::basic_blocks;
 pub use linearize::linearize;
@@ -6,8 +6,8 @@ pub use trace::trace_schedule;
 
 mod linearize {
     use crate::{
+        common::Temp,
         ir::{Expr, Stmt},
-        temp::Temp,
     };
     use std::collections::VecDeque;
 
@@ -242,8 +242,8 @@ type Block = Vec<Stmt>;
 
 mod blocks {
     use crate::{
+        common::Label,
         ir::{Expr, Stmt},
-        temp::Label,
     };
     use std::collections::VecDeque;
 
@@ -330,8 +330,8 @@ mod trace {
     use std::collections::HashMap;
 
     use crate::{
+        common::Label,
         ir::{Expr, RelOp, Stmt},
-        temp::Label,
     };
 
     use super::Block;

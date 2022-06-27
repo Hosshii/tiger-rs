@@ -3,19 +3,20 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use crate::{
+use super::{
     env::Env,
     escape::EscapeFinder,
+    translate::{self, Access, Expr as TransExpr, Level, Translator},
+    types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
+};
+use crate::{
+    common::{Label, Positions, Symbol},
     frame::{Fragment, Frame, X86},
     parser::ast::{
         Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
     },
-    position::Positions,
-    symbol::Symbol,
-    temp::Label,
-    translate::{self, Access, Expr as TransExpr, Level, Translator},
-    types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
 };
+
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, Error>;

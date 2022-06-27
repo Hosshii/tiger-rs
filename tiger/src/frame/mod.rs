@@ -3,8 +3,8 @@ mod x86;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
+    common::{Label, Temp},
     ir::{Expr, Stmt},
-    temp::{Label, Temp},
 };
 pub use x86::X86;
 

@@ -1,7 +1,9 @@
 use std::{fmt::Display, sync::atomic::AtomicU32};
 
-use crate::{env::Env, symbol::Symbol};
+use crate::common::Symbol;
 use thiserror::Error;
+
+use super::env::Env;
 
 /// `Type` represents tiger language's type.
 /// `Complete` can determine the type just by looking at it and it never changes.

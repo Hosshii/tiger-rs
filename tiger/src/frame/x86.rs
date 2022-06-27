@@ -1,8 +1,8 @@
 use once_cell::sync::Lazy;
 
 use crate::{
+    common::{Label, Temp},
     ir::{BinOp, Expr, Stmt},
-    temp::{Label, Temp},
 };
 
 use super::Frame;
@@ -76,11 +76,13 @@ impl Frame for X86 {
     }
 
     fn extern_call(_name: &str, _args: Vec<Expr>) -> Expr {
-        todo!("extern call")
+        // todo!("extern call")
+        Expr::Const(0)
     }
 
     fn proc_entry_exit1(&mut self, _stmt: Stmt) -> Stmt {
-        todo!("proc_entry_exit1")
+        // todo!("proc_entry_exit1")
+        Stmt::Expr(Box::new(Expr::Const(0)))
     }
 }
 

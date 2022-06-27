@@ -1,10 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, sync::atomic::AtomicU32};
 
 use crate::{
+    common::{Label, Symbol, Temp},
     frame::{Fragment, Frame},
     ir::{BinOp, Expr as IrExpr, RelOp, Stmt},
-    symbol::Symbol,
-    temp::{Label, Temp},
 };
 
 type CxFn<'a> = dyn (FnOnce(Label, Label) -> Stmt) + 'a;

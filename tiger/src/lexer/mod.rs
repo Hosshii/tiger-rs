@@ -9,7 +9,7 @@ pub use token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind};
 
 use std::io::Read;
 
-use crate::position::Position;
+use crate::common::Position;
 
 type Result<T> = std::result::Result<T, Error>;
 pub type Spanned<Tok, Loc> = Result<(Loc, Tok, Loc)>;

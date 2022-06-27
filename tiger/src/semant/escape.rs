@@ -1,8 +1,9 @@
 use crate::{
-    env::Env,
+    common::Symbol,
     parser::ast::{Decl, Expr, LValue, VarDecl},
-    symbol::Symbol,
 };
+
+use super::env::Env;
 
 type Depth = u32;
 pub struct EscapeFinder<'a> {

@@ -1,6 +1,8 @@
+mod canon;
+
 use crate::{
+    common::{Label, Temp},
     parser::ast::Operator,
-    temp::{Label, Temp},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]

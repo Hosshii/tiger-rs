@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::symbol::Symbol;
+use crate::common::Symbol;
 
 type Bucket<T> = Vec<T>;
 

@@ -6,12 +6,12 @@ use std::{
 };
 
 use crate::{
+    common::{Meta, Position},
     lexer::{
         error::{Error, ErrorKind},
         token::{Ident, Reserved, Separator, StringLiteral, Token, TokenKind},
         Result,
     },
-    position::{Meta, Position},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

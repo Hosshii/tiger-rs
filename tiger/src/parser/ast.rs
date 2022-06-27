@@ -1,6 +1,6 @@
 use crate::{
+    common::Positions,
     lexer::{self},
-    position::Positions,
 };
 
 pub type Decls = Vec<Decl>;
