@@ -2,6 +2,7 @@ pub mod lexer;
 pub mod parser;
 pub mod semant;
 
+mod canon;
 mod env;
 mod escape;
 mod frame;
