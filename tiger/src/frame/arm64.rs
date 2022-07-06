@@ -8,7 +8,7 @@ use crate::{
 use super::Frame;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct X86 {
+pub struct ARM64 {
     name: Label,
     formals: Vec<Access>,
     pointer: i64,
@@ -20,7 +20,7 @@ static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
     rax: Temp::new(),
 });
 
-impl Frame for X86 {
+impl Frame for ARM64 {
     type Access = Access;
 
     const WORD_SIZE: u64 = 8;

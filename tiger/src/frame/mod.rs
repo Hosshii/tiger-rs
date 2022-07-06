@@ -1,4 +1,4 @@
-mod x86;
+mod arm64;
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -6,7 +6,7 @@ use crate::{
     common::{Label, Temp},
     ir::{Expr, Stmt},
 };
-pub use x86::X86;
+pub use arm64::ARM64;
 
 pub trait Frame {
     /// Represents an access to variable.

@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     common::{Label, Positions, Symbol},
-    frame::{Fragment, Frame, X86},
+    frame::{Fragment, Frame, ARM64},
     parser::ast::{
         Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
     },
@@ -190,8 +190,8 @@ pub struct Semant<F: Frame> {
     translator: Translator<F>,
 }
 
-impl Semant<X86> {
-    pub fn new_x86() -> Self {
+impl Semant<ARM64> {
+    pub fn new_arm64() -> Self {
         Self::new_with_base()
     }
 }
@@ -1175,14 +1175,14 @@ mod tests {
     macro_rules! test_file_inner {
         ($name:ident, $path:expr) => {
             use crate::{
-                frame::X86,
+                frame::ARM64,
                 parser::{self, ast::Program},
             };
             use std::fs::File;
             let file = File::open($path).unwrap();
             let ast = parser::parse($path, file).unwrap();
 
-            let semantic_analyzer = Semant::<X86>::new_with_base();
+            let semantic_analyzer = Semant::<ARM64>::new_with_base();
 
             match ast {
                 Program::Expr(e) => match semantic_analyzer.trans_prog(e) {

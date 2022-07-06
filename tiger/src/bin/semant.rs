@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ast = parser::parse(filename, file).map_err(|e| anyhow::format_err!("{}", e))?;
 
-    let semantic_analyzer = Semant::new_x86();
+    let semantic_analyzer = Semant::new_arm64();
 
     match ast {
         Program::Expr(e) => match semantic_analyzer.trans_prog(e) {
