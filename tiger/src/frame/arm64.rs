@@ -7,6 +7,108 @@ use crate::{
 
 use super::Frame;
 
+const PTR_SIZE: i64 = 8;
+static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
+    sp: Temp::new(),
+    xzr: Temp::new(),
+    pc: Temp::new(),
+    x0: Temp::new(),
+    x1: Temp::new(),
+    x2: Temp::new(),
+    x3: Temp::new(),
+    x4: Temp::new(),
+    x5: Temp::new(),
+    x6: Temp::new(),
+    x7: Temp::new(),
+    x8: Temp::new(),
+    x9: Temp::new(),
+    x10: Temp::new(),
+    x11: Temp::new(),
+    x12: Temp::new(),
+    x13: Temp::new(),
+    x14: Temp::new(),
+    x15: Temp::new(),
+    x16: Temp::new(),
+    x17: Temp::new(),
+    x18: Temp::new(),
+    x19: Temp::new(),
+    x20: Temp::new(),
+    x21: Temp::new(),
+    x22: Temp::new(),
+    x23: Temp::new(),
+    x24: Temp::new(),
+    x25: Temp::new(),
+    x26: Temp::new(),
+    x27: Temp::new(),
+    x28: Temp::new(),
+    x29: Temp::new(),
+    x30: Temp::new(),
+});
+
+static SPECIAL_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
+    vec![
+        REGISTERS_GLOBAL.sp,
+        REGISTERS_GLOBAL.xzr,
+        REGISTERS_GLOBAL.pc,
+        REGISTERS_GLOBAL.x0, // TODO: Duplicate with ARG_REGS.
+        REGISTERS_GLOBAL.x29,
+        REGISTERS_GLOBAL.x30,
+    ]
+});
+
+static ARG_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
+    vec![
+        REGISTERS_GLOBAL.x0,
+        REGISTERS_GLOBAL.x1,
+        REGISTERS_GLOBAL.x2,
+        REGISTERS_GLOBAL.x3,
+        REGISTERS_GLOBAL.x4,
+        REGISTERS_GLOBAL.x5,
+        REGISTERS_GLOBAL.x6,
+        REGISTERS_GLOBAL.x7,
+    ]
+});
+
+static CALEE_SAVE_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
+    vec![
+        REGISTERS_GLOBAL.x8,
+        REGISTERS_GLOBAL.x16,
+        REGISTERS_GLOBAL.x17,
+        REGISTERS_GLOBAL.x18,
+        REGISTERS_GLOBAL.x19,
+        REGISTERS_GLOBAL.x20,
+        REGISTERS_GLOBAL.x21,
+        REGISTERS_GLOBAL.x22,
+        REGISTERS_GLOBAL.x23,
+        REGISTERS_GLOBAL.x24,
+        REGISTERS_GLOBAL.x25,
+        REGISTERS_GLOBAL.x26,
+        REGISTERS_GLOBAL.x27,
+        REGISTERS_GLOBAL.x28,
+    ]
+});
+
+static CALLER_SAVE_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
+    vec![
+        REGISTERS_GLOBAL.x9,
+        REGISTERS_GLOBAL.x10,
+        REGISTERS_GLOBAL.x11,
+        REGISTERS_GLOBAL.x12,
+        REGISTERS_GLOBAL.x13,
+        REGISTERS_GLOBAL.x14,
+        REGISTERS_GLOBAL.x15,
+    ]
+});
+
+static CALL_DEFS: Lazy<Vec<Temp>> = Lazy::new(|| {
+    let mut v = CALLER_SAVE_REGS.clone();
+    let mut arg_regs = ARG_REGS.clone();
+    v.append(&mut arg_regs);
+    // return register
+    v.push(REGISTERS_GLOBAL.x29);
+    v
+});
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ARM64 {
     name: Label,
@@ -14,11 +116,11 @@ pub struct ARM64 {
     pointer: i64,
 }
 
-const PTR_SIZE: i64 = 8;
-static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
-    rbp: Temp::new(),
-    rax: Temp::new(),
-});
+impl ARM64 {
+    pub fn call_defs() -> &'static [Temp] {
+        CALL_DEFS.as_ref()
+    }
+}
 
 impl Frame for ARM64 {
     type Access = Access;
@@ -67,12 +169,28 @@ impl Frame for ARM64 {
         }
     }
 
+    fn special_regs() -> &'static [Temp] {
+        SPECIAL_REGS.as_ref()
+    }
+
+    fn arg_regs() -> &'static [Temp] {
+        ARG_REGS.as_ref()
+    }
+
+    fn calee_save_regs() -> &'static [Temp] {
+        CALEE_SAVE_REGS.as_ref()
+    }
+
+    fn caller_save_regs() -> &'static [Temp] {
+        CALLER_SAVE_REGS.as_ref()
+    }
+
     fn fp() -> Temp {
-        REGISTERS_GLOBAL.rbp
+        REGISTERS_GLOBAL.x29
     }
 
     fn rv() -> Temp {
-        REGISTERS_GLOBAL.rax
+        REGISTERS_GLOBAL.x0
     }
 
     fn extern_call(_name: &str, _args: Vec<Expr>) -> Expr {
@@ -93,6 +211,38 @@ pub enum Access {
 }
 
 struct Registers {
-    rbp: Temp,
-    rax: Temp,
+    sp: Temp,
+    xzr: Temp,
+    pc: Temp,
+    x0: Temp,
+    x1: Temp,
+    x2: Temp,
+    x3: Temp,
+    x4: Temp,
+    x5: Temp,
+    x6: Temp,
+    x7: Temp,
+    x8: Temp,
+    x9: Temp,
+    x10: Temp,
+    x11: Temp,
+    x12: Temp,
+    x13: Temp,
+    x14: Temp,
+    x15: Temp,
+    x16: Temp,
+    x17: Temp,
+    x18: Temp,
+    x19: Temp,
+    x20: Temp,
+    x21: Temp,
+    x22: Temp,
+    x23: Temp,
+    x24: Temp,
+    x25: Temp,
+    x26: Temp,
+    x27: Temp,
+    x28: Temp,
+    x29: Temp,
+    x30: Temp,
 }

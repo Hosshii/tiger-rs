@@ -16,6 +16,17 @@ pub trait Frame {
     /// Machine specific word size.
     const WORD_SIZE: u64;
 
+    /// Represents special registers like fp, sp, lr, etc.
+    fn special_regs() -> &'static [Temp];
+
+    /// Represents argument registers.
+    /// Must be in the same order as the arguments in the function.
+    /// ex. `[x0, x1, x2, ..., x7]` for ARM64.
+    /// https://developer.arm.com/documentation/102374/0100/Procedure-Call-Standard
+    fn arg_regs() -> &'static [Temp];
+    fn calee_save_regs() -> &'static [Temp];
+    fn caller_save_regs() -> &'static [Temp];
+
     /// Represents frame pointer.
     fn fp() -> Temp;
     /// Represents return value register.
