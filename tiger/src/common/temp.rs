@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::atomic::AtomicU32};
 
 static TEMP_GLOBAL: AtomicU32 = AtomicU32::new(0);
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Temp {
     num: u32,
 }
