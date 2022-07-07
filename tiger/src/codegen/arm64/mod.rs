@@ -1,14 +1,14 @@
+pub mod frame;
+
 use crate::{
-    frame::{Frame, ARM64 as ARM64Frame},
+    asm::{Instruction, Temp},
     ir::{BinOp, Expr, RelOp, Stmt},
 };
+use frame::ARM64 as ARM64Frame;
 
-use super::{
-    asm::{Instruction, Temp},
-    Codegen,
-};
+use super::{Codegen, Frame as _};
 
-struct ARM64 {
+pub struct ARM64 {
     frame: ARM64Frame,
     instructions: Vec<Instruction>,
 }
@@ -47,7 +47,7 @@ impl ARM64 {
                     self.emit(instruction);
                 }
                 Expr::Mem(mem, size) => {
-                    assert_eq!(*size, <ARM64Frame as Frame>::WORD_SIZE);
+                    assert_eq!(*size, ARM64Frame::WORD_SIZE);
 
                     let instruction = Instruction::Move {
                         assembly: "str 's0, ['d0, #0]".to_string(),
@@ -171,7 +171,7 @@ impl ARM64 {
                 self.emit(instruction);
             }
             Expr::Mem(expr, size) => {
-                assert_eq!(*size, <ARM64Frame as Frame>::WORD_SIZE);
+                assert_eq!(*size, ARM64Frame::WORD_SIZE);
 
                 let instruction = Instruction::Operand {
                     assembly: "ldr 'd0, ['s0, #0]".to_string(),

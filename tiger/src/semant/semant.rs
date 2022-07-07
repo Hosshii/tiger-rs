@@ -10,8 +10,9 @@ use super::{
     types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
 };
 use crate::{
+    codegen::arm64::frame::ARM64,
     common::{Label, Positions, Symbol},
-    frame::{Fragment, Frame, ARM64},
+    frame::{Fragment, Frame},
     parser::ast::{
         Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
     },
@@ -1175,7 +1176,7 @@ mod tests {
     macro_rules! test_file_inner {
         ($name:ident, $path:expr) => {
             use crate::{
-                frame::ARM64,
+                codegen::arm64::frame::ARM64,
                 parser::{self, ast::Program},
             };
             use std::fs::File;

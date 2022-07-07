@@ -1,8 +1,6 @@
-use self::asm::Instruction;
-use crate::{frame::Frame, ir::Stmt};
+use crate::{asm::Instruction, frame::Frame, ir::Stmt};
 
-mod arm64;
-pub(crate) mod asm;
+pub mod arm64;
 
 trait Codegen {
     type Frame: Frame;

@@ -3,12 +3,11 @@ use std::{collections::HashMap, ops::Deref};
 use once_cell::sync::Lazy;
 
 use crate::{
-    codegen::asm::Instruction,
+    asm::Instruction,
     common::{Label, Temp},
+    frame::Frame,
     ir::{BinOp, Expr, Stmt},
 };
-
-use super::Frame;
 
 const PTR_SIZE: i64 = 8;
 static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {

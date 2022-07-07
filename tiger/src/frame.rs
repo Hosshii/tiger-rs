@@ -1,13 +1,11 @@
-mod arm64;
-
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    codegen::asm::Instruction,
     common::{Label, Temp},
     ir::{Expr, Stmt},
 };
-pub use arm64::ARM64;
+
+use super::asm::Instruction;
 
 pub trait Frame {
     /// Represents an access to variable.
