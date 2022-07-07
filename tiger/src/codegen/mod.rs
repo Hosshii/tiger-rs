@@ -2,7 +2,7 @@ use self::asm::Instruction;
 use crate::{frame::Frame, ir::Stmt};
 
 mod arm64;
-mod asm;
+pub(crate) mod asm;
 
 trait Codegen {
     type Frame: Frame;

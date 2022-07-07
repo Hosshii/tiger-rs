@@ -3,6 +3,7 @@ mod arm64;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
+    codegen::asm::Instruction,
     common::{Label, Temp},
     ir::{Expr, Stmt},
 };
@@ -56,6 +57,9 @@ pub trait Frame {
 
     /// Does view shift.
     fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt;
+
+    /// Add sink instruction.
+    fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>);
 }
 
 pub enum Fragment<F: Frame> {

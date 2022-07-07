@@ -3,6 +3,7 @@ use std::{collections::HashMap, ops::Deref};
 use once_cell::sync::Lazy;
 
 use crate::{
+    codegen::asm::Instruction,
     common::{Label, Temp},
     ir::{BinOp, Expr, Stmt},
 };
@@ -246,6 +247,19 @@ impl Frame for ARM64 {
     fn proc_entry_exit1(&mut self, _stmt: Stmt) -> Stmt {
         // todo!("proc_entry_exit1")
         Stmt::Expr(Box::new(Expr::Const(0)))
+    }
+
+    fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>) {
+        let mut src: Vec<_> = Self::calee_save_regs().iter().map(Into::into).collect();
+        let mut special_regs = Self::special_regs().iter().map(Into::into).collect();
+        src.append(&mut special_regs);
+        let instruction = Instruction::Operand {
+            assembly: String::new(),
+            dst: vec![],
+            src,
+            jump: None,
+        };
+        instructions.push(instruction);
     }
 }
 
