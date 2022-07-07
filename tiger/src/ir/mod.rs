@@ -1,5 +1,7 @@
 mod canon;
 
+pub use canon::{basic_blocks, linearize, trace_schedule};
+
 use crate::{
     common::{Label, Temp},
     parser::ast::Operator,

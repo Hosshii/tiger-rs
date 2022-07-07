@@ -60,6 +60,7 @@ pub trait Frame {
     fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>);
 }
 
+#[derive(Debug)]
 pub enum Fragment<F: Frame> {
     Proc(Stmt, Rc<RefCell<F>>),
     String(Label, String),

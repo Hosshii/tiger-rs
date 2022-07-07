@@ -14,6 +14,13 @@ pub struct ARM64 {
 }
 
 impl ARM64 {
+    fn new(frame: ARM64Frame) -> Self {
+        Self {
+            frame,
+            instructions: Vec::new(),
+        }
+    }
+
     fn munch_args(&mut self, args: &[Expr]) -> Vec<Temp> {
         if args.len() > ARM64Frame::arg_regs().len() {
             unimplemented!("too many arguments");
@@ -214,7 +221,9 @@ impl ARM64 {
 impl Codegen for ARM64 {
     type Frame = ARM64Frame;
 
-    fn codegen(f: Self::Frame, stmt: Stmt) -> Vec<Instruction> {
-        todo!()
+    fn codegen(frame: Self::Frame, stmt: Stmt) -> Vec<Instruction> {
+        let mut codegen = ARM64::new(frame);
+        codegen.munch_stmt(&stmt);
+        codegen.instructions
     }
 }

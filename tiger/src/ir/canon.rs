@@ -11,8 +11,8 @@ mod linearize {
     };
     use std::collections::VecDeque;
 
-    pub fn linearize(stmt: Stmt) -> Vec<Stmt> {
-        linear(Vec::new(), do_stmt(stmt))
+    pub fn linearize(stmt: Stmt) -> VecDeque<Stmt> {
+        VecDeque::from(linear(Vec::new(), do_stmt(stmt)))
     }
 
     fn commute(expr: &Expr, stmt: &Stmt) -> bool {

@@ -2,8 +2,8 @@ use crate::{asm::Instruction, frame::Frame, ir::Stmt};
 
 pub mod arm64;
 
-trait Codegen {
+pub trait Codegen {
     type Frame: Frame;
 
-    fn codegen(f: Self::Frame, stmt: Stmt) -> Vec<Instruction>;
+    fn codegen(frame: Self::Frame, stmt: Stmt) -> Vec<Instruction>;
 }
