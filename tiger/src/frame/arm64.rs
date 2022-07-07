@@ -1,3 +1,5 @@
+use std::{collections::HashMap, ops::Deref};
+
 use once_cell::sync::Lazy;
 
 use crate::{
@@ -109,6 +111,45 @@ static CALL_DEFS: Lazy<Vec<Temp>> = Lazy::new(|| {
     v
 });
 
+static TEMP_MAP: Lazy<HashMap<Temp, &'static str>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    m.insert(REGISTERS_GLOBAL.sp, "sp");
+    m.insert(REGISTERS_GLOBAL.xzr, "xzr");
+    m.insert(REGISTERS_GLOBAL.pc, "pc");
+    m.insert(REGISTERS_GLOBAL.x0, "x0");
+    m.insert(REGISTERS_GLOBAL.x1, "x1");
+    m.insert(REGISTERS_GLOBAL.x2, "x2");
+    m.insert(REGISTERS_GLOBAL.x3, "x3");
+    m.insert(REGISTERS_GLOBAL.x4, "x4");
+    m.insert(REGISTERS_GLOBAL.x5, "x5");
+    m.insert(REGISTERS_GLOBAL.x6, "x6");
+    m.insert(REGISTERS_GLOBAL.x7, "x7");
+    m.insert(REGISTERS_GLOBAL.x8, "x8");
+    m.insert(REGISTERS_GLOBAL.x9, "x9");
+    m.insert(REGISTERS_GLOBAL.x10, "x10");
+    m.insert(REGISTERS_GLOBAL.x11, "x11");
+    m.insert(REGISTERS_GLOBAL.x12, "x12");
+    m.insert(REGISTERS_GLOBAL.x13, "x13");
+    m.insert(REGISTERS_GLOBAL.x14, "x14");
+    m.insert(REGISTERS_GLOBAL.x15, "x15");
+    m.insert(REGISTERS_GLOBAL.x16, "x16");
+    m.insert(REGISTERS_GLOBAL.x17, "x17");
+    m.insert(REGISTERS_GLOBAL.x18, "x18");
+    m.insert(REGISTERS_GLOBAL.x19, "x19");
+    m.insert(REGISTERS_GLOBAL.x20, "x20");
+    m.insert(REGISTERS_GLOBAL.x21, "x21");
+    m.insert(REGISTERS_GLOBAL.x22, "x22");
+    m.insert(REGISTERS_GLOBAL.x23, "x23");
+    m.insert(REGISTERS_GLOBAL.x24, "x24");
+    m.insert(REGISTERS_GLOBAL.x25, "x25");
+    m.insert(REGISTERS_GLOBAL.x26, "x26");
+    m.insert(REGISTERS_GLOBAL.x27, "x27");
+    m.insert(REGISTERS_GLOBAL.x28, "x28");
+    m.insert(REGISTERS_GLOBAL.x29, "x29");
+    m.insert(REGISTERS_GLOBAL.x30, "x30");
+    m
+});
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ARM64 {
     name: Label,
@@ -183,6 +224,10 @@ impl Frame for ARM64 {
 
     fn caller_save_regs() -> &'static [Temp] {
         CALLER_SAVE_REGS.as_ref()
+    }
+
+    fn temp_map() -> &'static HashMap<Temp, &'static str> {
+        TEMP_MAP.deref()
     }
 
     fn fp() -> Temp {

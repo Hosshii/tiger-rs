@@ -1,6 +1,6 @@
 mod arm64;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     common::{Label, Temp},
@@ -26,6 +26,8 @@ pub trait Frame {
     fn arg_regs() -> &'static [Temp];
     fn calee_save_regs() -> &'static [Temp];
     fn caller_save_regs() -> &'static [Temp];
+
+    fn temp_map() -> &'static HashMap<Temp, &'static str>;
 
     /// Represents frame pointer.
     fn fp() -> Temp;
