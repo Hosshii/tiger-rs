@@ -193,13 +193,11 @@ in
 end
 "#;
 
-        let ast = parser::parse("test", src.as_bytes()).unwrap();
+        let mut e = parser::parse("test", src.as_bytes()).unwrap();
 
-        let _ = match ast {
-            Program::Expr(mut e) => {
-                EscapeFinder::find_escape(&mut e);
+        EscapeFinder::find_escape(&mut e);
 
-                assert!(matches!(e,
+        assert!(matches!(e,
                         Expr::Let(decls, _, _) if
                             matches!(&decls[..],
                                 [Decl::Var(VarDecl(Ident(output), true, _, _, _)), Decl::Func(fn_decls)] if
@@ -221,8 +219,5 @@ end
                                                                     matches!(&fn_decls[..], [FuncDecl { name: Ident(inner), params, .. }] if
                                                                         inner == "inner" &&
                                                                             matches!(&params[..], [TypeField { id: Ident(n), is_escape: false, .. }] if n == "n"))))))));
-            }
-            Program::Decls(_) => panic!(),
-        };
     }
 }

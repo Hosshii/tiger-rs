@@ -7,11 +7,7 @@ pub type Decls = Vec<Decl>;
 pub type Ident = lexer::Ident;
 pub type StringLiteral = lexer::StringLiteral;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Program {
-    Expr(Expr),
-    Decls(Decls),
-}
+pub type Program = Expr;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decl {

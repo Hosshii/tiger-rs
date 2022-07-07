@@ -2,10 +2,7 @@ use crate::{lexer::{Error as LexError, TokenKind, Reserved, Separator, StringLit
 
 grammar;
 
-pub Program: ast::Program = {
-    <Expr> => ast::Program::Expr(<>),
-    <Decls> => ast::Program::Decls(<>),
-}
+pub Program: ast::Program = <Expr>;
 
 Expr: ast::Expr = {
     MatchedExpr => <>,

@@ -1177,20 +1177,17 @@ mod tests {
         ($name:ident, $path:expr) => {
             use crate::{
                 codegen::arm64::frame::ARM64,
-                parser::{self, ast::Program},
+                parser::{self},
             };
             use std::fs::File;
             let file = File::open($path).unwrap();
-            let ast = parser::parse($path, file).unwrap();
+            let e = parser::parse($path, file).unwrap();
 
             let semantic_analyzer = Semant::<ARM64>::new_with_base();
 
-            match ast {
-                Program::Expr(e) => match semantic_analyzer.trans_prog(e) {
-                    Ok(_) => println!("success!"),
-                    Err(e) => panic!("fail! {}", e),
-                },
-                Program::Decls(_) => panic!(),
+            match semantic_analyzer.trans_prog(e) {
+                Ok(_) => println!("success!"),
+                Err(e) => panic!("fail! {}", e),
             }
         };
     }
