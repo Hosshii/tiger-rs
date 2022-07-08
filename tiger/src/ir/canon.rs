@@ -336,13 +336,15 @@ mod trace {
 
     use super::Block;
 
-    pub fn trace_schedule(mut blocks: Vec<Block>, label: Label) -> Vec<Stmt> {
+    pub fn trace_schedule(mut blocks: Vec<Block>, done_label: Label) -> Vec<Stmt> {
+        assert!(!blocks.is_empty());
+
         let mut table = HashMap::new();
         for (idx, block) in blocks.iter().enumerate() {
             match block.first().expect("block should have at least 1 element") {
                 Stmt::Label(label) => {
                     if table.insert(label.clone(), idx).is_some() {
-                        panic!("exists same label in multiple place.")
+                        panic!("same label exists in multiple place.")
                     }
                 }
                 _ => panic!("first element of block must be label."),
@@ -361,7 +363,9 @@ mod trace {
             enter_block(&mut table, &mut seen, &mut result, &mut blocks, idx)
         }
 
-        result.into_iter().flatten().collect()
+        let mut result: Vec<_> = result.into_iter().flatten().collect();
+        result.push(Stmt::Label(done_label));
+        result
     }
 
     fn enter_block(
@@ -374,15 +378,21 @@ mod trace {
         let mut block = std::mem::take(&mut blocks[idx]);
         seen[idx] = true;
 
+        let block_label = match block[0] {
+            Stmt::Label(ref label) => label,
+            _ => panic!("first element of block must be label."),
+        };
+        assert!(table.remove(block_label).is_some());
+
         let next_idx = match block.pop().expect("block should have at least 1 element") {
             Stmt::CJump(op, lhs, rhs, t, f) => {
-                if let Some(idx) = table.remove(&f) {
+                if let Some(idx) = table.get(&f) {
                     block.push(Stmt::CJump(op, lhs, rhs, t, f));
-                    Some(idx)
-                } else if let Some(idx) = table.remove(&t) {
+                    Some(*idx)
+                } else if let Some(idx) = table.get(&t) {
                     // exchange label and cond
                     block.push(Stmt::CJump(negate_condition(op), lhs, rhs, f, t));
-                    Some(idx)
+                    Some(*idx)
                 } else {
                     let new_label = Label::new();
                     block.push(Stmt::CJump(op, lhs, rhs, t, new_label.clone()));
@@ -396,7 +406,7 @@ mod trace {
             }
             Stmt::Jump(_, labels) => labels
                 .iter()
-                .fold(None, |acc, label| acc.or_else(|| table.remove(label))),
+                .fold(None, |acc, label| acc.or_else(|| table.get(label).copied())),
             _ => panic!("last element of block must be CJump or Jump"),
         };
 

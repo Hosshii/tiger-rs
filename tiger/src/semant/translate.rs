@@ -55,9 +55,9 @@ impl Expr {
         match self {
             Expr::Ex(e) => {
                 let f = |t: Label, f: Label| {
-                    // if e == 0 then goto t
+                    // if e != 0 then goto t
                     // else goto f
-                    Stmt::CJump(RelOp::Eq, Box::new(e), Box::new(IrExpr::Const(0)), t, f)
+                    Stmt::CJump(RelOp::Ne, Box::new(e), Box::new(IrExpr::Const(0)), t, f)
                 };
 
                 Box::new(f)
@@ -447,15 +447,15 @@ pub fn while_expr(cond: Expr, body: Expr, break_label: Label) -> Expr {
     let test = Label::new();
     let body_label = Label::new();
 
-    let cond = cond.unwrap_cx()(body_label.clone(), break_label);
+    let cond = cond.unwrap_cx()(body_label.clone(), break_label.clone());
 
     let body = Stmt::seq(
         Stmt::Label(body_label),
         Stmt::Expr(Box::new(body.unwrap_ex())),
-        vec![Stmt::Jump(
-            Box::new(IrExpr::Name(test.clone())),
-            vec![test.clone()],
-        )],
+        vec![
+            Stmt::Jump(Box::new(IrExpr::Name(test.clone())), vec![test.clone()]),
+            Stmt::Label(break_label),
+        ],
     );
 
     Expr::Nx(Stmt::seq(Stmt::Label(test), cond, vec![body]))
