@@ -161,6 +161,10 @@ impl ARM64 {
     pub fn call_defs() -> &'static [Temp] {
         CALL_DEFS.as_ref()
     }
+
+    pub fn debug_registers() {
+        dbg!(&REGISTERS_GLOBAL);
+    }
 }
 
 impl Frame for ARM64 {
@@ -268,6 +272,7 @@ pub enum Access {
     InReg(Temp),
 }
 
+#[derive(Debug)]
 struct Registers {
     sp: Temp,
     xzr: Temp,

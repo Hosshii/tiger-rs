@@ -9,7 +9,8 @@ use tiger::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let filename = env::args().nth(1).expect("expect filename");
+    // let filename = env::args().nth(1).expect("expect filename");
+    let filename = "./testcases/test67.tig".to_string();
     let file = File::open(filename.as_str())?;
 
     let ast = parser::parse(filename, file).map_err(|e| anyhow::format_err!("{:?}", e))?;
@@ -24,11 +25,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dbg!(&fragments);
 
+    ARM64::debug();
+
     for fragment in fragments {
         match fragment {
             Fragment::Proc(body, frame) => {
                 let stmts = ir::linearize(body);
                 let (basic_blocks, done_label) = ir::basic_blocks(stmts);
+                dbg!(&basic_blocks.iter().any(|v| v.is_empty()));
+                dbg!(&basic_blocks);
                 let stmts = ir::trace_schedule(basic_blocks, done_label);
                 dbg!(&stmts);
 

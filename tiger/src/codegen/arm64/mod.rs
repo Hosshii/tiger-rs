@@ -14,6 +14,10 @@ pub struct ARM64 {
 }
 
 impl ARM64 {
+    pub fn debug() {
+        ARM64Frame::debug_registers()
+    }
+
     fn new(frame: ARM64Frame) -> Self {
         Self {
             frame,
