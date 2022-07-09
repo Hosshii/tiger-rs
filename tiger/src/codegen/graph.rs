@@ -11,6 +11,10 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
+    pub fn id(&self) -> ID {
+        self.id
+    }
+
     pub fn val(&self) -> &T {
         &self.val
     }
@@ -24,11 +28,11 @@ impl<T> Node<T> {
         }
     }
 
-    pub fn succ(&self) -> impl Iterator<Item = ID> + '_ {
+    fn succ(&self) -> impl Iterator<Item = ID> + '_ {
         self.succ.iter().copied()
     }
 
-    pub fn pred(&self) -> impl Iterator<Item = ID> + '_ {
+    fn pred(&self) -> impl Iterator<Item = ID> + '_ {
         self.pred.iter().copied()
     }
 }
@@ -59,6 +63,14 @@ impl<T> Graph<T> {
     pub fn link(&mut self, from: ID, to: ID) {
         assert!(self.nodes[from.0].succ.insert(to));
         assert!(self.nodes[to.0].pred.insert(from));
+    }
+
+    pub fn pred(&self, id: ID) -> impl Iterator<Item = ID> + '_ {
+        self.get(id).pred()
+    }
+
+    pub fn succ(&self, id: ID) -> impl Iterator<Item = ID> + '_ {
+        self.get(id).succ()
     }
 
     pub fn unlink(&mut self, from: ID, to: ID) {

@@ -232,22 +232,21 @@ mod tests {
         for (expected, actual) in expected.into_iter().zip(graph.nodes().iter()) {
             assert_eq!(&expected.cur, actual.val());
 
-            assert_eq!(
-                expected.pred,
-                actual
-                    .pred()
-                    .map(|id| graph.get(id).val())
-                    .cloned()
-                    .collect::<Vec<_>>()
-            );
-            assert_eq!(
-                expected.succ,
-                actual
-                    .succ()
-                    .map(|id| graph.get(id).val())
-                    .cloned()
-                    .collect::<Vec<_>>()
-            );
+            let mut actual_pred = graph
+                .pred(actual.id())
+                .map(|id| graph.get(id).val())
+                .cloned()
+                .collect::<Vec<_>>();
+            actual_pred.sort_by_key(|v| v.id);
+            assert_eq!(expected.pred, actual_pred);
+
+            let mut actual_succ = graph
+                .succ(actual.id())
+                .map(|id| graph.get(id).val())
+                .cloned()
+                .collect::<Vec<_>>();
+            actual_succ.sort_by_key(|v| v.id);
+            assert_eq!(expected.succ, actual_succ);
         }
     }
 }
