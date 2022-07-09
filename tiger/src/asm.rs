@@ -5,12 +5,16 @@ use crate::common::{Label as CommonLabel, Temp as CommonTemp};
 type Register = String;
 type Label = CommonLabel;
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Temp(CommonTemp);
 
 impl Temp {
     pub fn new() -> Self {
         Self(CommonTemp::new())
+    }
+
+    pub fn new_with(num: u32) -> Self {
+        Self(CommonTemp::new_with(num))
     }
 }
 

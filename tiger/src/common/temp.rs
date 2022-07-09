@@ -13,6 +13,10 @@ impl Temp {
             num: TEMP_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         }
     }
+
+    pub fn new_with(num: u32) -> Self {
+        Temp { num }
+    }
 }
 
 impl Display for Temp {
@@ -39,6 +43,10 @@ impl Label {
         Self {
             num: LABEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         }
+    }
+
+    pub fn new_with(num: u32) -> Self {
+        Self { num }
     }
 }
 

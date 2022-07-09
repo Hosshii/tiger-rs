@@ -11,6 +11,10 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
+    pub fn val(&self) -> &T {
+        &self.val
+    }
+
     fn new(val: T, id: ID) -> Self {
         Node {
             id,
@@ -66,7 +70,7 @@ impl<T> Graph<T> {
         Graph { nodes: Vec::new() }
     }
 
-    fn nodes(&self) -> &[Node<T>] {
+    pub fn nodes(&self) -> &[Node<T>] {
         &self.nodes
     }
 }
