@@ -3,6 +3,7 @@ use std::collections::HashSet;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ID(usize);
 
+#[derive(Debug)]
 pub struct Node<T> {
     id: ID,
     val: T,
@@ -45,6 +46,7 @@ impl<T> PartialEq for Node<T> {
 
 impl<T> Eq for Node<T> {}
 
+#[derive(Debug)]
 pub struct Graph<T> {
     nodes: Vec<Node<T>>,
 }
@@ -60,9 +62,11 @@ impl<T> Graph<T> {
         ID(id)
     }
 
-    pub fn link(&mut self, from: ID, to: ID) {
-        assert!(self.nodes[from.0].succ.insert(to));
-        assert!(self.nodes[to.0].pred.insert(from));
+    pub fn link(&mut self, from: ID, to: ID) -> bool {
+        let t1 = self.nodes[from.0].succ.insert(to);
+        let t2 = self.nodes[to.0].pred.insert(from);
+        assert_eq!(t1, t2);
+        t1
     }
 
     pub fn pred(&self, id: ID) -> impl Iterator<Item = ID> + '_ {
@@ -73,13 +77,21 @@ impl<T> Graph<T> {
         self.get(id).succ()
     }
 
-    pub fn unlink(&mut self, from: ID, to: ID) {
-        assert!(self.nodes[from.0].succ.remove(&to));
-        assert!(self.nodes[to.0].pred.remove(&from));
+    pub fn unlink(&mut self, from: ID, to: ID) -> bool {
+        let t1 = self.nodes[from.0].succ.remove(&to);
+        let t2 = self.nodes[to.0].pred.remove(&from);
+        assert_eq!(t1, t2);
+        t1
     }
 
     pub fn new() -> Self {
         Graph { nodes: Vec::new() }
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        Graph {
+            nodes: Vec::with_capacity(cap),
+        }
     }
 
     pub fn nodes(&self) -> &[Node<T>] {

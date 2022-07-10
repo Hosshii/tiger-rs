@@ -5,17 +5,35 @@ use crate::asm::{Instruction, Temp};
 use super::graph::Graph;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Node {
-    id: usize, // for debug
-    defs: HashSet<Temp>,
-    uses: HashSet<Temp>,
-    is_move: bool,
+pub struct Node {
+    pub(super) id: usize, // for debug
+    pub(super) defs: HashSet<Temp>,
+    pub(super) uses: HashSet<Temp>,
+    pub(super) is_move: bool,
+}
+
+impl Node {
+    pub fn defs(&self) -> &HashSet<Temp> {
+        &self.defs
+    }
+
+    pub fn uses(&self) -> &HashSet<Temp> {
+        &self.uses
+    }
 }
 pub struct FlowGraph {
-    graph: Graph<Node>,
+    pub(super) graph: Graph<Node>,
 }
 
 impl FlowGraph {
+    pub fn graph(self) -> Graph<Node> {
+        self.graph
+    }
+
+    pub fn graph_ref(&self) -> &Graph<Node> {
+        &self.graph
+    }
+
     pub fn convert(instructions: Vec<Instruction>) -> Self {
         let mut graph = FlowGraph {
             graph: Graph::new(),
@@ -41,7 +59,8 @@ impl FlowGraph {
                     };
                     let id = self.graph.insert(node);
                     if let Some(before) = before_id {
-                        self.graph.link(before, id);
+                        let linked = self.graph.link(before, id);
+                        assert!(linked);
                     }
                     before_id = Some(id);
                 }
@@ -55,12 +74,14 @@ impl FlowGraph {
                     let id = self.graph.insert(node);
                     match (before_id, jump) {
                         (Some(before), Some(jump)) => {
-                            self.graph.link(before, id);
+                            let linked = self.graph.link(before, id);
+                            assert!(linked);
                             jumps.push((id, jump));
                             before_id = None;
                         }
                         (Some(before), None) => {
-                            self.graph.link(before, id);
+                            let linked = self.graph.link(before, id);
+                            assert!(linked);
                             before_id = Some(id);
                         }
                         (None, Some(jump)) => {
@@ -83,7 +104,8 @@ impl FlowGraph {
                     labels.insert(label, id);
 
                     if let Some(before) = before_id {
-                        self.graph.link(before, id);
+                        let linked = self.graph.link(before, id);
+                        assert!(linked);
                     }
                     before_id = Some(id);
                 }
@@ -93,7 +115,8 @@ impl FlowGraph {
         for (from, tos) in jumps {
             for to in tos {
                 let to = labels[&to];
-                self.graph.link(from, to);
+                let linked = self.graph.link(from, to);
+                assert!(linked);
             }
         }
     }
