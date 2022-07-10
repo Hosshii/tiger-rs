@@ -25,6 +25,7 @@ impl ARM64 {
         }
     }
 
+    // TODO: use efficient algorithm (dp).
     fn munch_args(&mut self, args: &[Expr]) -> Vec<Temp> {
         if args.len() > ARM64Frame::arg_regs().len() {
             unimplemented!("too many arguments");
