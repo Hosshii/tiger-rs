@@ -100,6 +100,7 @@ fn live_map(flow_graph: &FlowGraph) -> LiveMap {
             let def = flow_node.val().defs();
             let out = &outs[&id];
             let diff = out - def;
+            // TODO: use efficient algorithm.
             let new_in = uses.union(&diff).copied().collect();
 
             has_change |= ins[&id] != new_in;
