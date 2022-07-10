@@ -7,8 +7,8 @@ use super::{
     graph::{Graph, ID},
 };
 
-pub fn analyze(flow_graph: FlowGraph) -> (LiveGraph, LiveMap) {
-    let live_map = live_map(&flow_graph);
+pub fn analyze(flow_graph: &FlowGraph) -> (LiveGraph, LiveMap) {
+    let live_map = live_map(flow_graph);
 
     let mut live_graph = LiveGraph::new(flow_graph);
     live_graph.analyze(&live_map);
@@ -16,19 +16,20 @@ pub fn analyze(flow_graph: FlowGraph) -> (LiveGraph, LiveMap) {
     (live_graph, live_map)
 }
 
-pub struct LiveGraph {
+pub struct LiveGraph<'a> {
+    flow_graph: &'a FlowGraph,
     graph: Graph<Temp>,
-    flow_graph: FlowGraph,
     temp2id: HashMap<Temp, ID>,
     id2temp: HashMap<ID, Temp>,
+    // TODO: add moves
 }
 
-impl LiveGraph {
-    fn new(flow_graph: FlowGraph) -> Self {
+impl<'a> LiveGraph<'a> {
+    fn new(flow_graph: &'a FlowGraph) -> Self {
         Self::init_graph(flow_graph)
     }
 
-    fn init_graph(flow_graph: FlowGraph) -> Self {
+    fn init_graph(flow_graph: &'a FlowGraph) -> Self {
         let mut temps: HashSet<Temp> = HashSet::new();
 
         for node in flow_graph.graph_ref().nodes() {
@@ -197,7 +198,7 @@ mod tests {
         // crate flow graph
         let flow = FlowGraph { graph };
 
-        let (live_graph, live_map) = analyze(flow);
+        let (live_graph, live_map) = analyze(&flow);
 
         // live map test
         let expected_live_map = vec![
