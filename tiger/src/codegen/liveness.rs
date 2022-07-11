@@ -16,12 +16,13 @@ pub fn analyze(flow_graph: &FlowGraph) -> (LiveGraph, LiveMap) {
     (live_graph, live_map)
 }
 
+type Node = Temp;
 pub struct LiveGraph<'a> {
     flow_graph: &'a FlowGraph,
-    graph: Graph<Temp>,
-    temp2id: HashMap<Temp, ID>,
-    id2temp: HashMap<ID, Temp>,
-    // TODO: add moves
+    graph: Graph<Node>,
+    temp2id: HashMap<Node, ID>,
+    id2temp: HashMap<ID, Node>,
+    moves: Vec<(Node, Node)>, // (from, to)
 }
 
 impl<'a> LiveGraph<'a> {
@@ -47,11 +48,25 @@ impl<'a> LiveGraph<'a> {
             id2temp.insert(id, temp);
         }
 
+        let mut moves = Vec::new();
+        for node in flow_graph.graph_ref().nodes() {
+            let node = node.val();
+            if node.is_move {
+                assert_eq!(node.defs().len(), 1);
+                assert_eq!(node.uses().len(), 1);
+
+                let from = node.defs().iter().next().unwrap();
+                let to = node.uses().iter().next().unwrap();
+                moves.push((*from, *to));
+            }
+        }
+
         Self {
             graph,
             flow_graph,
             temp2id,
             id2temp,
+            moves,
         }
     }
 
@@ -149,7 +164,7 @@ mod tests {
                 id: 0,
                 defs: HashSet::from([Temp::new_with(0)]),
                 uses: HashSet::new(),
-                is_move: true,
+                is_move: false, // TODO: should be true. Currently, we cannot use immediate in `uses`.
             },
             Node {
                 id: 1,
