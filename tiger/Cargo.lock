@@ -465,6 +465,7 @@ name = "tiger"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "itertools",
  "lalrpop",
  "lalrpop-util",
  "once_cell",

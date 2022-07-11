@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,6 +17,11 @@ impl<T> Node<T> {
         self.id
     }
 
+    /// Unique number between `0 ~ (graph.len() - 1)`.
+    pub fn index(&self) -> usize {
+        self.id.0
+    }
+
     pub fn val(&self) -> &T {
         &self.val
     }
@@ -29,12 +35,20 @@ impl<T> Node<T> {
         }
     }
 
-    fn succ(&self) -> impl Iterator<Item = ID> + '_ {
+    pub fn succ(&self) -> impl Iterator<Item = ID> + '_ {
         self.succ.iter().copied()
     }
 
-    fn pred(&self) -> impl Iterator<Item = ID> + '_ {
+    pub fn pred(&self) -> impl Iterator<Item = ID> + '_ {
         self.pred.iter().copied()
+    }
+
+    pub fn adj(&self) -> impl Iterator<Item = ID> + '_ {
+        self.succ().chain(self.pred()).unique()
+    }
+
+    pub fn deg(&self) -> usize {
+        self.succ.len() + self.pred.len()
     }
 }
 
@@ -52,6 +66,10 @@ pub struct Graph<T> {
 }
 
 impl<T> Graph<T> {
+    pub fn deg(&self, id: ID) -> usize {
+        self.get(id).deg()
+    }
+
     pub fn get(&self, id: ID) -> &Node<T> {
         &self.nodes[id.0]
     }
