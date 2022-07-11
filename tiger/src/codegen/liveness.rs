@@ -11,26 +11,25 @@ pub fn analyze(flow_graph: &FlowGraph) -> (LiveGraph, LiveMap) {
     let live_map = live_map(flow_graph);
 
     let mut live_graph = LiveGraph::new(flow_graph);
-    live_graph.analyze(&live_map);
+    live_graph.analyze(flow_graph, &live_map);
 
     (live_graph, live_map)
 }
 
 type Node = Temp;
-pub struct LiveGraph<'a> {
-    flow_graph: &'a FlowGraph,
+pub struct LiveGraph {
     graph: Graph<Node>,
     temp2id: HashMap<Node, ID>,
     id2temp: HashMap<ID, Node>,
     moves: Vec<(Node, Node)>, // (from, to)
 }
 
-impl<'a> LiveGraph<'a> {
-    fn new(flow_graph: &'a FlowGraph) -> Self {
+impl LiveGraph {
+    fn new(flow_graph: &FlowGraph) -> Self {
         Self::init_graph(flow_graph)
     }
 
-    fn init_graph(flow_graph: &'a FlowGraph) -> Self {
+    fn init_graph(flow_graph: &FlowGraph) -> Self {
         let mut temps: HashSet<Temp> = HashSet::new();
 
         for node in flow_graph.graph_ref().nodes() {
@@ -63,15 +62,14 @@ impl<'a> LiveGraph<'a> {
 
         Self {
             graph,
-            flow_graph,
             temp2id,
             id2temp,
             moves,
         }
     }
 
-    fn analyze(&mut self, live_map: &LiveMap) {
-        for flow_node in self.flow_graph.graph_ref().nodes() {
+    fn analyze(&mut self, flow_graph: &FlowGraph, live_map: &LiveMap) {
+        for flow_node in flow_graph.graph_ref().nodes() {
             let defs = flow_node.val().defs();
             let flow_id = flow_node.id();
 
