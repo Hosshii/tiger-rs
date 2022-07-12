@@ -300,7 +300,7 @@ impl Frame for ARM64 {
         Stmt::seq(start_stmts)
     }
 
-    fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>) {
+    fn proc_entry_exit2(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
         let mut src: Vec<_> = Self::calee_save_regs().iter().map(Into::into).collect();
         let mut special_regs = Self::special_regs().iter().map(Into::into).collect();
         src.append(&mut special_regs);
@@ -311,9 +311,11 @@ impl Frame for ARM64 {
             jump: None,
         };
         instructions.push(instruction);
+
+        instructions
     }
 
-    fn proc_entry_exit3(&self, instructions: &mut Vec<Instruction>) {
+    fn proc_entry_exit3(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
         let mut prologue = vec![
             Instruction::Label {
                 assembly: format!("{}:", self.name()),
@@ -342,10 +344,10 @@ impl Frame for ARM64 {
             },
         ];
 
-        prologue.append(instructions);
+        prologue.append(&mut instructions);
         prologue.append(&mut epilogue);
 
-        *instructions = prologue;
+        prologue
     }
 }
 

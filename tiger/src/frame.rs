@@ -63,10 +63,10 @@ pub trait Frame {
     fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt;
 
     /// Add sink instruction.
-    fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>);
+    fn proc_entry_exit2(&self, instructions: Vec<Instruction>) -> Vec<Instruction>;
 
     /// Add prologue and epilogue.
-    fn proc_entry_exit3(&self, instructions: &mut Vec<Instruction>);
+    fn proc_entry_exit3(&self, instructions: Vec<Instruction>) -> Vec<Instruction>;
 }
 
 #[derive(Debug)]
