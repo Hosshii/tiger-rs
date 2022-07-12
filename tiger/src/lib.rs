@@ -11,7 +11,7 @@ mod frame;
 use std::{io::Read, marker::PhantomData};
 
 use crate::{
-    codegen::{arm64::ARM64 as ARM64Codegen, Codegen},
+    codegen::{arm64::ARM64 as ARM64Codegen, reg_alloc, Codegen},
     frame::{Fragment, Frame as _},
     semant::Semant,
 };
@@ -52,6 +52,8 @@ where
                     let instructions = C::codegen(&frame, stmt);
                     let instructions = frame.proc_entry_exit2(instructions);
                     let instructions = frame.proc_entry_exit3(instructions);
+
+                    let (instructions, _) = reg_alloc::alloc(instructions, &frame);
                     for instruction in instructions {
                         println!("{}", instruction.to_string::<C::Frame>());
                     }

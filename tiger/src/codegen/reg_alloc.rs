@@ -5,17 +5,13 @@ use crate::{
     frame::Frame,
 };
 
-use super::{
-    color,
-    flow::{self, FlowGraph},
-    liveness,
-};
+use super::{color, flow::FlowGraph, liveness};
 
-pub type Allocation<F: Frame> = HashMap<Temp, F::Register>;
+pub type Allocation<F> = HashMap<Temp, <F as Frame>::Register>;
 
 pub fn alloc<F: Frame>(
     instructions: Vec<Instruction>,
-    frame: F,
+    _frame: &F,
 ) -> (Vec<Instruction>, Allocation<F>) {
     let flow_graph = FlowGraph::convert(instructions.clone());
     let (interference, _) = liveness::analyze(&flow_graph);
