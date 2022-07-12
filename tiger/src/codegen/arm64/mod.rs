@@ -8,17 +8,17 @@ use frame::ARM64 as ARM64Frame;
 
 use super::{Codegen, Frame as _};
 
-pub struct ARM64 {
-    frame: ARM64Frame,
+pub struct ARM64<'a> {
+    frame: &'a ARM64Frame,
     instructions: Vec<Instruction>,
 }
 
-impl ARM64 {
+impl<'a> ARM64<'a> {
     pub fn debug() {
         ARM64Frame::debug_registers()
     }
 
-    fn new(frame: ARM64Frame) -> Self {
+    fn new(frame: &'a ARM64Frame) -> Self {
         Self {
             frame,
             instructions: Vec::new(),
@@ -223,10 +223,10 @@ impl ARM64 {
     }
 }
 
-impl Codegen for ARM64 {
+impl<'a> Codegen for ARM64<'a> {
     type Frame = ARM64Frame;
 
-    fn codegen(frame: Self::Frame, stmt: Stmt) -> Vec<Instruction> {
+    fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
         let mut codegen = ARM64::new(frame);
         codegen.munch_stmt(&stmt);
         codegen.instructions

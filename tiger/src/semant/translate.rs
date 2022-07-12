@@ -24,15 +24,13 @@ impl Expr {
                 let t = Label::new();
                 let f = Label::new();
                 IrExpr::ESeq(
-                    Box::new(Stmt::seq(
+                    Box::new(Stmt::seq(vec![
                         Stmt::Move(Box::new(IrExpr::Temp(r)), Box::new(IrExpr::Const(1))),
                         cx_fn(t.clone(), f.clone()),
-                        vec![
-                            Stmt::Label(f),
-                            Stmt::Move(Box::new(IrExpr::Temp(r)), Box::new(IrExpr::Const(0))),
-                            Stmt::Label(t),
-                        ],
-                    )),
+                        Stmt::Label(f),
+                        Stmt::Move(Box::new(IrExpr::Temp(r)), Box::new(IrExpr::Const(0))),
+                        Stmt::Label(t),
+                    ])),
                     Box::new(IrExpr::Temp(r)),
                 )
             }
@@ -449,16 +447,14 @@ pub fn while_expr(cond: Expr, body: Expr, break_label: Label) -> Expr {
 
     let cond = cond.unwrap_cx()(body_label.clone(), break_label.clone());
 
-    let body = Stmt::seq(
+    let body = Stmt::seq(vec![
         Stmt::Label(body_label),
         Stmt::Expr(Box::new(body.unwrap_ex())),
-        vec![
-            Stmt::Jump(Box::new(IrExpr::Name(test.clone())), vec![test.clone()]),
-            Stmt::Label(break_label),
-        ],
-    );
+        Stmt::Jump(Box::new(IrExpr::Name(test.clone())), vec![test.clone()]),
+        Stmt::Label(break_label),
+    ]);
 
-    Expr::Nx(Stmt::seq(Stmt::Label(test), cond, vec![body]))
+    Expr::Nx(Stmt::seq(vec![Stmt::Label(test), cond, body]))
 }
 
 pub fn break_expr(break_label: Label) -> Expr {
@@ -470,16 +466,7 @@ pub fn break_expr(break_label: Label) -> Expr {
 
 pub fn let_expr(decls: Vec<Expr>, body: Expr) -> Expr {
     let mut decls: Vec<_> = decls.into_iter().map(|v| v.unwrap_nx()).collect();
-    let decls = match decls.len() {
-        0 => Stmt::Expr(Box::new(IrExpr::Const(0))),
-        1 => decls.swap_remove(0),
-        _ => {
-            let tail = decls.split_off(2);
-            let second = decls.pop().unwrap();
-            let first = decls.pop().unwrap();
-            Stmt::seq(first, second, tail)
-        }
-    };
+    let decls = Stmt::seq(decls);
 
     let expr = IrExpr::ESeq(Box::new(decls), Box::new(body.unwrap_ex()));
 

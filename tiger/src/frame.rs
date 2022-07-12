@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, rc::Rc};
 
 use crate::{
     common::{Label, Temp},
@@ -7,15 +7,16 @@ use crate::{
 
 use super::asm::Instruction;
 
-pub trait Frame {
+pub trait Frame: Clone {
     /// Represents an access to variable.
     /// Typically implemented like `enum {InReg(Temp), InFrame(offset)}`.
     type Access: Clone;
-    type Register: Eq + Hash + Clone + 'static;
+    type Register: Eq + Hash + Clone + Display + 'static;
 
     /// Machine specific word size.
     const WORD_SIZE: u64;
 
+    /// All registers.
     fn registers() -> &'static [Self::Register];
 
     /// Represents special registers like fp, sp, lr, etc.
@@ -29,6 +30,8 @@ pub trait Frame {
     fn calee_save_regs() -> &'static [Temp];
     fn caller_save_regs() -> &'static [Temp];
 
+    /// Maps temporaries to registers.
+    /// All machine register is contained.
     fn temp_map() -> &'static HashMap<Temp, Self::Register>;
 
     /// Represents frame pointer.
@@ -60,7 +63,10 @@ pub trait Frame {
     fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt;
 
     /// Add sink instruction.
-    fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>);
+    fn proc_entry_exit2(&self, instructions: Vec<Instruction>) -> Vec<Instruction>;
+
+    /// Add prologue and epilogue.
+    fn proc_entry_exit3(&self, instructions: Vec<Instruction>) -> Vec<Instruction>;
 }
 
 #[derive(Debug)]
