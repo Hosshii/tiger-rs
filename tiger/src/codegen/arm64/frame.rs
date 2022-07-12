@@ -312,6 +312,41 @@ impl Frame for ARM64 {
         };
         instructions.push(instruction);
     }
+
+    fn proc_entry_exit3(&self, instructions: &mut Vec<Instruction>) {
+        let mut prologue = vec![
+            Instruction::Label {
+                assembly: format!("{}:", self.name()),
+                label: self.name.clone(),
+            },
+            Instruction::Operand {
+                assembly: format!("sub 'd0, 's0, #{}", self.pointer),
+                dst: vec![REGISTERS_GLOBAL.sp.into()],
+                src: vec![REGISTERS_GLOBAL.sp.into()],
+                jump: None,
+            },
+        ];
+
+        let mut epilogue = vec![
+            Instruction::Operand {
+                assembly: format!("add 'd0, 's0, #{}", self.pointer),
+                dst: vec![REGISTERS_GLOBAL.sp.into()],
+                src: vec![REGISTERS_GLOBAL.sp.into()],
+                jump: None,
+            },
+            Instruction::Operand {
+                assembly: "ret".to_string(),
+                dst: vec![],
+                src: vec![],
+                jump: None,
+            },
+        ];
+
+        prologue.append(instructions);
+        prologue.append(&mut epilogue);
+
+        *instructions = prologue;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
