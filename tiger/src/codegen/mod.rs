@@ -5,10 +5,10 @@ pub(super) mod color;
 pub(super) mod flow;
 mod graph;
 pub(super) mod liveness;
-mod reg_alloc;
+pub mod reg_alloc;
 
 pub trait Codegen {
     type Frame: Frame;
 
-    fn codegen(frame: Self::Frame, stmt: Stmt) -> Vec<Instruction>;
+    fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction>;
 }

@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    asm::{Instruction, Temp},
+    asm::{Allocation, Instruction, Temp},
     frame::Frame,
 };
 
 use super::{color, flow::FlowGraph, liveness};
-
-pub type Allocation<F> = HashMap<Temp, <F as Frame>::Register>;
 
 pub fn alloc<F: Frame>(
     instructions: Vec<Instruction>,

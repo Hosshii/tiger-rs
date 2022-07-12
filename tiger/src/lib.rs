@@ -53,9 +53,9 @@ where
                     let instructions = frame.proc_entry_exit2(instructions);
                     let instructions = frame.proc_entry_exit3(instructions);
 
-                    let (instructions, _) = reg_alloc::alloc(instructions, &frame);
+                    let (instructions, allocation) = reg_alloc::alloc(instructions, &frame);
                     for instruction in instructions {
-                        println!("{}", instruction.to_string::<C::Frame>());
+                        println!("{}", instruction.to_string::<C::Frame>(&allocation));
                     }
                 }
             }

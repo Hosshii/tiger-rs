@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 
-use crate::{asm::Temp, frame::Frame};
+use crate::{
+    asm::{Allocation, Temp},
+    frame::Frame,
+};
 
 use super::{
     graph::{Matrix, ID},
     liveness::LiveGraph,
-    reg_alloc::Allocation,
 };
 
 type SpillCost = HashMap<Temp, u32>;

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     common::{Label as CommonLabel, Temp as CommonTemp},
@@ -7,6 +7,7 @@ use crate::{
 
 type Register = String;
 type Label = CommonLabel;
+pub type Allocation<F> = HashMap<Temp, <F as Frame>::Register>;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Temp(CommonTemp);
@@ -60,7 +61,7 @@ pub enum Instruction {
 }
 
 impl Instruction {
-    pub fn to_string<F: Frame>(&self) -> String {
+    pub fn to_string<F: Frame>(&self, allocation: &Allocation<F>) -> String {
         match self {
             Instruction::Label { assembly, .. } => assembly.clone(),
             Instruction::Operand {
@@ -68,18 +69,18 @@ impl Instruction {
             } => {
                 let mut result = assembly.clone();
                 for (idx, dst) in dst.iter().enumerate() {
-                    result = result.replace(&format!("'d{}", idx), &dst.to_string::<F>());
+                    result = result.replace(&format!("'d{}", idx), &allocation[dst].to_string());
                 }
-                for (idx, dst) in src.iter().enumerate() {
-                    result = result.replace(&format!("'s{}", idx), &dst.to_string::<F>());
+                for (idx, src) in src.iter().enumerate() {
+                    result = result.replace(&format!("'s{}", idx), &allocation[src].to_string());
                 }
                 assert!(!result.contains("'d") && !result.contains("'s"));
                 result
             }
             Instruction::Move { assembly, dst, src } => {
                 let mut result = assembly.clone();
-                result = result.replace("'d0", &dst.to_string::<F>());
-                result = result.replace("'s0", &src.to_string::<F>());
+                result = result.replace("'d0", &allocation[dst].to_string());
+                result = result.replace("'s0", &allocation[src].to_string());
                 assert!(!result.contains("'d") && !result.contains("'s"));
                 result
             }
