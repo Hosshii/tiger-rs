@@ -1,10 +1,11 @@
 use crate::{asm::Instruction, frame::Frame, ir::Stmt};
 
 pub mod arm64;
-mod flow;
 pub(super) mod color;
+pub(super) mod flow;
 mod graph;
-mod liveness;
+pub(super) mod liveness;
+mod reg_alloc;
 
 pub trait Codegen {
     type Frame: Frame;
