@@ -169,6 +169,7 @@ impl ARM64 {
 
 impl Frame for ARM64 {
     type Access = Access;
+    type Register = (); // TODO
 
     const WORD_SIZE: u64 = 8;
 
@@ -214,6 +215,10 @@ impl Frame for ARM64 {
         }
     }
 
+    fn registers() -> &'static [Self::Register] {
+        todo!()
+    }
+
     fn special_regs() -> &'static [Temp] {
         SPECIAL_REGS.as_ref()
     }
@@ -230,8 +235,9 @@ impl Frame for ARM64 {
         CALLER_SAVE_REGS.as_ref()
     }
 
-    fn temp_map() -> &'static HashMap<Temp, &'static str> {
-        TEMP_MAP.deref()
+    fn temp_map() -> &'static HashMap<Temp, Self::Register> {
+        // TEMP_MAP.deref()
+        todo!()
     }
 
     fn fp() -> Temp {

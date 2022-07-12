@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
 use crate::{
     common::{Label, Temp},
@@ -11,9 +11,12 @@ pub trait Frame {
     /// Represents an access to variable.
     /// Typically implemented like `enum {InReg(Temp), InFrame(offset)}`.
     type Access: Clone;
+    type Register: Eq + Hash + Clone + 'static;
 
     /// Machine specific word size.
     const WORD_SIZE: u64;
+
+    fn registers() -> &'static [Self::Register];
 
     /// Represents special registers like fp, sp, lr, etc.
     fn special_regs() -> &'static [Temp];
@@ -26,7 +29,7 @@ pub trait Frame {
     fn calee_save_regs() -> &'static [Temp];
     fn caller_save_regs() -> &'static [Temp];
 
-    fn temp_map() -> &'static HashMap<Temp, &'static str>;
+    fn temp_map() -> &'static HashMap<Temp, Self::Register>;
 
     /// Represents frame pointer.
     fn fp() -> Temp;
