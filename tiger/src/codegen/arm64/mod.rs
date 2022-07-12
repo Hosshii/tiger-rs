@@ -9,7 +9,7 @@ use frame::ARM64 as ARM64Frame;
 use super::{Codegen, Frame as _};
 
 pub struct ARM64<'a> {
-    frame: &'a ARM64Frame,
+    _frame: &'a ARM64Frame,
     instructions: Vec<Instruction>,
 }
 
@@ -20,7 +20,7 @@ impl<'a> ARM64<'a> {
 
     fn new(frame: &'a ARM64Frame) -> Self {
         Self {
-            frame,
+            _frame: frame,
             instructions: Vec::new(),
         }
     }

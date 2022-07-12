@@ -1,3 +1,4 @@
+#![allow(unused)]
 use itertools::Itertools;
 use std::collections::HashSet;
 
@@ -22,11 +23,6 @@ pub struct Node<T> {
 impl<T> Node<T> {
     pub fn id(&self) -> ID {
         self.id
-    }
-
-    /// Unique number between `0 ~ (graph.len() - 1)`.
-    pub fn index(&self) -> usize {
-        self.id.0
     }
 
     pub fn val(&self) -> &T {
@@ -86,14 +82,6 @@ impl<T> Graph<T> {
         let id = self.nodes.len();
         self.nodes.push(Node::new(val, ID(id)));
         ID(id)
-    }
-
-    /// Remove edge between a node(Node1) whose ID is `id` and adjucent node of Node1.
-    pub fn remove_double_edge_around(&mut self, id: ID) {
-        let from = id;
-        for to in self.get(id).adj().collect::<Vec<_>>() {
-            assert!(self.double_unlink(from, to));
-        }
     }
 
     pub fn link(&mut self, from: ID, to: ID) -> bool {

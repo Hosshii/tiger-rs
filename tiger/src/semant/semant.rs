@@ -191,11 +191,7 @@ pub struct Semant<F: Frame> {
     translator: Translator<F>,
 }
 
-impl Semant<ARM64> {
-    pub fn new_arm64() -> Self {
-        Self::new_with_base()
-    }
-}
+impl Semant<ARM64> {}
 
 impl<F: Frame> Semant<F> {
     pub fn new(var_base: Env<EnvEntry<F>>, type_base: Env<Type>) -> Self {
@@ -211,12 +207,7 @@ impl<F: Frame> Semant<F> {
         let var_env = Env::new().with_base_var();
         let type_env = Env::new().with_base_type();
 
-        Self {
-            var_env,
-            type_env,
-            break_count: 0,
-            translator: Translator::default(),
-        }
+        Self::new(var_env, type_env)
     }
 
     fn actual_ty<'a>(&'a self, ty: &'a Type, pos: Positions) -> Result<&'a CompleteType> {

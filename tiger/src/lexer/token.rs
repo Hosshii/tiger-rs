@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{fmt::Display, str::FromStr, string::ToString};
 
 use strum::{EnumIter, IntoEnumIterator};
@@ -80,11 +82,7 @@ impl Token {
         Self { kind, meta }
     }
 
-    pub fn meta(&self) -> &Meta {
-        &self.meta
-    }
-
-    pub fn to_lalrpop(self) -> (Position, TokenKind, Position) {
+    pub fn into_lalrpop(self) -> (Position, TokenKind, Position) {
         let start = self.meta.cursor;
         let len = self.meta.length;
         let end = Position {
@@ -170,10 +168,6 @@ impl Reserved {
 
     pub fn len(&self) -> usize {
         self.as_str().chars().count()
-    }
-
-    pub fn starts_with(c: char) -> bool {
-        Self::iter().any(|e| e.as_str().starts_with(c))
     }
 }
 

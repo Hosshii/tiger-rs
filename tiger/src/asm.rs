@@ -1,11 +1,10 @@
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use crate::{
     common::{Label as CommonLabel, Temp as CommonTemp},
     frame::Frame,
 };
 
-type Register = String;
 type Label = CommonLabel;
 pub type Allocation<F> = HashMap<Temp, <F as Frame>::Register>;
 
@@ -13,6 +12,7 @@ pub type Allocation<F> = HashMap<Temp, <F as Frame>::Register>;
 pub struct Temp(CommonTemp);
 
 impl Temp {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(CommonTemp::new())
     }
@@ -21,7 +21,7 @@ impl Temp {
         Self(CommonTemp::new_with(num))
     }
 
-    pub fn to_string<F: Frame>(&self) -> String {
+    pub fn to_string<F: Frame>(self) -> String {
         F::temp_map()
             .get(&self.0)
             .map(ToString::to_string)

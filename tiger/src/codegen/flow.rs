@@ -26,10 +26,6 @@ pub struct FlowGraph {
 }
 
 impl FlowGraph {
-    pub fn graph(self) -> Graph<Node> {
-        self.graph
-    }
-
     pub fn graph_ref(&self) -> &Graph<Node> {
         &self.graph
     }

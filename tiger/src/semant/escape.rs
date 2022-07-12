@@ -162,7 +162,7 @@ mod tests {
         lexer::Ident,
         parser::{
             self,
-            ast::{Expr, FuncDecl, Program, TypeField},
+            ast::{Expr, FuncDecl, TypeField},
         },
     };
 

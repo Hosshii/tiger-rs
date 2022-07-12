@@ -21,16 +21,12 @@ pub struct LiveGraph {
     graph: Graph<Node>,
     temp2id: HashMap<Node, ID>,
     id2temp: HashMap<ID, Node>,
-    moves: Vec<(Node, Node)>, // (from, to)
+    _moves: Vec<(Node, Node)>, // (from, to)
 }
 
 impl LiveGraph {
     pub fn graph_ref(&self) -> &Graph<Node> {
         &self.graph
-    }
-
-    pub fn graph_ref_mut(&mut self) -> &mut Graph<Node> {
-        &mut self.graph
     }
 
     pub fn id(&self, temp: &Node) -> ID {
@@ -80,7 +76,7 @@ impl LiveGraph {
             graph,
             temp2id,
             id2temp,
-            moves,
+            _moves: moves,
         }
     }
 
@@ -95,8 +91,7 @@ impl LiveGraph {
                     if live != def {
                         let from = self.temp2id[def];
                         let to = self.temp2id[live];
-                        self.graph.link(from, to);
-                        self.graph.link(to, from);
+                        self.graph.double_link(from, to);
                     }
                 }
             }

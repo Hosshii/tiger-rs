@@ -13,12 +13,12 @@ use super::{
 };
 
 type SpillCost = HashMap<Temp, u32>;
-type Registers<F: Frame> = Vec<F::Register>;
+type Registers<F> = Vec<<F as Frame>::Register>;
 
 pub fn color<F: Frame>(
     interference: LiveGraph,
     initial: Allocation<F>,
-    spill_cost: SpillCost,
+    _spill_cost: SpillCost,
     registers: Registers<F>,
 ) -> (Allocation<F>, Vec<Temp>) {
     let pre_colored: PreColored = initial
@@ -64,8 +64,8 @@ type SpillWorkList = HashSet<ID>;
 type SelectStack = Vec<LiveID>;
 type LiveID = ID;
 type ColoredNodes = HashSet<LiveID>;
-type Colors<F: Frame> = HashMap<LiveID, F::Register>; // fmap (\temp,v -> temp2id(temp)) Allocation
-type AllColors<F: Frame> = HashSet<F::Register>;
+type Colors<F> = HashMap<LiveID, <F as Frame>::Register>; // fmap (\temp,v -> temp2id(temp)) Allocation
+type AllColors<F> = HashSet<<F as Frame>::Register>;
 type Initial = HashSet<LiveID>;
 
 fn _main<F: Frame>(
@@ -75,9 +75,9 @@ fn _main<F: Frame>(
     all_colors: AllColors<F>,
     initial: Initial,
 ) -> (Colors<F>, SpillWorkList) {
-    let (matrix, adj_set, adj_list, mut degree) = build(&live_graph, &precolored);
+    let (_matrix, _adj_set, adj_list, mut degree) = build(live_graph, &precolored);
     let k = F::registers().len();
-    let (mut simplify_worklist, mut spill_work_list) = make_work_list(&initial, k, &live_graph);
+    let (mut simplify_worklist, mut spill_work_list) = make_work_list(&initial, k, live_graph);
 
     let mut select_stack = SelectStack::new();
     loop {
@@ -109,7 +109,6 @@ fn _main<F: Frame>(
         &mut colors,
         &all_colors,
         &mut spill_work_list,
-        k,
     );
 
     if !spill_work_list.is_empty() {
@@ -262,7 +261,6 @@ fn assign_colors<F: Frame>(
     colors: &mut Colors<F>,
     all_colors: &AllColors<F>,
     spill_work_list: &mut SpillWorkList,
-    k: usize,
 ) {
     for id in select_stack {
         let mut ok_colors = all_colors.clone();

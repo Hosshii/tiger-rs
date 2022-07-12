@@ -465,7 +465,7 @@ pub fn break_expr(break_label: Label) -> Expr {
 }
 
 pub fn let_expr(decls: Vec<Expr>, body: Expr) -> Expr {
-    let mut decls: Vec<_> = decls.into_iter().map(|v| v.unwrap_nx()).collect();
+    let decls: Vec<_> = decls.into_iter().map(|v| v.unwrap_nx()).collect();
     let decls = Stmt::seq(decls);
 
     let expr = IrExpr::ESeq(Box::new(decls), Box::new(body.unwrap_ex()));

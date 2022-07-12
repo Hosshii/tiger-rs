@@ -44,7 +44,7 @@ where
                 kind: TokenKind::Eof,
                 ..
             }) => None,
-            x => Some(x.map(|tok| tok.to_lalrpop())),
+            x => Some(x.map(|tok| tok.into_lalrpop())),
         }
     }
 }
