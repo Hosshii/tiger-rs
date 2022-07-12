@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::common::{Label as CommonLabel, Temp as CommonTemp};
+use crate::{
+    common::{Label as CommonLabel, Temp as CommonTemp},
+    frame::Frame,
+};
 
 type Register = String;
 type Label = CommonLabel;
@@ -16,11 +19,12 @@ impl Temp {
     pub fn new_with(num: u32) -> Self {
         Self(CommonTemp::new_with(num))
     }
-}
 
-impl Display for Temp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+    pub fn to_string<F: Frame>(&self) -> String {
+        F::temp_map()
+            .get(&self.0)
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("t{}", self.0))
     }
 }
 
@@ -55,8 +59,30 @@ pub enum Instruction {
     },
 }
 
-impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+impl Instruction {
+    pub fn to_string<F: Frame>(&self) -> String {
+        match self {
+            Instruction::Label { assembly, .. } => assembly.clone(),
+            Instruction::Operand {
+                assembly, dst, src, ..
+            } => {
+                let mut result = assembly.clone();
+                for (idx, dst) in dst.iter().enumerate() {
+                    result = result.replace(&format!("'d{}", idx), &dst.to_string::<F>());
+                }
+                for (idx, dst) in src.iter().enumerate() {
+                    result = result.replace(&format!("'s{}", idx), &dst.to_string::<F>());
+                }
+                assert!(!result.contains("'d") && !result.contains("'s"));
+                result
+            }
+            Instruction::Move { assembly, dst, src } => {
+                let mut result = assembly.clone();
+                result = result.replace("'d0", &dst.to_string::<F>());
+                result = result.replace("'s0", &src.to_string::<F>());
+                assert!(!result.contains("'d") && !result.contains("'s"));
+                result
+            }
+        }
     }
 }

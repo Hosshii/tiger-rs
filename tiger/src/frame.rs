@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, rc::Rc};
 
 use crate::{
     common::{Label, Temp},
@@ -7,11 +7,11 @@ use crate::{
 
 use super::asm::Instruction;
 
-pub trait Frame {
+pub trait Frame: Clone {
     /// Represents an access to variable.
     /// Typically implemented like `enum {InReg(Temp), InFrame(offset)}`.
     type Access: Clone;
-    type Register: Eq + Hash + Clone + 'static;
+    type Register: Eq + Hash + Clone + Display + 'static;
 
     /// Machine specific word size.
     const WORD_SIZE: u64;
