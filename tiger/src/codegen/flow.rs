@@ -6,10 +6,10 @@ use super::graph::Graph;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
-    pub(super) id: usize, // for debug
-    pub(super) defs: HashSet<Temp>,
-    pub(super) uses: HashSet<Temp>,
-    pub(super) is_move: bool,
+    pub id: usize, // for debug
+    pub defs: HashSet<Temp>,
+    pub uses: HashSet<Temp>,
+    pub is_move: bool,
 }
 
 impl Node {

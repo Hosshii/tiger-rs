@@ -36,7 +36,7 @@ impl From<&CommonTemp> for Temp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Operand {
         assembly: String,
