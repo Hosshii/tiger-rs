@@ -30,18 +30,21 @@ pub enum Stmt {
 }
 
 impl Stmt {
-    pub fn seq(first: Stmt, second: Stmt, mut remain: Vec<Stmt>) -> Stmt {
-        let mut v = Vec::with_capacity(remain.len() + 2);
-        v.push(first);
-        v.push(second);
-        v.append(&mut remain);
-        v.into_iter()
-            .reduce(|accum, item| {
-                let lhs = Box::new(accum);
-                let rhs = Box::new(item);
-                Stmt::Seq(lhs, rhs)
-            })
-            .unwrap()
+    pub fn seq(stmts: Vec<Stmt>) -> Stmt {
+        if stmts.is_empty() {
+            Stmt::nop()
+        } else if stmts.len() == 1 {
+            stmts.into_iter().next().unwrap()
+        } else {
+            stmts
+                .into_iter()
+                .reduce(|accum, item| {
+                    let lhs = Box::new(accum);
+                    let rhs = Box::new(item);
+                    Stmt::Seq(lhs, rhs)
+                })
+                .unwrap()
+        }
     }
 
     pub fn nop() -> Stmt {
