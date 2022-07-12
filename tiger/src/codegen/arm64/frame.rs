@@ -47,6 +47,12 @@ static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
     x30: Temp::new(),
 });
 
+static REGISTERS: [&str; 34] = [
+    "sp", "xzr", "pc", "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
+    "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24",
+    "x25", "x26", "x27", "x28", "x29", "x30",
+];
+
 static SPECIAL_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
     vec![
         REGISTERS_GLOBAL.sp,
@@ -113,40 +119,40 @@ static CALL_DEFS: Lazy<Vec<Temp>> = Lazy::new(|| {
 
 static TEMP_MAP: Lazy<HashMap<Temp, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
-    m.insert(REGISTERS_GLOBAL.sp, "sp");
-    m.insert(REGISTERS_GLOBAL.xzr, "xzr");
-    m.insert(REGISTERS_GLOBAL.pc, "pc");
-    m.insert(REGISTERS_GLOBAL.x0, "x0");
-    m.insert(REGISTERS_GLOBAL.x1, "x1");
-    m.insert(REGISTERS_GLOBAL.x2, "x2");
-    m.insert(REGISTERS_GLOBAL.x3, "x3");
-    m.insert(REGISTERS_GLOBAL.x4, "x4");
-    m.insert(REGISTERS_GLOBAL.x5, "x5");
-    m.insert(REGISTERS_GLOBAL.x6, "x6");
-    m.insert(REGISTERS_GLOBAL.x7, "x7");
-    m.insert(REGISTERS_GLOBAL.x8, "x8");
-    m.insert(REGISTERS_GLOBAL.x9, "x9");
-    m.insert(REGISTERS_GLOBAL.x10, "x10");
-    m.insert(REGISTERS_GLOBAL.x11, "x11");
-    m.insert(REGISTERS_GLOBAL.x12, "x12");
-    m.insert(REGISTERS_GLOBAL.x13, "x13");
-    m.insert(REGISTERS_GLOBAL.x14, "x14");
-    m.insert(REGISTERS_GLOBAL.x15, "x15");
-    m.insert(REGISTERS_GLOBAL.x16, "x16");
-    m.insert(REGISTERS_GLOBAL.x17, "x17");
-    m.insert(REGISTERS_GLOBAL.x18, "x18");
-    m.insert(REGISTERS_GLOBAL.x19, "x19");
-    m.insert(REGISTERS_GLOBAL.x20, "x20");
-    m.insert(REGISTERS_GLOBAL.x21, "x21");
-    m.insert(REGISTERS_GLOBAL.x22, "x22");
-    m.insert(REGISTERS_GLOBAL.x23, "x23");
-    m.insert(REGISTERS_GLOBAL.x24, "x24");
-    m.insert(REGISTERS_GLOBAL.x25, "x25");
-    m.insert(REGISTERS_GLOBAL.x26, "x26");
-    m.insert(REGISTERS_GLOBAL.x27, "x27");
-    m.insert(REGISTERS_GLOBAL.x28, "x28");
-    m.insert(REGISTERS_GLOBAL.x29, "x29");
-    m.insert(REGISTERS_GLOBAL.x30, "x30");
+    m.insert(REGISTERS_GLOBAL.sp, REGISTERS[0]);
+    m.insert(REGISTERS_GLOBAL.xzr, REGISTERS[1]);
+    m.insert(REGISTERS_GLOBAL.pc, REGISTERS[2]);
+    m.insert(REGISTERS_GLOBAL.x0, REGISTERS[3]);
+    m.insert(REGISTERS_GLOBAL.x1, REGISTERS[4]);
+    m.insert(REGISTERS_GLOBAL.x2, REGISTERS[5]);
+    m.insert(REGISTERS_GLOBAL.x3, REGISTERS[6]);
+    m.insert(REGISTERS_GLOBAL.x4, REGISTERS[7]);
+    m.insert(REGISTERS_GLOBAL.x5, REGISTERS[8]);
+    m.insert(REGISTERS_GLOBAL.x6, REGISTERS[9]);
+    m.insert(REGISTERS_GLOBAL.x7, REGISTERS[10]);
+    m.insert(REGISTERS_GLOBAL.x8, REGISTERS[11]);
+    m.insert(REGISTERS_GLOBAL.x9, REGISTERS[12]);
+    m.insert(REGISTERS_GLOBAL.x10, REGISTERS[13]);
+    m.insert(REGISTERS_GLOBAL.x11, REGISTERS[14]);
+    m.insert(REGISTERS_GLOBAL.x12, REGISTERS[15]);
+    m.insert(REGISTERS_GLOBAL.x13, REGISTERS[16]);
+    m.insert(REGISTERS_GLOBAL.x14, REGISTERS[17]);
+    m.insert(REGISTERS_GLOBAL.x15, REGISTERS[18]);
+    m.insert(REGISTERS_GLOBAL.x16, REGISTERS[19]);
+    m.insert(REGISTERS_GLOBAL.x17, REGISTERS[20]);
+    m.insert(REGISTERS_GLOBAL.x18, REGISTERS[21]);
+    m.insert(REGISTERS_GLOBAL.x19, REGISTERS[22]);
+    m.insert(REGISTERS_GLOBAL.x20, REGISTERS[23]);
+    m.insert(REGISTERS_GLOBAL.x21, REGISTERS[24]);
+    m.insert(REGISTERS_GLOBAL.x22, REGISTERS[25]);
+    m.insert(REGISTERS_GLOBAL.x23, REGISTERS[26]);
+    m.insert(REGISTERS_GLOBAL.x24, REGISTERS[27]);
+    m.insert(REGISTERS_GLOBAL.x25, REGISTERS[28]);
+    m.insert(REGISTERS_GLOBAL.x26, REGISTERS[29]);
+    m.insert(REGISTERS_GLOBAL.x27, REGISTERS[30]);
+    m.insert(REGISTERS_GLOBAL.x28, REGISTERS[31]);
+    m.insert(REGISTERS_GLOBAL.x29, REGISTERS[32]);
+    m.insert(REGISTERS_GLOBAL.x30, REGISTERS[33]);
     m
 });
 
@@ -169,7 +175,7 @@ impl ARM64 {
 
 impl Frame for ARM64 {
     type Access = Access;
-    type Register = (); // TODO
+    type Register = &'static str; // TODO
 
     const WORD_SIZE: u64 = 8;
 
@@ -216,7 +222,7 @@ impl Frame for ARM64 {
     }
 
     fn registers() -> &'static [Self::Register] {
-        todo!()
+        REGISTERS.as_ref()
     }
 
     fn special_regs() -> &'static [Temp] {
@@ -236,8 +242,7 @@ impl Frame for ARM64 {
     }
 
     fn temp_map() -> &'static HashMap<Temp, Self::Register> {
-        // TEMP_MAP.deref()
-        todo!()
+        TEMP_MAP.deref()
     }
 
     fn fp() -> Temp {
@@ -253,9 +258,46 @@ impl Frame for ARM64 {
         Expr::Const(0)
     }
 
-    fn proc_entry_exit1(&mut self, _stmt: Stmt) -> Stmt {
-        // todo!("proc_entry_exit1")
-        Stmt::Expr(Box::new(Expr::Const(0)))
+    fn proc_entry_exit1(&mut self, body: Stmt) -> Stmt {
+        let arg_leg_len = Self::arg_regs().len();
+        if self.formals.len() > arg_leg_len {
+            unimplemented!("argument more than {} is not implemented", arg_leg_len - 1);
+        }
+
+        let mut start_stmts = Vec::new();
+        let mut callee_save_regs_access = Vec::new();
+
+        // move callee_save_regs to mem
+        for reg in Self::calee_save_regs() {
+            let access = self.alloc_local(true);
+            callee_save_regs_access.push(access.clone());
+            start_stmts.push(Stmt::Move(
+                Box::new(Self::exp(access, Expr::Temp(Self::fp()))),
+                Box::new(Expr::Temp(*reg)),
+            ));
+        }
+
+        for (formal, arg_reg) in self.formals().iter().zip(Self::arg_regs().iter()) {
+            let dst = Self::exp(formal.clone(), Expr::Temp(Self::fp()));
+            start_stmts.push(Stmt::Move(Box::new(dst), Box::new(Expr::Temp(*arg_reg))));
+        }
+
+        let mut end_stmts = Vec::new();
+
+        for (reg, loc) in Self::calee_save_regs()
+            .iter()
+            .zip(callee_save_regs_access.iter())
+        {
+            end_stmts.push(Stmt::Move(
+                Box::new(Expr::Temp(*reg)),
+                Box::new(Self::exp(loc.clone(), Expr::Temp(Self::fp()))),
+            ));
+        }
+
+        start_stmts.push(body);
+        start_stmts.append(&mut end_stmts);
+
+        Stmt::seq(start_stmts)
     }
 
     fn proc_entry_exit2(&self, instructions: &mut Vec<Instruction>) {

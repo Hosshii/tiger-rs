@@ -16,6 +16,7 @@ pub trait Frame {
     /// Machine specific word size.
     const WORD_SIZE: u64;
 
+    /// All registers.
     fn registers() -> &'static [Self::Register];
 
     /// Represents special registers like fp, sp, lr, etc.
@@ -29,6 +30,8 @@ pub trait Frame {
     fn calee_save_regs() -> &'static [Temp];
     fn caller_save_regs() -> &'static [Temp];
 
+    /// Maps temporaries to registers.
+    /// All machine register is contained.
     fn temp_map() -> &'static HashMap<Temp, Self::Register>;
 
     /// Represents frame pointer.
