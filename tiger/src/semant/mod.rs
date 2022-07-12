@@ -1,14 +1,13 @@
+mod env;
+mod escape;
+mod translate;
+mod types;
+
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
 };
 
-use super::{
-    env::Env,
-    escape::EscapeFinder,
-    translate::{self, Access, Expr as TransExpr, Level, Translator},
-    types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
-};
 use crate::{
     codegen::arm64::frame::ARM64,
     common::{Label, Positions, Symbol},
@@ -16,6 +15,12 @@ use crate::{
     parser::ast::{
         Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
     },
+};
+use {
+    env::Env,
+    escape::EscapeFinder,
+    translate::{Access, Expr as TransExpr, Level, Translator},
+    types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
 };
 
 use thiserror::Error;
