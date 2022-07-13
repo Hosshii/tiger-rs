@@ -13,7 +13,7 @@ use crate::{
 
 use super::asm::Instruction;
 
-pub trait Frame: Clone {
+pub trait Frame: Clone + Debug {
     /// Represents an access to variable.
     /// Typically implemented like `enum {InReg(Temp), InFrame(offset)}`.
     type Access: Clone;

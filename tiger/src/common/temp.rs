@@ -34,25 +34,31 @@ impl Default for Temp {
 static LABEL_GLOBAL: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Label {
-    num: u32,
+pub enum Label {
+    Num(u32),
+    Named(String),
 }
 
 impl Label {
     pub fn new() -> Self {
-        Self {
-            num: LABEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-        }
+        Self::Num(LABEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
     }
 
-    pub fn new_with(num: u32) -> Self {
-        Self { num }
+    pub fn with_num(num: u32) -> Self {
+        Self::Num(num)
+    }
+
+    pub fn with_name(name: String) -> Self {
+        Self::Named(name)
     }
 }
 
 impl Display for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.num)
+        match self {
+            Label::Num(n) => write!(f, "{}", n),
+            Label::Named(s) => write!(f, "{}", s),
+        }
     }
 }
 
