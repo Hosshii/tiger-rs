@@ -10,10 +10,11 @@ use std::{
 
 use crate::{
     codegen::arm64::frame::ARM64,
-    common::{Label, Positions, Symbol},
+    common::{Label, Position, Positions, Symbol},
     frame::{Fragment, Frame},
     parser::ast::{
-        Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
+        Decl, Expr as AstExpr, FuncDecl, Ident, LValue, Operator, RecordField, Type as AstType,
+        TypeIdent, VarDecl,
     },
 };
 use {
@@ -220,10 +221,22 @@ impl<F: Frame> Semant<F> {
             .map_err(|e| Error::new_incomplete_type(pos, e))
     }
 
-    pub fn trans_prog(mut self, mut expr: AstExpr) -> Result<Vec<Fragment<F>>> {
+    pub fn trans_prog(mut self, expr: AstExpr, main_name: &str) -> Result<Vec<Fragment<F>>> {
+        let pos = expr.pos();
+        let mut expr = AstExpr::Sequence(vec![expr, AstExpr::Int(0, pos)], pos);
         EscapeFinder::find_escape(&mut expr);
 
-        self.trans_expr(expr, &mut Level::outermost(), None)?;
+        let dec = FuncDecl {
+            name: main_name.into(),
+            params: vec![],
+            ret_type: Some(TypeIdent("int".into())),
+            body: expr,
+            pos: (Position::default(), Position::default()),
+        };
+
+        let dec = Decl::Func(vec![dec]);
+
+        self.trans_decl(dec, &mut Level::outermost(), None)?;
         Ok(self.translator.get_result())
     }
 
@@ -1181,7 +1194,7 @@ mod tests {
 
             let semantic_analyzer = Semant::<ARM64>::new_with_base();
 
-            match semantic_analyzer.trans_prog(e) {
+            match semantic_analyzer.trans_prog(e, "main") {
                 Ok(_) => println!("success!"),
                 Err(e) => panic!("fail! {}", e),
             }

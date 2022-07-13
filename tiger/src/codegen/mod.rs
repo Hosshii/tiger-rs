@@ -9,6 +9,7 @@ pub mod reg_alloc;
 
 pub trait Codegen {
     type Frame: Frame;
+    const MAIN_SYMBOL: &'static str;
 
     fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction>;
 }

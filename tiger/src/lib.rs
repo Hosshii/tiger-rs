@@ -10,6 +10,8 @@ mod frame;
 
 use std::{io::Read, marker::PhantomData};
 
+use parser::ast::Program;
+
 use crate::{
     codegen::{arm64::ARM64 as ARM64Codegen, reg_alloc, Codegen},
     frame::{Fragment, Frame as _},
@@ -30,14 +32,13 @@ where
 {
     let ast = parser::parse(filename, r).map_err(|e| anyhow::format_err!("{:?}", e))?;
 
-    dbg!(&ast);
-
     let semantic_analyzer = Semant::<C::Frame>::new_with_base();
 
     let fragments = semantic_analyzer
-        .trans_prog(ast)
+        .trans_prog(ast, C::MAIN_SYMBOL)
         .map_err(|e| anyhow::format_err!("{:?}", e))?;
 
+    ARM64Codegen::debug();
     for fragment in fragments {
         match fragment {
             Fragment::Proc(body, frame) => {
@@ -67,3 +68,12 @@ where
 
     Ok(())
 }
+
+// fn add_runtime_main(ast: Program) -> Program {
+//     // convert Expr into
+//     // let
+//     //   function __main() Expr
+//     // in
+//     //   __main()
+//     // end
+// }

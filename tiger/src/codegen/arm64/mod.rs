@@ -225,6 +225,7 @@ impl<'a> ARM64<'a> {
 
 impl<'a> Codegen for ARM64<'a> {
     type Frame = ARM64Frame;
+    const MAIN_SYMBOL: &'static str = "main";
 
     fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
         let mut codegen = ARM64::new(frame);
