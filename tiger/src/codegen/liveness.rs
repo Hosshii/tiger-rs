@@ -17,6 +17,7 @@ pub fn analyze(flow_graph: &FlowGraph) -> (LiveGraph, LiveMap) {
 }
 
 pub type Node = Temp;
+#[derive(Debug)]
 pub struct LiveGraph {
     graph: Graph<Node>,
     temp2id: HashMap<Node, ID>,
@@ -36,6 +37,14 @@ impl LiveGraph {
     pub fn temp(&self, id: ID) -> Node {
         self.id2temp[&id]
     }
+
+    pub fn id2temp(&self) -> &HashMap<ID, Node> {
+        &self.id2temp
+    }
+
+    pub fn temp2id(&self) -> &HashMap<Node, ID> {
+        &self.temp2id
+    }   
 
     fn new(flow_graph: &FlowGraph) -> Self {
         Self::init_graph(flow_graph)

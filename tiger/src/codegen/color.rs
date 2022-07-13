@@ -21,26 +21,35 @@ pub fn color<F: Frame>(
     _spill_cost: SpillCost,
     registers: Registers<F>,
 ) -> (Allocation<F>, Vec<Temp>) {
-    let pre_colored: PreColored = initial
-        .iter()
-        .map(|(temp, _)| interference.id(temp))
-        .collect();
+    // All machine register that is already colored.
+    let pre_colored: PreColored = initial.keys().copied().collect();
 
-    let colors: Colors<F> = initial
-        .iter()
-        .map(|(temp, reg)| (interference.id(temp), reg.clone()))
-        .collect();
-
-    let all_colors: AllColors<F> = registers.into_iter().collect();
-
-    let all_temp = interference
+    // all temporary in graph node.
+    let all_temp: HashSet<_> = interference
         .graph_ref()
         .nodes()
         .iter()
-        .map(|node| node.val());
+        .map(|node| node.val())
+        .collect();
 
-    let all_id_set: HashSet<LiveID> = all_temp.map(|temp| interference.id(temp)).collect();
-    let initial: Initial = all_id_set.difference(&pre_colored).copied().collect();
+    // colored node.
+    let colors: Colors<F> = initial
+        .iter()
+        .filter(|(temp, _)| all_temp.contains(temp))
+        .map(|(temp, reg)| (interference.id(temp), reg.clone()))
+        .collect();
+
+    // all machine registers set
+    let all_colors: AllColors<F> = registers.into_iter().collect();
+
+    let all_id_set: HashSet<LiveID> = all_temp.iter().map(|temp| interference.id(temp)).collect();
+    let colored_node_id_set: HashSet<LiveID> = colors.keys().copied().collect();
+
+    // non colored temporary in graph.
+    let initial: Initial = all_id_set
+        .difference(&colored_node_id_set)
+        .cloned()
+        .collect();
 
     let (colors, spills) = _main::<F>(&interference, pre_colored, colors, all_colors, initial);
 
@@ -57,7 +66,7 @@ pub fn color<F: Frame>(
 type Degree = HashMap<LiveID, usize>;
 type AdjList = HashMap<LiveID, HashSet<LiveID>>;
 type AdjSet = HashSet<Edge>;
-type PreColored = HashSet<LiveID>;
+type PreColored = HashSet<Temp>;
 type Edge = (LiveID, LiveID);
 type SimplifyWorkList = Vec<LiveID>;
 type SpillWorkList = HashSet<ID>;
@@ -67,6 +76,8 @@ type ColoredNodes = HashSet<LiveID>;
 type Colors<F> = HashMap<LiveID, <F as Frame>::Register>; // fmap (\temp,v -> temp2id(temp)) Allocation
 type AllColors<F> = HashSet<<F as Frame>::Register>;
 type Initial = HashSet<LiveID>;
+type ID2Temp = HashMap<LiveID, Temp>;
+type Temp2ID = HashMap<Temp, LiveID>;
 
 fn _main<F: Frame>(
     live_graph: &LiveGraph,
@@ -75,9 +86,15 @@ fn _main<F: Frame>(
     all_colors: AllColors<F>,
     initial: Initial,
 ) -> (Colors<F>, SpillWorkList) {
+    // dbg!(&live_graph);
+    // dbg!(&precolored);
+    // dbg!(&colors);
+    // dbg!(&all_colors);
+    // dbg!(&initial);
+
     let (_matrix, _adj_set, adj_list, mut degree) = build(live_graph, &precolored);
     let k = F::registers().len();
-    let (mut simplify_worklist, mut spill_work_list) = make_work_list(&initial, k, live_graph);
+    let (mut simplify_worklist, mut spill_work_list) = make_work_list(&initial, &degree, k);
 
     let mut select_stack = SelectStack::new();
     loop {
@@ -102,6 +119,7 @@ fn _main<F: Frame>(
     let mut colored_nodes: ColoredNodes = colors.keys().copied().collect();
 
     assign_colors::<F>(
+        live_graph.id2temp(),
         &select_stack,
         &adj_list,
         &precolored,
@@ -127,6 +145,17 @@ fn build(
     let mut degree = Degree::new();
 
     let graph_inner = live_graph.graph_ref();
+
+    // if `m \in precolored` and `m \in node`
+    // then degree[m] = usize::max
+    for node in graph_inner.nodes() {
+        let temp = node.val();
+        if precolored.contains(temp) {
+            let id = node.id();
+            degree.insert(id, usize::max_value());
+        }
+    }
+
     let node_len = graph_inner.nodes().len();
     let mut matrix = Matrix::new_with(node_len);
     for node in graph_inner.nodes() {
@@ -135,6 +164,7 @@ fn build(
             if one != other {
                 matrix.link(one, other);
                 add_edge(
+                    live_graph,
                     precolored,
                     &mut adj_set,
                     &mut adj_list,
@@ -149,6 +179,7 @@ fn build(
 }
 
 fn add_edge(
+    live_graph: &LiveGraph,
     precolored: &PreColored,
     adj_set: &mut AdjSet,
     adj_list: &mut AdjList,
@@ -162,12 +193,12 @@ fn add_edge(
     adj_set.insert((u, v));
     adj_set.insert((v, u));
 
-    if !precolored.contains(&u) {
+    if !precolored.contains(live_graph.graph_ref().get(u).val()) {
         adj_list.entry(u).or_default().insert(v);
         *degree.entry(u).or_insert(0) += 1;
     }
 
-    if !precolored.contains(&v) {
+    if !precolored.contains(live_graph.graph_ref().get(v).val()) {
         adj_list.entry(v).or_default().insert(u);
         *degree.entry(v).or_insert(0) += 1;
     }
@@ -177,23 +208,26 @@ fn adjacent<'a>(
     id: LiveID,
     adj_list: &'a AdjList,
     select_stack: &'a SelectStack,
-) -> impl Iterator<Item = LiveID> + 'a {
+) -> impl Iterator<Item = LiveID> {
     let set = adj_list.get(&id).expect("adj_list");
-    set.iter().chain(select_stack.iter()).copied().unique()
+    let select_stack_set: HashSet<LiveID> = select_stack.iter().copied().collect();
+    set.difference(&select_stack_set)
+        .copied()
+        .collect::<HashSet<_>>()
+        .into_iter()
 }
 
 /// Take initial registers, which is temporary and not colored, and max degree of graph.
 /// Returns simplifyWorkList.
 fn make_work_list(
     initial: &Initial,
+    degree: &Degree,
     k: usize,
-    live_graph: &LiveGraph,
 ) -> (SimplifyWorkList, SpillWorkList) {
     let mut simplify_work_list = SimplifyWorkList::new();
     let mut spill_work_list = SpillWorkList::new();
-    let graph_inner = live_graph.graph_ref();
     for &id in initial {
-        let deg = graph_inner.deg(id);
+        let deg = degree[&id];
         if k <= deg {
             spill_work_list.insert(id);
         } else if deg < k {
@@ -254,6 +288,7 @@ fn select_spill(
 }
 
 fn assign_colors<F: Frame>(
+    id2temp: &ID2Temp,
     select_stack: &SelectStack,
     adj_list: &AdjList,
     precolored: &PreColored,
@@ -266,8 +301,8 @@ fn assign_colors<F: Frame>(
         let mut ok_colors = all_colors.clone();
 
         for adj in adj_list.get(id).unwrap() {
-            if colored_nodes.contains(adj) || precolored.contains(adj) {
-                assert!(ok_colors.remove(&colors[adj]));
+            if colored_nodes.contains(adj) || precolored.contains(&id2temp[adj]) {
+                ok_colors.remove(&colors[adj]);
             }
         }
 
