@@ -1,5 +1,7 @@
 pub mod frame;
 
+use std::fmt::Display;
+
 use crate::{
     asm::{Instruction, LabelTrait, TempTrait},
     common::{Label, Temp},
@@ -60,6 +62,15 @@ impl Default for ARM64Label {
 }
 
 impl LabelTrait for ARM64Label {}
+
+impl Display for ARM64Label {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self.0 {
+            Label::Named(_) => write!(f, "{}", self.0),
+            Label::Num(_) => write!(f, "L.{}", self.0),
+        }
+    }
+}
 
 impl From<Label> for ARM64Label {
     fn from(label: Label) -> Self {
@@ -183,7 +194,7 @@ impl<'a> ARM64<'a> {
                     RelOp::Uge => "cs",
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("b.{} L.{}", suffix, t),
+                    assembly: format!("b.{} {}", suffix, t),
                     dst: vec![],
                     src: vec![],
                     jump: Some(vec![t.into(), f.into()]),
@@ -192,7 +203,7 @@ impl<'a> ARM64<'a> {
             }
             Stmt::Label(label) => {
                 let instruction = Instruction::Label {
-                    assembly: format!("L.{}:", label),
+                    assembly: format!("{}:", label),
                     label: label.into(),
                 };
                 self.emit(instruction);
@@ -224,7 +235,7 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let instruction = Instruction::Operand {
-                    assembly: format!("add 'd0, 'd0, :lo12:L.{}", label),
+                    assembly: format!("add 'd0, 'd0, :lo12:{}", label),
                     dst: vec![result],
                     src: vec![],
                     jump: None,

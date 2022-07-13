@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 
 use crate::{
     common::{Label as CommonLabel, Temp as CommonTemp},
@@ -12,7 +16,7 @@ pub trait TempTrait:
 {
 }
 pub trait LabelTrait:
-    Hash + Clone + PartialEq + Eq + Debug + From<CommonLabel> + for<'a> From<&'a CommonLabel>
+    Hash + Clone + PartialEq + Eq + Debug + Display + From<CommonLabel> + for<'a> From<&'a CommonLabel>
 {
 }
 
