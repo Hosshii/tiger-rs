@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::asm::Temp;
+use crate::asm::TempTrait;
 
 use super::{
     flow::FlowGraph,
     graph::{Graph, ID},
 };
 
-pub fn analyze(flow_graph: &FlowGraph) -> (LiveGraph, LiveMap) {
+pub fn analyze<T: TempTrait>(flow_graph: &FlowGraph<T>) -> (LiveGraph<T>, LiveMap<T>) {
     let live_map = live_map(flow_graph);
 
     let mut live_graph = LiveGraph::new(flow_graph);
@@ -15,43 +15,43 @@ pub fn analyze(flow_graph: &FlowGraph) -> (LiveGraph, LiveMap) {
 
     (live_graph, live_map)
 }
+pub type Node<T: TempTrait> = T;
 
-pub type Node = Temp;
 #[derive(Debug)]
-pub struct LiveGraph {
-    graph: Graph<Node>,
-    temp2id: HashMap<Node, ID>,
-    id2temp: HashMap<ID, Node>,
-    _moves: Vec<(Node, Node)>, // (from, to)
+pub struct LiveGraph<T: TempTrait> {
+    graph: Graph<T>,
+    temp2id: HashMap<T, ID>,
+    id2temp: HashMap<ID, T>,
+    _moves: Vec<(T, T)>, // (from, to)
 }
 
-impl LiveGraph {
-    pub fn graph_ref(&self) -> &Graph<Node> {
+impl<T: TempTrait> LiveGraph<T> {
+    pub fn graph_ref(&self) -> &Graph<Node<T>> {
         &self.graph
     }
 
-    pub fn id(&self, temp: &Node) -> ID {
+    pub fn id(&self, temp: &Node<T>) -> ID {
         self.temp2id[temp]
     }
 
-    pub fn temp(&self, id: ID) -> Node {
+    pub fn temp(&self, id: ID) -> Node<T> {
         self.id2temp[&id]
     }
 
-    pub fn id2temp(&self) -> &HashMap<ID, Node> {
+    pub fn id2temp(&self) -> &HashMap<ID, Node<T>> {
         &self.id2temp
     }
 
-    // pub fn temp2id(&self) -> &HashMap<Node, ID> {
+    // pub fn temp2id(&self) -> &HashMap<Node<T>, ID> {
     //     &self.temp2id
     // }
 
-    fn new(flow_graph: &FlowGraph) -> Self {
+    fn new(flow_graph: &FlowGraph<T>) -> Self {
         Self::init_graph(flow_graph)
     }
 
-    fn init_graph(flow_graph: &FlowGraph) -> Self {
-        let mut temps: HashSet<Temp> = HashSet::new();
+    fn init_graph(flow_graph: &FlowGraph<T>) -> Self {
+        let mut temps: HashSet<T> = HashSet::new();
 
         for node in flow_graph.graph_ref().nodes() {
             temps.extend(node.val().defs());
@@ -89,7 +89,7 @@ impl LiveGraph {
         }
     }
 
-    fn analyze(&mut self, flow_graph: &FlowGraph, live_map: &LiveMap) {
+    fn analyze(&mut self, flow_graph: &FlowGraph<T>, live_map: &LiveMap<T>) {
         for flow_node in flow_graph.graph_ref().nodes() {
             let defs = flow_node.val().defs();
             let flow_id = flow_node.id();
@@ -108,10 +108,10 @@ impl LiveGraph {
     }
 }
 
-pub type LiveSet = HashSet<Temp>;
-pub type LiveMap = HashMap<ID, LiveSet>; // FlowGraph's ID
+pub type LiveSet<T: TempTrait> = HashSet<T>;
+pub type LiveMap<T: TempTrait> = HashMap<ID, LiveSet<T>>; // FlowGraph's ID
 
-fn live_map(flow_graph: &FlowGraph) -> LiveMap {
+fn live_map<T: TempTrait>(flow_graph: &FlowGraph<T>) -> LiveMap<T> {
     let flow_graph = flow_graph.graph_ref();
     let flow_nodes = flow_graph.nodes();
 
@@ -163,7 +163,7 @@ fn live_map(flow_graph: &FlowGraph) -> LiveMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::codegen::flow::Node;
+    use crate::codegen::{arm64::ARM64Temp, flow::Node};
 
     use super::*;
 
@@ -180,38 +180,38 @@ mod tests {
         let nodes = vec![
             Node {
                 id: 0,
-                defs: HashSet::from([Temp::new_with(0)]),
+                defs: HashSet::from([ARM64Temp::with(0)]),
                 uses: HashSet::new(),
                 is_move: false, // TODO: should be true. Currently, we cannot use immediate in `uses`.
             },
             Node {
                 id: 1,
-                defs: HashSet::from([Temp::new_with(1)]),
-                uses: HashSet::from([Temp::new_with(0)]),
+                defs: HashSet::from([ARM64Temp::with(1)]),
+                uses: HashSet::from([ARM64Temp::with(0)]),
                 is_move: false,
             },
             Node {
                 id: 2,
-                defs: HashSet::from([Temp::new_with(2)]),
-                uses: HashSet::from([Temp::new_with(2), Temp::new_with(1)]),
+                defs: HashSet::from([ARM64Temp::with(2)]),
+                uses: HashSet::from([ARM64Temp::with(2), ARM64Temp::with(1)]),
                 is_move: false,
             },
             Node {
                 id: 3,
-                defs: HashSet::from([Temp::new_with(0)]),
-                uses: HashSet::from([Temp::new_with(1)]),
+                defs: HashSet::from([ARM64Temp::with(0)]),
+                uses: HashSet::from([ARM64Temp::with(1)]),
                 is_move: false,
             },
             Node {
                 id: 4,
                 defs: HashSet::new(),
-                uses: HashSet::from([Temp::new_with(0)]),
+                uses: HashSet::from([ARM64Temp::with(0)]),
                 is_move: false,
             },
             Node {
                 id: 5,
                 defs: HashSet::new(),
-                uses: HashSet::from([Temp::new_with(2)]),
+                uses: HashSet::from([ARM64Temp::with(2)]),
                 is_move: false,
             },
         ];
@@ -235,11 +235,11 @@ mod tests {
 
         // live map test
         let expected_live_map = vec![
-            HashSet::from([Temp::new_with(0), Temp::new_with(2)]),
-            HashSet::from([Temp::new_with(1), Temp::new_with(2)]),
-            HashSet::from([Temp::new_with(1), Temp::new_with(2)]),
-            HashSet::from([Temp::new_with(0), Temp::new_with(2)]),
-            HashSet::from([Temp::new_with(0), Temp::new_with(2)]),
+            HashSet::from([ARM64Temp::with(0), ARM64Temp::with(2)]),
+            HashSet::from([ARM64Temp::with(1), ARM64Temp::with(2)]),
+            HashSet::from([ARM64Temp::with(1), ARM64Temp::with(2)]),
+            HashSet::from([ARM64Temp::with(0), ARM64Temp::with(2)]),
+            HashSet::from([ARM64Temp::with(0), ARM64Temp::with(2)]),
             HashSet::from([]),
         ];
         assert_eq!(expected_live_map.len(), ids.len());
@@ -260,10 +260,10 @@ mod tests {
 
             let set: HashSet<_> = pred.iter().map(|id| live_graph.id2temp[id]).collect();
 
-            if tmp == Temp::new_with(0) || tmp == Temp::new_with(1) {
-                assert_eq!(set, HashSet::from([Temp::new_with(2)]));
-            } else if tmp == Temp::new_with(2) {
-                assert_eq!(set, HashSet::from([Temp::new_with(0), Temp::new_with(1)]));
+            if tmp == ARM64Temp::with(0) || tmp == ARM64Temp::with(1) {
+                assert_eq!(set, HashSet::from([ARM64Temp::with(2)]));
+            } else if tmp == ARM64Temp::with(2) {
+                assert_eq!(set, HashSet::from([ARM64Temp::with(0), ARM64Temp::with(1)]));
             } else {
                 unreachable!()
             }

@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::{
+    asm::{LabelTrait, TempTrait},
     common::{Label, Temp},
     ir::{Expr, Stmt},
 };
@@ -18,6 +19,8 @@ pub trait Frame: Clone + Debug {
     /// Typically implemented like `enum {InReg(Temp), InFrame(offset)}`.
     type Access: Clone;
     type Register: Eq + Hash + Clone + Display + Debug + 'static;
+    type Temp: TempTrait;
+    type Label: LabelTrait;
 
     /// Machine specific word size.
     const WORD_SIZE: u64;
@@ -69,10 +72,16 @@ pub trait Frame: Clone + Debug {
     fn proc_entry_exit1(&mut self, stmt: Stmt) -> Stmt;
 
     /// Add sink instruction.
-    fn proc_entry_exit2(&self, instructions: Vec<Instruction>) -> Vec<Instruction>;
+    fn proc_entry_exit2(
+        &self,
+        instructions: Vec<Instruction<Self::Temp, Self::Label>>,
+    ) -> Vec<Instruction<Self::Temp, Self::Label>>;
 
     /// Add prologue and epilogue.
-    fn proc_entry_exit3(&self, instructions: Vec<Instruction>) -> Vec<Instruction>;
+    fn proc_entry_exit3(
+        &self,
+        instructions: Vec<Instruction<Self::Temp, Self::Label>>,
+    ) -> Vec<Instruction<Self::Temp, Self::Label>>;
 }
 
 #[derive(Debug)]

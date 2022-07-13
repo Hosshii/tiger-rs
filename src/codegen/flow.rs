@@ -1,36 +1,36 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::asm::{Instruction, Temp};
+use crate::asm::{Instruction, LabelTrait, TempTrait};
 
 use super::graph::Graph;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Node {
+pub struct Node<T: TempTrait> {
     pub id: usize, // for debug
-    pub defs: HashSet<Temp>,
-    pub uses: HashSet<Temp>,
+    pub defs: HashSet<T>,
+    pub uses: HashSet<T>,
     pub is_move: bool,
 }
 
-impl Node {
-    pub fn defs(&self) -> &HashSet<Temp> {
+impl<T: TempTrait> Node<T> {
+    pub fn defs(&self) -> &HashSet<T> {
         &self.defs
     }
 
-    pub fn uses(&self) -> &HashSet<Temp> {
+    pub fn uses(&self) -> &HashSet<T> {
         &self.uses
     }
 }
-pub struct FlowGraph {
-    pub(super) graph: Graph<Node>,
+pub struct FlowGraph<T: TempTrait> {
+    pub(super) graph: Graph<Node<T>>,
 }
 
-impl FlowGraph {
-    pub fn graph_ref(&self) -> &Graph<Node> {
+impl<T: TempTrait> FlowGraph<T> {
+    pub fn graph_ref(&self) -> &Graph<Node<T>> {
         &self.graph
     }
 
-    pub fn convert(instructions: Vec<Instruction>) -> Self {
+    pub fn convert<L: LabelTrait>(instructions: Vec<Instruction<T, L>>) -> Self {
         let mut graph = FlowGraph {
             graph: Graph::new(),
         };
@@ -39,9 +39,9 @@ impl FlowGraph {
         graph
     }
 
-    fn convert_inner(&mut self, instructions: Vec<Instruction>) {
+    fn convert_inner<L: LabelTrait>(&mut self, instructions: Vec<Instruction<T, L>>) {
         let mut jumps = Vec::new();
-        let mut labels = HashMap::new();
+        let mut labels: HashMap<L, _> = HashMap::new();
 
         let mut before_id = None;
         for (id, instruction) in instructions.into_iter().enumerate() {
@@ -97,7 +97,7 @@ impl FlowGraph {
                         is_move: false,
                     };
                     let id = self.graph.insert(node);
-                    labels.insert(label, id);
+                    labels.insert(label.into(), id);
 
                     if let Some(before) = before_id {
                         let linked = self.graph.link(before, id);
@@ -123,7 +123,7 @@ impl FlowGraph {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::Label as CommonLabel;
+    use crate::codegen::arm64::{ARM64Label, ARM64Temp};
 
     use super::*;
 
@@ -133,37 +133,37 @@ mod tests {
         let mut block1 = vec![
             Label {
                 assembly: Default::default(),
-                label: CommonLabel::with_num(0),
+                label: ARM64Label::with_num(0),
             },
             Move {
                 assembly: Default::default(),
-                dst: Temp::new_with(0),
-                src: Temp::new_with(1),
+                dst: ARM64Temp::with(0),
+                src: ARM64Temp::with(1),
             },
             Operand {
                 assembly: Default::default(),
-                dst: vec![Temp::new_with(2)],
-                src: vec![Temp::new_with(3)],
+                dst: vec![ARM64Temp::with(2)],
+                src: vec![ARM64Temp::with(3)],
                 jump: None,
             },
             Operand {
                 assembly: Default::default(),
-                dst: vec![Temp::new_with(4)],
-                src: vec![Temp::new_with(5)],
-                jump: Some(vec![CommonLabel::with_num(1)]),
+                dst: vec![ARM64Temp::with(4)],
+                src: vec![ARM64Temp::with(5)],
+                jump: Some(vec![ARM64Label::with_num(1)]),
             },
         ];
 
         let mut block2 = vec![
             Label {
                 assembly: Default::default(),
-                label: CommonLabel::with_num(1),
+                label: ARM64Label::with_num(1),
             },
             Operand {
                 assembly: Default::default(),
                 dst: vec![],
                 src: vec![],
-                jump: Some(vec![CommonLabel::with_num(0), CommonLabel::with_num(1)]),
+                jump: Some(vec![ARM64Label::with_num(0), ARM64Label::with_num(1)]),
             },
         ];
 
@@ -173,9 +173,9 @@ mod tests {
         let graph = flow.graph;
 
         struct Assert {
-            cur: Node,
-            pred: Vec<Node>,
-            succ: Vec<Node>,
+            cur: Node<ARM64Temp>,
+            pred: Vec<Node<ARM64Temp>>,
+            succ: Vec<Node<ARM64Temp>>,
         }
 
         let nodes = vec![
@@ -187,20 +187,20 @@ mod tests {
             },
             Node {
                 id: 1,
-                defs: HashSet::from([Temp::new_with(0)]),
-                uses: HashSet::from([Temp::new_with(1)]),
+                defs: HashSet::from([ARM64Temp::with(0)]),
+                uses: HashSet::from([ARM64Temp::with(1)]),
                 is_move: true,
             },
             Node {
                 id: 2,
-                defs: HashSet::from([Temp::new_with(2)]),
-                uses: HashSet::from([Temp::new_with(3)]),
+                defs: HashSet::from([ARM64Temp::with(2)]),
+                uses: HashSet::from([ARM64Temp::with(3)]),
                 is_move: false,
             },
             Node {
                 id: 3,
-                defs: HashSet::from([Temp::new_with(4)]),
-                uses: HashSet::from([Temp::new_with(5)]),
+                defs: HashSet::from([ARM64Temp::with(4)]),
+                uses: HashSet::from([ARM64Temp::with(5)]),
                 is_move: false,
             },
             Node {

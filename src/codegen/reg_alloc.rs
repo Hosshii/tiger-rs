@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
 use crate::{
-    asm::{Allocation, Instruction, Temp},
+    asm::{Allocation, Instruction},
     frame::Frame,
 };
 
 use super::{color, flow::FlowGraph, liveness};
 
 pub fn alloc<F: Frame>(
-    instructions: Vec<Instruction>,
+    instructions: Vec<Instruction<F::Temp, F::Label>>,
     _frame: &F,
-) -> (Vec<Instruction>, Allocation<F>) {
+) -> (Vec<Instruction<F::Temp, F::Label>>, Allocation<F>) {
     let flow_graph = FlowGraph::convert(instructions.clone());
     let (interference, _) = liveness::analyze(&flow_graph);
 
@@ -19,7 +19,7 @@ pub fn alloc<F: Frame>(
         .map(|(temp, reg)| (temp.into(), reg.clone()))
         .collect();
 
-    let spill_cost: HashMap<Temp, u32> = interference
+    let spill_cost: HashMap<F::Temp, u32> = interference
         .graph_ref()
         .nodes()
         .iter()

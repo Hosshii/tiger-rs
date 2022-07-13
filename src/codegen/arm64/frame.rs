@@ -9,6 +9,8 @@ use crate::{
     ir::{BinOp, Expr, Stmt},
 };
 
+use super::{ARM64Label, ARM64Temp};
+
 const PTR_SIZE: i64 = 8;
 static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
     sp: Temp::new(),
@@ -176,6 +178,8 @@ impl ARM64 {
 impl Frame for ARM64 {
     type Access = Access;
     type Register = &'static str; // TODO
+    type Label = ARM64Label;
+    type Temp = ARM64Temp;
 
     const WORD_SIZE: u64 = 8;
 
@@ -304,7 +308,10 @@ impl Frame for ARM64 {
         Stmt::seq(start_stmts)
     }
 
-    fn proc_entry_exit2(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
+    fn proc_entry_exit2(
+        &self,
+        mut instructions: Vec<Instruction<Self::Temp, Self::Label>>,
+    ) -> Vec<Instruction<Self::Temp, Self::Label>> {
         let mut src: Vec<_> = Self::calee_save_regs().iter().map(Into::into).collect();
         let mut special_regs = Self::special_regs().iter().map(Into::into).collect();
         src.append(&mut special_regs);
@@ -319,14 +326,17 @@ impl Frame for ARM64 {
         instructions
     }
 
-    fn proc_entry_exit3(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
+    fn proc_entry_exit3(
+        &self,
+        mut instructions: Vec<Instruction<Self::Temp, Self::Label>>,
+    ) -> Vec<Instruction<Self::Temp, Self::Label>> {
         let mut prologue = vec![
             Instruction::Comment {
                 assembly: "@ prologue start".to_string(),
             },
             Instruction::Label {
                 assembly: format!("L.{}:", self.name()),
-                label: self.name.clone(),
+                label: (&self.name).into(),
             },
             Instruction::Operand {
                 assembly: format!("sub 'd0, 's0, #{}", self.pointer),

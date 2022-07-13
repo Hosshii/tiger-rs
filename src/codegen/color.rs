@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    asm::{Allocation, Temp},
+    asm::{Allocation, TempTrait},
     frame::Frame,
 };
 
@@ -10,17 +10,17 @@ use super::{
     liveness::LiveGraph,
 };
 
-type SpillCost = HashMap<Temp, u32>;
+type SpillCost<T: TempTrait> = HashMap<T, u32>;
 type Registers<F> = Vec<<F as Frame>::Register>;
 
 pub fn color<F: Frame>(
-    interference: LiveGraph,
+    interference: LiveGraph<F::Temp>,
     initial: Allocation<F>,
-    _spill_cost: SpillCost,
+    _spill_cost: SpillCost<F::Temp>,
     registers: Registers<F>,
-) -> (Allocation<F>, Vec<Temp>) {
+) -> (Allocation<F>, Vec<F::Temp>) {
     // All machine register that is already colored.
-    let pre_colored: PreColored = initial.keys().copied().collect();
+    let pre_colored: PreColored<F::Temp> = initial.keys().copied().collect();
 
     // all temporary in graph node.
     let all_temp: HashSet<_> = interference
@@ -56,7 +56,7 @@ pub fn color<F: Frame>(
         .map(|(id, reg)| (interference.temp(id), reg))
         .collect();
 
-    let spills: Vec<Temp> = spills.into_iter().map(|id| interference.temp(id)).collect();
+    let spills: Vec<F::Temp> = spills.into_iter().map(|id| interference.temp(id)).collect();
 
     (allocation, spills)
 }
@@ -64,7 +64,7 @@ pub fn color<F: Frame>(
 type Degree = HashMap<LiveID, usize>;
 type AdjList = HashMap<LiveID, HashSet<LiveID>>;
 type AdjSet = HashSet<Edge>;
-type PreColored = HashSet<Temp>;
+type PreColored<T: TempTrait> = HashSet<T>;
 type Edge = (LiveID, LiveID);
 type SimplifyWorkList = Vec<LiveID>;
 type SpillWorkList = HashSet<ID>;
@@ -74,12 +74,12 @@ type ColoredNodes = HashSet<LiveID>;
 type Colors<F> = HashMap<LiveID, <F as Frame>::Register>; // fmap (\temp,v -> temp2id(temp)) Allocation
 type AllColors<F> = HashSet<<F as Frame>::Register>;
 type Initial = HashSet<LiveID>;
-type ID2Temp = HashMap<LiveID, Temp>;
+type ID2Temp<T: TempTrait> = HashMap<LiveID, T>;
 // type Temp2ID = HashMap<Temp, LiveID>;
 
 fn _main<F: Frame>(
-    live_graph: &LiveGraph,
-    precolored: PreColored,
+    live_graph: &LiveGraph<F::Temp>,
+    precolored: PreColored<F::Temp>,
     mut colors: Colors<F>,
     all_colors: AllColors<F>,
     initial: Initial,
@@ -134,9 +134,9 @@ fn _main<F: Frame>(
     (colors, spill_work_list)
 }
 
-fn build(
-    live_graph: &LiveGraph,
-    precolored: &PreColored,
+fn build<T: TempTrait>(
+    live_graph: &LiveGraph<T>,
+    precolored: &PreColored<T>,
 ) -> (Matrix<bool>, AdjSet, AdjList, Degree) {
     let mut adj_set = AdjSet::new();
     let mut adj_list = AdjList::new();
@@ -176,9 +176,9 @@ fn build(
     (matrix, adj_set, adj_list, degree)
 }
 
-fn add_edge(
-    live_graph: &LiveGraph,
-    precolored: &PreColored,
+fn add_edge<T: TempTrait>(
+    live_graph: &LiveGraph<T>,
+    precolored: &PreColored<T>,
     adj_set: &mut AdjSet,
     adj_list: &mut AdjList,
     degree: &mut Degree,
@@ -286,10 +286,10 @@ fn select_spill(
 }
 
 fn assign_colors<F: Frame>(
-    id2temp: &ID2Temp,
+    id2temp: &ID2Temp<F::Temp>,
     select_stack: &SelectStack,
     adj_list: &AdjList,
-    precolored: &PreColored,
+    precolored: &PreColored<F::Temp>,
     colored_nodes: &mut ColoredNodes,
     colors: &mut Colors<F>,
     all_colors: &AllColors<F>,
