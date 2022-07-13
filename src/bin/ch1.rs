@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::cmp;
 
 use self::{BinOp::*, Expr::*, Stmt::*};
