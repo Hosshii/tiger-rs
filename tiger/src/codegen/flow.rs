@@ -105,6 +105,9 @@ impl FlowGraph {
                     }
                     before_id = Some(id);
                 }
+                Instruction::Comment { .. } => {
+                    continue;
+                }
             }
         }
 
@@ -130,7 +133,7 @@ mod tests {
         let mut block1 = vec![
             Label {
                 assembly: Default::default(),
-                label: CommonLabel::new_with(0),
+                label: CommonLabel::with_num(0),
             },
             Move {
                 assembly: Default::default(),
@@ -147,20 +150,20 @@ mod tests {
                 assembly: Default::default(),
                 dst: vec![Temp::new_with(4)],
                 src: vec![Temp::new_with(5)],
-                jump: Some(vec![CommonLabel::new_with(1)]),
+                jump: Some(vec![CommonLabel::with_num(1)]),
             },
         ];
 
         let mut block2 = vec![
             Label {
                 assembly: Default::default(),
-                label: CommonLabel::new_with(1),
+                label: CommonLabel::with_num(1),
             },
             Operand {
                 assembly: Default::default(),
                 dst: vec![],
                 src: vec![],
-                jump: Some(vec![CommonLabel::new_with(0), CommonLabel::new_with(1)]),
+                jump: Some(vec![CommonLabel::with_num(0), CommonLabel::with_num(1)]),
             },
         ];
 

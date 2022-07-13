@@ -27,6 +27,7 @@ pub enum Stmt {
     CJump(RelOp, Box<Expr>, Box<Expr>, Label, Label),
     Seq(Box<Stmt>, Box<Stmt>),
     Label(Label),
+    Comment(String),
 }
 
 impl Stmt {

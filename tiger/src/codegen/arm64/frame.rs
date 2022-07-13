@@ -266,6 +266,7 @@ impl Frame for ARM64 {
 
         let mut start_stmts = Vec::new();
         let mut callee_save_regs_access = Vec::new();
+        start_stmts.push(Stmt::Comment("proc entry exit 1 start".to_string()));
 
         // move callee_save_regs to mem
         for reg in Self::calee_save_regs() {
@@ -294,8 +295,11 @@ impl Frame for ARM64 {
             ));
         }
 
+        start_stmts.push(Stmt::Comment("body start".to_string()));
         start_stmts.push(body);
+        start_stmts.push(Stmt::Comment("body end".to_string()));
         start_stmts.append(&mut end_stmts);
+        start_stmts.push(Stmt::Comment("proc entry exit 1 end".to_string()));
 
         Stmt::seq(start_stmts)
     }
@@ -317,6 +321,9 @@ impl Frame for ARM64 {
 
     fn proc_entry_exit3(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
         let mut prologue = vec![
+            Instruction::Comment {
+                assembly: "@ prologue start".to_string(),
+            },
             Instruction::Label {
                 assembly: format!("L.{}:", self.name()),
                 label: self.name.clone(),
@@ -327,9 +334,15 @@ impl Frame for ARM64 {
                 src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
+            Instruction::Comment {
+                assembly: "@ prologue end".to_string(),
+            },
         ];
 
         let mut epilogue = vec![
+            Instruction::Comment {
+                assembly: "@ epilogue start".to_string(),
+            },
             Instruction::Operand {
                 assembly: format!("add 'd0, 's0, #{}", self.pointer),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
@@ -341,6 +354,9 @@ impl Frame for ARM64 {
                 dst: vec![],
                 src: vec![],
                 jump: None,
+            },
+            Instruction::Comment {
+                assembly: "@ epilogue end".to_string(),
             },
         ];
 

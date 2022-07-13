@@ -58,12 +58,18 @@ pub enum Instruction {
         dst: Temp,
         src: Temp,
     },
+
+    Comment {
+        assembly: String,
+    },
 }
 
 impl Instruction {
     pub fn to_string<F: Frame>(&self, allocation: &Allocation<F>) -> String {
         match self {
-            Instruction::Label { assembly, .. } => assembly.clone(),
+            Instruction::Label { assembly, .. } | Instruction::Comment { assembly } => {
+                assembly.clone()
+            }
             Instruction::Operand {
                 assembly, dst, src, ..
             } => {

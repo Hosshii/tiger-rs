@@ -48,6 +48,12 @@ impl<'a> ARM64<'a> {
     fn munch_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Seq(_, _) => unreachable!("canonical tree may not have this node. {:#?}", stmt),
+            Stmt::Comment(comment) => {
+                let instruction = Instruction::Comment {
+                    assembly: format!("@ {}", comment),
+                };
+                self.emit(instruction);
+            }
 
             Stmt::Move(dst, src) => match dst.as_ref() {
                 Expr::Temp(temp) => {
