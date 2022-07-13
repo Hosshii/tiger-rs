@@ -1,15 +1,10 @@
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-    hash::Hash,
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 use crate::{
     common::{Label as CommonLabel, Temp as CommonTemp},
     frame::Frame,
 };
 
-type Label = CommonLabel;
 pub type Allocation<F> = HashMap<<F as Frame>::Temp, <F as Frame>::Register>;
 
 pub trait TempTrait:

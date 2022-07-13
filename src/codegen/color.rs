@@ -10,7 +10,7 @@ use super::{
     liveness::LiveGraph,
 };
 
-type SpillCost<T: TempTrait> = HashMap<T, u32>;
+type SpillCost<T> = HashMap<T, u32>;
 type Registers<F> = Vec<<F as Frame>::Register>;
 
 pub fn color<F: Frame>(
@@ -64,7 +64,7 @@ pub fn color<F: Frame>(
 type Degree = HashMap<LiveID, usize>;
 type AdjList = HashMap<LiveID, HashSet<LiveID>>;
 type AdjSet = HashSet<Edge>;
-type PreColored<T: TempTrait> = HashSet<T>;
+type PreColored<T> = HashSet<T>;
 type Edge = (LiveID, LiveID);
 type SimplifyWorkList = Vec<LiveID>;
 type SpillWorkList = HashSet<ID>;
@@ -74,7 +74,7 @@ type ColoredNodes = HashSet<LiveID>;
 type Colors<F> = HashMap<LiveID, <F as Frame>::Register>; // fmap (\temp,v -> temp2id(temp)) Allocation
 type AllColors<F> = HashSet<<F as Frame>::Register>;
 type Initial = HashSet<LiveID>;
-type ID2Temp<T: TempTrait> = HashMap<LiveID, T>;
+type ID2Temp<T> = HashMap<LiveID, T>;
 // type Temp2ID = HashMap<Temp, LiveID>;
 
 fn _main<F: Frame>(

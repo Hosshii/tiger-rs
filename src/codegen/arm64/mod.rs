@@ -21,6 +21,12 @@ impl ARM64Temp {
     }
 }
 
+impl Default for ARM64Temp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TempTrait for ARM64Temp {}
 
 impl From<Temp> for ARM64Temp {
@@ -44,6 +50,12 @@ impl ARM64Label {
     }
     pub fn with_num(num: u32) -> Self {
         ARM64Label(Label::with_num(num))
+    }
+}
+
+impl Default for ARM64Label {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -113,7 +125,7 @@ impl<'a> ARM64<'a> {
                     let instruction = Instruction::Move {
                         assembly: "mov 'd0, 's0".to_string(),
                         dst: temp.into(),
-                        src: self.munch_expr(src).into(),
+                        src: self.munch_expr(src),
                     };
                     self.emit(instruction);
                 }
@@ -122,8 +134,8 @@ impl<'a> ARM64<'a> {
 
                     let instruction = Instruction::Move {
                         assembly: "str 's0, ['d0, #0]".to_string(),
-                        dst: self.munch_expr(mem).into(),
-                        src: self.munch_expr(src).into(),
+                        dst: self.munch_expr(mem),
+                        src: self.munch_expr(src),
                     };
 
                     self.emit(instruction);
@@ -138,7 +150,7 @@ impl<'a> ARM64<'a> {
                 let instruction1 = Instruction::Move {
                     assembly: "mov 'd0, 's0".to_string(),
                     dst: temp.into(),
-                    src: self.munch_expr(exp).into(),
+                    src: self.munch_expr(exp),
                 };
                 let instruction2 = Instruction::Operand {
                     assembly: "br 's0".to_string(),
@@ -153,7 +165,7 @@ impl<'a> ARM64<'a> {
                 let instruction = Instruction::Operand {
                     assembly: "cmp 's0, 's1".to_string(),
                     dst: vec![],
-                    src: vec![self.munch_expr(lhs).into(), self.munch_expr(rhs).into()],
+                    src: vec![self.munch_expr(lhs), self.munch_expr(rhs)],
                     jump: None,
                 };
                 self.emit(instruction);
@@ -205,7 +217,7 @@ impl<'a> ARM64<'a> {
             Expr::Name(label) => {
                 let instruction = Instruction::Operand {
                     assembly: format!("adrp 'd0, {}", label),
-                    dst: vec![result.into()],
+                    dst: vec![result],
                     src: vec![],
                     jump: None,
                 };
@@ -213,7 +225,7 @@ impl<'a> ARM64<'a> {
 
                 let instruction = Instruction::Operand {
                     assembly: format!("add 'd0, 'd0, :lo12:L.{}", label),
-                    dst: vec![result.into()],
+                    dst: vec![result],
                     src: vec![],
                     jump: None,
                 };

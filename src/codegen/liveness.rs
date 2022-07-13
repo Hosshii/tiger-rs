@@ -15,7 +15,7 @@ pub fn analyze<T: TempTrait>(flow_graph: &FlowGraph<T>) -> (LiveGraph<T>, LiveMa
 
     (live_graph, live_map)
 }
-pub type Node<T: TempTrait> = T;
+pub type Node<T> = T;
 
 #[derive(Debug)]
 pub struct LiveGraph<T: TempTrait> {
@@ -108,8 +108,8 @@ impl<T: TempTrait> LiveGraph<T> {
     }
 }
 
-pub type LiveSet<T: TempTrait> = HashSet<T>;
-pub type LiveMap<T: TempTrait> = HashMap<ID, LiveSet<T>>; // FlowGraph's ID
+pub type LiveSet<T> = HashSet<T>;
+pub type LiveMap<T> = HashMap<ID, LiveSet<T>>; // FlowGraph's ID
 
 fn live_map<T: TempTrait>(flow_graph: &FlowGraph<T>) -> LiveMap<T> {
     let flow_graph = flow_graph.graph_ref();

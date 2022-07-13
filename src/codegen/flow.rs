@@ -97,7 +97,7 @@ impl<T: TempTrait> FlowGraph<T> {
                         is_move: false,
                     };
                     let id = self.graph.insert(node);
-                    labels.insert(label.into(), id);
+                    labels.insert(label, id);
 
                     if let Some(before) = before_id {
                         let linked = self.graph.link(before, id);

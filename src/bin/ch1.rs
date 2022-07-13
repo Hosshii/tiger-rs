@@ -49,6 +49,7 @@ enum BinOp {
     Plus,
     Minus,
     Times,
+    #[allow(dead_code)]
     Div,
 }
 
