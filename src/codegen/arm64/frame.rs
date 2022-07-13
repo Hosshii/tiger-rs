@@ -325,7 +325,7 @@ impl Frame for ARM64 {
                 assembly: "@ prologue start".to_string(),
             },
             Instruction::Label {
-                assembly: format!("L.{}:", self.name()),
+                assembly: format!("{}:", super::format_label(self.name())),
                 label: self.name.clone(),
             },
             Instruction::Operand {

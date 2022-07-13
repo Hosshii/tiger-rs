@@ -2,6 +2,7 @@ pub mod frame;
 
 use crate::{
     asm::{Instruction, Temp},
+    common::Label,
     ir::{BinOp, Expr, RelOp, Stmt},
 };
 use frame::ARM64 as ARM64Frame;
@@ -118,7 +119,7 @@ impl<'a> ARM64<'a> {
                     RelOp::Uge => "cs",
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("b.{} L.{}", suffix, t),
+                    assembly: format!("b.{} {}", suffix, format_label(t)),
                     dst: vec![],
                     src: vec![],
                     jump: Some(vec![t.clone(), f.clone()]),
@@ -127,7 +128,7 @@ impl<'a> ARM64<'a> {
             }
             Stmt::Label(label) => {
                 let instruction = Instruction::Label {
-                    assembly: format!("L.{}:", label),
+                    assembly: format!("{}:", format_label(label)),
                     label: label.clone(),
                 };
                 self.emit(instruction);
@@ -151,7 +152,7 @@ impl<'a> ARM64<'a> {
             }
             Expr::Name(label) => {
                 let instruction = Instruction::Operand {
-                    assembly: format!("adrp 'd0, {}", label),
+                    assembly: format!("adrp 'd0, {}", format_label(label)),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -159,7 +160,7 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let instruction = Instruction::Operand {
-                    assembly: format!("add 'd0, 'd0, :lo12:L.{}", label),
+                    assembly: format!("add 'd0, 'd0, :lo12:{}", format_label(label)),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -237,5 +238,12 @@ impl<'a> Codegen for ARM64<'a> {
         let mut codegen = ARM64::new(frame);
         codegen.munch_stmt(&stmt);
         codegen.instructions
+    }
+}
+
+fn format_label(label: &Label) -> String {
+    match label {
+        Label::Num(_) => format!("L.{}", label),
+        Label::Named(_) => format!("{}", label),
     }
 }
