@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use itertools::Itertools;
-
 use crate::{
     asm::{Allocation, Temp},
     frame::Frame,
@@ -77,7 +75,7 @@ type Colors<F> = HashMap<LiveID, <F as Frame>::Register>; // fmap (\temp,v -> te
 type AllColors<F> = HashSet<<F as Frame>::Register>;
 type Initial = HashSet<LiveID>;
 type ID2Temp = HashMap<LiveID, Temp>;
-type Temp2ID = HashMap<Temp, LiveID>;
+// type Temp2ID = HashMap<Temp, LiveID>;
 
 fn _main<F: Frame>(
     live_graph: &LiveGraph,

@@ -42,9 +42,9 @@ impl LiveGraph {
         &self.id2temp
     }
 
-    pub fn temp2id(&self) -> &HashMap<Node, ID> {
-        &self.temp2id
-    }   
+    // pub fn temp2id(&self) -> &HashMap<Node, ID> {
+    //     &self.temp2id
+    // }
 
     fn new(flow_graph: &FlowGraph) -> Self {
         Self::init_graph(flow_graph)

@@ -318,7 +318,7 @@ impl Frame for ARM64 {
     fn proc_entry_exit3(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
         let mut prologue = vec![
             Instruction::Label {
-                assembly: format!("{}:", self.name()),
+                assembly: format!("L.{}:", self.name()),
                 label: self.name.clone(),
             },
             Instruction::Operand {

@@ -112,7 +112,7 @@ impl<'a> ARM64<'a> {
                     RelOp::Uge => "cs",
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("b.{} {}", suffix, t),
+                    assembly: format!("b.{} L.{}", suffix, t),
                     dst: vec![],
                     src: vec![],
                     jump: Some(vec![t.clone(), f.clone()]),
@@ -121,7 +121,7 @@ impl<'a> ARM64<'a> {
             }
             Stmt::Label(label) => {
                 let instruction = Instruction::Label {
-                    assembly: format!("{}:", label),
+                    assembly: format!("L.{}:", label),
                     label: label.clone(),
                 };
                 self.emit(instruction);
@@ -153,7 +153,7 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let instruction = Instruction::Operand {
-                    assembly: format!("add 'd0, 'd0, :lo12:{}", label),
+                    assembly: format!("add 'd0, 'd0, :lo12:L.{}", label),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
