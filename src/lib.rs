@@ -9,9 +9,11 @@ mod common;
 mod frame;
 
 use std::{
-    io::{Read, Write},
+    io::{self, Read, Write},
     marker::PhantomData,
 };
+
+use thiserror::Error;
 
 use crate::{
     codegen::{arm64::ARM64 as ARM64Codegen, reg_alloc, Codegen},
@@ -26,20 +28,18 @@ pub fn compile<C, N, R, O>(
     r: R,
     mut o: O,
     #[allow(unused)] arch: PhantomData<C>,
-) -> Result<(), Box<dyn std::error::Error>>
+) -> Result<(), Error>
 where
     N: Into<String>,
     R: Read,
     O: Write,
     C: Codegen,
 {
-    let ast = parser::parse(filename, r).map_err(|e| anyhow::format_err!("{:?}", e))?;
+    let ast = parser::parse(filename, r)?;
 
     let semantic_analyzer = Semant::<C::Frame>::new_with_base();
 
-    let fragments = semantic_analyzer
-        .trans_prog(ast, C::MAIN_SYMBOL)
-        .map_err(|e| anyhow::format_err!("{:?}", e))?;
+    let fragments = semantic_analyzer.trans_prog(ast, C::MAIN_SYMBOL)?;
 
     for fragment in fragments {
         match fragment {
@@ -83,11 +83,14 @@ where
     Ok(())
 }
 
-// fn add_runtime_main(ast: Program) -> Program {
-//     // convert Expr into
-//     // let
-//     //   function __main() Expr
-//     // in
-//     //   __main()
-//     // end
-// }
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("{0}")]
+    SemantError(#[from] semant::Error),
+
+    #[error("{0}")]
+    ParseError(#[from] parser::Error),
+
+    #[error("io error: {0}")]
+    IoError(#[from] io::Error),
+}
