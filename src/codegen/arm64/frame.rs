@@ -201,7 +201,7 @@ impl Frame for ARM64 {
     fn alloc_local(&mut self, is_escape: bool) -> Self::Access {
         if is_escape {
             self.pointer += PTR_SIZE;
-            Access::InFrame(self.pointer)
+            Access::InFrame(-self.pointer)
         } else {
             Access::InReg(Temp::new())
         }
@@ -322,41 +322,41 @@ impl Frame for ARM64 {
     fn proc_entry_exit3(&self, mut instructions: Vec<Instruction>) -> Vec<Instruction> {
         let mut prologue = vec![
             Instruction::Comment {
-                assembly: "@ prologue start".to_string(),
+                assembly: "// prologue start".to_string(),
             },
             Instruction::Label {
                 assembly: format!("{}:", super::format_label(self.name())),
                 label: self.name.clone(),
             },
             Instruction::Operand {
-                assembly: format!("sub 'd0, 's0, #{}", self.pointer),
+                assembly: format!("    sub 'd0, 's0, #{}", self.pointer),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
                 src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
             Instruction::Comment {
-                assembly: "@ prologue end".to_string(),
+                assembly: "// prologue end".to_string(),
             },
         ];
 
         let mut epilogue = vec![
             Instruction::Comment {
-                assembly: "@ epilogue start".to_string(),
+                assembly: "// epilogue start".to_string(),
             },
             Instruction::Operand {
-                assembly: format!("add 'd0, 's0, #{}", self.pointer),
+                assembly: format!("    add 'd0, 's0, #{}", self.pointer),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
                 src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
             Instruction::Operand {
-                assembly: "ret".to_string(),
+                assembly: "    ret".to_string(),
                 dst: vec![],
                 src: vec![],
                 jump: None,
             },
             Instruction::Comment {
-                assembly: "@ epilogue end".to_string(),
+                assembly: "// epilogue end".to_string(),
             },
         ];
 

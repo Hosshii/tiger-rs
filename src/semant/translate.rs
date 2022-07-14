@@ -546,6 +546,12 @@ impl<F: Frame> Level<F> {
         }
     }
 
+    pub fn outermost_with_name(name: Label) -> Self {
+        Self {
+            inner: LevelInner::outermost_with_name(name),
+        }
+    }
+
     pub fn formals(&self) -> Vec<Access<F>> {
         self.inner
             .frame
@@ -591,9 +597,13 @@ impl<F: Frame> LevelInner<F> {
     }
 
     pub fn outermost() -> Self {
+        Self::outermost_with_name(Label::new())
+    }
+
+    pub fn outermost_with_name(name: Label) -> Self {
         Self {
             current: 0,
-            frame: Rc::new(RefCell::new(F::new(Label::new(), vec![]))),
+            frame: Rc::new(RefCell::new(F::new(name, vec![]))),
             parent: None,
         }
     }

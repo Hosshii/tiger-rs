@@ -35,7 +35,7 @@ impl<'a> ARM64<'a> {
         let mut temps = Vec::new();
         for (reg, arg) in ARM64Frame::arg_regs().iter().zip(args.iter()) {
             let instruction = Instruction::Move {
-                assembly: "mov 'd0, 's0".to_string(),
+                assembly: "    mov 'd0, 's0".to_string(),
                 dst: reg.into(),
                 src: self.munch_expr(arg),
             };
@@ -51,7 +51,7 @@ impl<'a> ARM64<'a> {
             Stmt::Seq(_, _) => unreachable!("canonical tree may not have this node. {:#?}", stmt),
             Stmt::Comment(comment) => {
                 let instruction = Instruction::Comment {
-                    assembly: format!("@ {}", comment),
+                    assembly: format!("// {}", comment),
                 };
                 self.emit(instruction);
             }
@@ -59,7 +59,7 @@ impl<'a> ARM64<'a> {
             Stmt::Move(dst, src) => match dst.as_ref() {
                 Expr::Temp(temp) => {
                     let instruction = Instruction::Move {
-                        assembly: "mov 'd0, 's0".to_string(),
+                        assembly: "    mov 'd0, 's0".to_string(),
                         dst: Temp::from(temp),
                         src: self.munch_expr(src),
                     };
@@ -69,7 +69,7 @@ impl<'a> ARM64<'a> {
                     assert_eq!(*size, ARM64Frame::WORD_SIZE);
 
                     let instruction = Instruction::Move {
-                        assembly: "str 's0, ['d0, #0]".to_string(),
+                        assembly: "    str 's0, ['d0, #0]".to_string(),
                         dst: self.munch_expr(mem),
                         src: self.munch_expr(src),
                     };
@@ -84,12 +84,12 @@ impl<'a> ARM64<'a> {
             Stmt::Jump(exp, labels) => {
                 let temp = Temp::new();
                 let instruction1 = Instruction::Move {
-                    assembly: "mov 'd0, 's0".to_string(),
+                    assembly: "    mov 'd0, 's0".to_string(),
                     dst: temp,
                     src: self.munch_expr(exp),
                 };
                 let instruction2 = Instruction::Operand {
-                    assembly: "br 's0".to_string(),
+                    assembly: "    br 's0".to_string(),
                     dst: vec![],
                     src: vec![temp],
                     jump: Some(labels.clone()),
@@ -99,7 +99,7 @@ impl<'a> ARM64<'a> {
             }
             Stmt::CJump(op, lhs, rhs, t, f) => {
                 let instruction = Instruction::Operand {
-                    assembly: "cmp 's0, 's1".to_string(),
+                    assembly: "    cmp 's0, 's1".to_string(),
                     dst: vec![],
                     src: vec![self.munch_expr(lhs), self.munch_expr(rhs)],
                     jump: None,
@@ -119,7 +119,7 @@ impl<'a> ARM64<'a> {
                     RelOp::Uge => "cs",
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("b.{} {}", suffix, format_label(t)),
+                    assembly: format!("    b.{} {}", suffix, format_label(t)),
                     dst: vec![],
                     src: vec![],
                     jump: Some(vec![t.clone(), f.clone()]),
@@ -143,7 +143,7 @@ impl<'a> ARM64<'a> {
 
             Expr::Const(val) => {
                 let instruction = Instruction::Operand {
-                    assembly: format!("mov 'd0, {}", val),
+                    assembly: format!("    mov 'd0, {}", val),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -152,7 +152,7 @@ impl<'a> ARM64<'a> {
             }
             Expr::Name(label) => {
                 let instruction = Instruction::Operand {
-                    assembly: format!("adrp 'd0, {}", format_label(label)),
+                    assembly: format!("    adrp 'd0, {}", format_label(label)),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -160,7 +160,7 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let instruction = Instruction::Operand {
-                    assembly: format!("add 'd0, 'd0, :lo12:{}", format_label(label)),
+                    assembly: format!("    add 'd0, 'd0, :lo12:{}", format_label(label)),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -182,7 +182,7 @@ impl<'a> ARM64<'a> {
                     BinOp::XOr => "eor",
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("{} 'd0, 's0, 's1", opcode),
+                    assembly: format!("    {} 'd0, 's0, 's1", opcode),
                     dst: vec![result],
                     src: vec![self.munch_expr(lhs), self.munch_expr(rhs)],
                     jump: None,
@@ -193,7 +193,7 @@ impl<'a> ARM64<'a> {
                 assert_eq!(*size, ARM64Frame::WORD_SIZE);
 
                 let instruction = Instruction::Operand {
-                    assembly: "ldr 'd0, ['s0, #0]".to_string(),
+                    assembly: "    ldr 'd0, ['s0, #0]".to_string(),
                     dst: vec![result],
                     src: vec![self.munch_expr(expr)],
                     jump: None,
@@ -206,7 +206,7 @@ impl<'a> ARM64<'a> {
 
                 let dst = ARM64Frame::call_defs().iter().map(Temp::from).collect();
                 let instruction = Instruction::Operand {
-                    assembly: "blr 's0".to_string(),
+                    assembly: "    blr 's0".to_string(),
                     dst,
                     src,
                     jump: None,
@@ -214,7 +214,7 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let instruction = Instruction::Move {
-                    assembly: "mov 'd0, 's0".to_string(),
+                    assembly: "    mov 'd0, 's0".to_string(),
                     dst: result,
                     src: Temp::from(ARM64Frame::rv()),
                 };
@@ -244,6 +244,6 @@ impl<'a> Codegen for ARM64<'a> {
 fn format_label(label: &Label) -> String {
     match label {
         Label::Num(_) => format!("L.{}", label),
-        Label::Named(_) => format!("{}", label),
+        Label::Named(_) => format!("    .globl _{}\n    .p2align 2\n_{}", label, label),
     }
 }
