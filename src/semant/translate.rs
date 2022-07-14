@@ -402,41 +402,26 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
     let access = level.inner.frame.borrow_mut().alloc_local(false);
     let result = F::exp(access, IrExpr::Temp(F::fp()));
 
-    let true_stmt = Stmt::Seq(
-        Box::new(Stmt::Label(t.clone())),
-        Box::new(Stmt::Seq(
-            Box::new(Stmt::Move(
-                Box::new(result.clone()),
-                Box::new(then.unwrap_ex()),
-            )),
-            Box::new(Stmt::Jump(
-                Box::new(IrExpr::Name(merge.clone())),
-                vec![merge.clone()],
-            )),
-        )),
-    );
+    let true_stmt = Stmt::seq(vec![
+        Stmt::Label(t.clone()),
+        Stmt::Move(Box::new(result.clone()), Box::new(then.unwrap_ex())),
+        Stmt::Jump(Box::new(IrExpr::Name(merge.clone())), vec![merge.clone()]),
+    ]);
 
     let els = els.unwrap_or_else(nop);
-    let false_stmt = Stmt::Seq(
-        Box::new(Stmt::Label(f.clone())),
-        Box::new(Stmt::Seq(
-            Box::new(Stmt::Move(
-                Box::new(result.clone()),
-                Box::new(els.unwrap_ex()),
-            )),
-            Box::new(Stmt::Jump(
-                Box::new(IrExpr::Name(merge.clone())),
-                vec![merge],
-            )),
-        )),
-    );
+    let false_stmt = Stmt::seq(vec![
+        Stmt::Label(f.clone()),
+        Stmt::Move(Box::new(result.clone()), Box::new(els.unwrap_ex())),
+        Stmt::Jump(Box::new(IrExpr::Name(merge.clone())), vec![merge.clone()]),
+    ]);
 
     let stmt = cond.unwrap_cx()(t, f);
     Expr::Ex(IrExpr::ESeq(
-        Box::new(Stmt::Seq(
-            Box::new(stmt),
-            Box::new(Stmt::Seq(Box::new(true_stmt), Box::new(false_stmt))),
-        )),
+        Box::new(Stmt::seq(vec![
+            stmt,
+            Stmt::Seq(Box::new(true_stmt), Box::new(false_stmt)),
+            Stmt::Label(merge),
+        ])),
         Box::new(result),
     ))
 }

@@ -153,7 +153,7 @@ impl<'a> ARM64<'a> {
             }
             Expr::Name(label) => {
                 let instruction = Instruction::Operand {
-                    assembly: format!("    adrp 'd0, {}", format_label(label)),
+                    assembly: format!("    adrp 'd0, {}@PAGE", format_label(label)),
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -161,7 +161,7 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let instruction = Instruction::Operand {
-                    assembly: format!("    add 'd0, 'd0, :lo12:{}", format_label(label)),
+                    assembly: format!("    add 'd0, 'd0, {}@PAGEOFF", format_label(label)),
                     dst: vec![result],
                     src: vec![],
                     jump: None,

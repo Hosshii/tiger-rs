@@ -52,8 +52,9 @@ where
                 // dbg!(&stmts);
 
                 let (basic_blocks, done_label) = ir::basic_blocks(stmts);
-                let stmts = ir::trace_schedule(basic_blocks, done_label);
+                // dbg!(&basic_blocks);
 
+                let stmts = ir::trace_schedule(basic_blocks, done_label);
                 // dbg!(&stmts);
 
                 let frame = frame.borrow().clone();

@@ -396,17 +396,18 @@ mod trace {
                 } else {
                     let new_label = Label::new();
                     block.push(Stmt::CJump(op, lhs, rhs, t, new_label.clone()));
-                    block.push(Stmt::Label(new_label.clone()));
-                    block.push(Stmt::Jump(
-                        Box::new(Expr::Name(new_label.clone())),
-                        vec![new_label],
-                    ));
+                    block.push(Stmt::Label(new_label));
+                    block.push(Stmt::Jump(Box::new(Expr::Name(f.clone())), vec![f]));
                     None
                 }
             }
-            Stmt::Jump(_, labels) => labels
-                .iter()
-                .fold(None, |acc, label| acc.or_else(|| table.get(label).copied())),
+            Stmt::Jump(e, labels) => {
+                let next_idx = labels
+                    .iter()
+                    .fold(None, |acc, label| acc.or_else(|| table.get(label).copied()));
+                block.push(Stmt::Jump(e, labels));
+                next_idx
+            }
             _ => panic!("last element of block must be CJump or Jump"),
         };
 
