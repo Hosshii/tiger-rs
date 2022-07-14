@@ -68,10 +68,11 @@ impl<'a> ARM64<'a> {
                 Expr::Mem(mem, size) => {
                     assert_eq!(*size, ARM64Frame::WORD_SIZE);
 
-                    let instruction = Instruction::Move {
-                        assembly: "    str 's0, ['d0, #0]".to_string(),
-                        dst: self.munch_expr(mem),
-                        src: self.munch_expr(src),
+                    let instruction = Instruction::Operand {
+                        assembly: "    str 's0, ['s1, #0]".to_string(),
+                        dst: vec![],
+                        src: vec![self.munch_expr(src), self.munch_expr(mem)],
+                        jump: None,
                     };
 
                     self.emit(instruction);
@@ -245,5 +246,55 @@ fn format_label(label: &Label) -> String {
     match label {
         Label::Num(_) => format!("L.{}", label),
         Label::Named(_) => format!("    .globl _{}\n    .p2align 2\n_{}", label, label),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::common::Temp as CommonTemp;
+
+    use super::*;
+
+    #[test]
+    fn test_move_to_mem() {
+        let cases = vec![
+            (
+                Stmt::Move(
+                    Box::new(Expr::Temp(CommonTemp::new_with(0))),
+                    Box::new(Expr::Temp(CommonTemp::new_with(1))),
+                ),
+                vec![Temp::new_with(0)],
+                vec![Temp::new_with(1)],
+            ),
+            // if move to memory, then either regs should be src, and not go to dst.
+            (
+                Stmt::Move(
+                    Box::new(Expr::Mem(Box::new(Expr::Temp(CommonTemp::new_with(0))), 8)),
+                    Box::new(Expr::Temp(CommonTemp::new_with(1))),
+                ),
+                vec![],
+                vec![Temp::new_with(1), Temp::new_with(0)],
+            ),
+        ];
+
+        for (stmt, expected_dst, expected_src) in cases {
+            let frame = ARM64Frame::new(Label::Num(0), vec![]);
+            let mut codegen = ARM64::new(&frame);
+            codegen.munch_stmt(&stmt);
+            let instructions = codegen.instructions;
+            for instruction in instructions {
+                match instruction {
+                    Instruction::Operand { dst, src, .. } => {
+                        assert_eq!(expected_dst, dst);
+                        assert_eq!(expected_src, src);
+                    }
+                    Instruction::Move { dst, src, .. } => {
+                        assert_eq!(expected_dst, vec![dst]);
+                        assert_eq!(expected_src, vec![src]);
+                    }
+                    _ => panic!(),
+                }
+            }
+        }
     }
 }

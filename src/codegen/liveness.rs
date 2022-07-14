@@ -168,7 +168,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_liveness() {
+    fn test_liveness1() {
         //     a <- 0
         // L1: b <- a + 1
         //     c <- c + b
@@ -268,5 +268,90 @@ mod tests {
                 unreachable!()
             }
         }
+    }
+
+    #[test]
+    fn test_liveness2() {
+        // t35 <- t33 (fp)
+        // t94 <- 8
+        // t92 <- t35 + t94
+        // t37 <- t92
+        // t36 <- t12 (x8)
+        // [t36] <- t37
+
+        // create graph above.
+        let nodes = vec![
+            Node {
+                id: 0,
+                defs: HashSet::from([Temp::new_with(35)]),
+                uses: HashSet::from([Temp::new_with(33)]),
+                is_move: true,
+            },
+            Node {
+                id: 1,
+                defs: HashSet::from([Temp::new_with(94)]),
+                uses: HashSet::new(),
+                is_move: false, // TODO: should be true. Currently, we cannot use immediate in `uses`.
+            },
+            Node {
+                id: 2,
+                defs: HashSet::from([Temp::new_with(92)]),
+                uses: HashSet::from([Temp::new_with(35), Temp::new_with(94)]),
+                is_move: false,
+            },
+            Node {
+                id: 3,
+                defs: HashSet::from([Temp::new_with(37)]),
+                uses: HashSet::from([Temp::new_with(92)]),
+                is_move: true,
+            },
+            Node {
+                id: 4,
+                defs: HashSet::from([Temp::new_with(36)]),
+                uses: HashSet::from([Temp::new_with(12)]),
+                is_move: true,
+            },
+            Node {
+                id: 5,
+                defs: HashSet::new(),
+                uses: HashSet::from([Temp::new_with(37), Temp::new_with(36)]),
+                is_move: false,
+            },
+        ];
+        let edges = vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)];
+        let mut ids = Vec::new();
+
+        let mut graph = Graph::new();
+        for node in nodes {
+            let id = graph.insert(node);
+            ids.push(id);
+        }
+
+        for (from, to) in edges {
+            graph.link(ids[from], ids[to]);
+        }
+
+        // crate flow graph
+        let flow = FlowGraph { graph };
+
+        let (_, live_map) = analyze(&flow);
+
+        // live map test
+        let expected_live_map = vec![
+            HashSet::from([Temp::new_with(35), Temp::new_with(12)]),
+            HashSet::from([Temp::new_with(35), Temp::new_with(12), Temp::new_with(94)]),
+            HashSet::from([Temp::new_with(92), Temp::new_with(12), Temp::new_with(92)]),
+            HashSet::from([Temp::new_with(37), Temp::new_with(12)]),
+            HashSet::from([Temp::new_with(36), Temp::new_with(37)]),
+            HashSet::from([]),
+        ];
+        assert_eq!(expected_live_map.len(), ids.len());
+
+        let expected_live_map: HashMap<_, _> =
+            ids.into_iter().zip(expected_live_map.into_iter()).collect();
+
+        assert_eq!(expected_live_map, live_map);
+
+        // TODO: graph test
     }
 }
