@@ -906,6 +906,21 @@ impl<F: Frame> Semant<F> {
                 then,
                 pos,
             } => {
+                // convert
+                //
+                //   for id := `from` to `to` do then
+                //
+                // into
+                //
+                //   let
+                //     id := from
+                //     __id__limit := to
+                //   in
+                //     while id < __id__limit do (
+                //       then;
+                //       id := id + 1;
+                //     )
+                //   end
                 let limit_id = Ident::new(format!("__{}__limit", id));
                 let new_ast = AstExpr::Let(
                     vec![
