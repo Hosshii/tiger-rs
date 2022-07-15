@@ -292,6 +292,7 @@ mod blocks {
                     self.end_block();
                 }
                 Some(Stmt::Label(label)) => {
+                    self.iter.push_front(Stmt::Label(label.clone()));
                     self.iter
                         .push_front(Stmt::Jump(Box::new(Expr::Name(label.clone())), vec![label]));
                     self.next();
