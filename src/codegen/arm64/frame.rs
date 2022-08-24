@@ -171,6 +171,14 @@ impl ARM64 {
     pub fn debug_registers() {
         dbg!(&REGISTERS_GLOBAL);
     }
+
+    fn lr() -> Temp {
+        REGISTERS_GLOBAL.x30
+    }
+
+    fn sp() -> Temp {
+        REGISTERS_GLOBAL.sp
+    }
 }
 
 impl Frame for ARM64 {
@@ -328,6 +336,19 @@ impl Frame for ARM64 {
                 assembly: format!("{}:", super::format_label(self.name())),
                 label: self.name.clone(),
             },
+            // save fp and lr
+            Instruction::Operand {
+                assembly: "    stp 's0, 's1, ['s2, -16]!".to_string(),
+                dst: vec![],
+                src: vec![Self::fp().into(), Self::lr().into(), Self::sp().into()],
+                jump: None,
+            },
+            Instruction::Operand {
+                assembly: "    mov 'd0, 's0".to_string(),
+                dst: vec![Self::fp().into()],
+                src: vec![Self::sp().into()],
+                jump: None,
+            },
             Instruction::Operand {
                 assembly: format!("    sub 'd0, 's0, #{}", self.pointer),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
@@ -346,6 +367,13 @@ impl Frame for ARM64 {
             Instruction::Operand {
                 assembly: format!("    add 'd0, 's0, #{}", self.pointer),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
+                src: vec![REGISTERS_GLOBAL.sp.into()],
+                jump: None,
+            },
+            // load fp and lr
+            Instruction::Operand {
+                assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
+                dst: vec![REGISTERS_GLOBAL.x29.into(), REGISTERS_GLOBAL.x30.into()],
                 src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
