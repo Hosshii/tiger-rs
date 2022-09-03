@@ -57,7 +57,7 @@ where
                 let stmts = ir::trace_schedule(basic_blocks, done_label);
                 // dbg!(&stmts);
 
-                let frame = frame.borrow().clone();
+                let mut frame = frame.borrow().clone();
                 let instructions = stmts
                     .into_iter()
                     .flat_map(|stmt| C::codegen(&frame, stmt))
@@ -66,7 +66,7 @@ where
                 let instructions = frame.proc_entry_exit2(instructions);
                 let instructions = frame.proc_entry_exit3(instructions);
 
-                let (instructions, allocation) = reg_alloc::alloc(instructions, &frame);
+                let (instructions, allocation) = reg_alloc::alloc::<C>(instructions, &mut frame);
                 for instruction in instructions {
                     let code = instruction.to_string::<C::Frame>(&allocation);
                     if !code.is_empty() {

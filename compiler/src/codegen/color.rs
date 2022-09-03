@@ -1,24 +1,30 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    asm::{Allocation, Temp},
+    asm::{Allocation, Instruction, Temp},
+    common::Temp as CommonTemp,
     frame::Frame,
+    ir::{Expr, Stmt},
 };
 
 use super::{
     graph::{Matrix, ID},
     liveness::LiveGraph,
+    Codegen,
 };
 
 type SpillCost = HashMap<Temp, u32>;
 type Registers<F> = Vec<<F as Frame>::Register>;
+type SpilledNodes = HashSet<Temp>;
 
-pub fn color<F: Frame>(
-    interference: LiveGraph,
-    initial: Allocation<F>,
-    _spill_cost: SpillCost,
-    registers: Registers<F>,
-) -> (Allocation<F>, Vec<Temp>) {
+pub fn color<C: Codegen>(
+    frame: &mut C::Frame,
+    instructions: Vec<Instruction>,
+    interference: &LiveGraph,
+    initial: Allocation<C::Frame>,
+    _spill_cost: &SpillCost,
+    registers: Registers<C::Frame>,
+) -> (Allocation<C::Frame>, SpilledNodes, Vec<Instruction>) {
     // All machine register that is already colored.
     let pre_colored: PreColored = initial.keys().copied().collect();
 
@@ -31,14 +37,14 @@ pub fn color<F: Frame>(
         .collect();
 
     // colored node.
-    let colors: Colors<F> = initial
+    let colors: Colors<C::Frame> = initial
         .iter()
         .filter(|(temp, _)| all_temp.contains(temp))
         .map(|(temp, reg)| (interference.id(temp), reg.clone()))
         .collect();
 
     // all machine registers set
-    let all_colors: AllColors<F> = registers.into_iter().collect();
+    let all_colors: AllColors<C::Frame> = registers.into_iter().collect();
 
     let all_id_set: HashSet<LiveID> = all_temp.iter().map(|temp| interference.id(temp)).collect();
     let colored_node_id_set: HashSet<LiveID> = colors.keys().copied().collect();
@@ -49,16 +55,22 @@ pub fn color<F: Frame>(
         .cloned()
         .collect();
 
-    let (colors, spills) = _main::<F>(&interference, pre_colored, colors, all_colors, initial);
+    let (colors, spills, instructions) = _main::<C>(
+        frame,
+        instructions,
+        interference,
+        &pre_colored,
+        colors,
+        &all_colors,
+        initial,
+    );
 
-    let allocation: Allocation<F> = colors
+    let allocation: Allocation<C::Frame> = colors
         .into_iter()
         .map(|(id, reg)| (interference.temp(id), reg))
         .collect();
 
-    let spills: Vec<Temp> = spills.into_iter().map(|id| interference.temp(id)).collect();
-
-    (allocation, spills)
+    (allocation, spills, instructions)
 }
 
 type Degree = HashMap<LiveID, usize>;
@@ -77,13 +89,15 @@ type Initial = HashSet<LiveID>;
 type ID2Temp = HashMap<LiveID, Temp>;
 // type Temp2ID = HashMap<Temp, LiveID>;
 
-fn _main<F: Frame>(
+fn _main<C: Codegen>(
+    frame: &mut C::Frame,
+    instructions: Vec<Instruction>,
     live_graph: &LiveGraph,
-    precolored: PreColored,
-    mut colors: Colors<F>,
-    all_colors: AllColors<F>,
+    precolored: &PreColored,
+    mut colors: Colors<C::Frame>,
+    all_colors: &AllColors<C::Frame>,
     initial: Initial,
-) -> (Colors<F>, SpillWorkList) {
+) -> (Colors<C::Frame>, SpilledNodes, Vec<Instruction>) {
     // dbg!(&live_graph);
     // dbg!(&precolored);
     // dbg!(&colors);
@@ -91,7 +105,7 @@ fn _main<F: Frame>(
     // dbg!(&initial);
 
     let (_matrix, _adj_set, adj_list, mut degree) = build(live_graph, &precolored);
-    let k = F::registers().len();
+    let k = <C::Frame as Frame>::registers().len();
     let (mut simplify_worklist, mut spill_work_list) = make_work_list(&initial, &degree, k);
 
     let mut select_stack = SelectStack::new();
@@ -116,22 +130,39 @@ fn _main<F: Frame>(
 
     let mut colored_nodes: ColoredNodes = colors.keys().copied().collect();
 
-    assign_colors::<F>(
+    let mut spilled_nodes = SpilledNodes::new();
+    assign_colors::<C::Frame>(
         live_graph.id2temp(),
         &select_stack,
         &adj_list,
-        &precolored,
+        precolored,
         &mut colored_nodes,
         &mut colors,
-        &all_colors,
-        &mut spill_work_list,
+        all_colors,
+        &mut spilled_nodes,
     );
 
-    if !spill_work_list.is_empty() {
-        unimplemented!("spill is not implemented yet");
-    }
+    if !spilled_nodes.is_empty() {
+        let (new_instruction, initial) = rewrite_program::<C>(
+            frame,
+            live_graph,
+            &spilled_nodes,
+            &colored_nodes,
+            instructions,
+        );
 
-    (colors, spill_work_list)
+        _main::<C>(
+            frame,
+            new_instruction,
+            live_graph,
+            precolored,
+            colors,
+            all_colors,
+            initial,
+        )
+    } else {
+        (colors, spilled_nodes, instructions)
+    }
 }
 
 fn build(
@@ -293,7 +324,7 @@ fn assign_colors<F: Frame>(
     colored_nodes: &mut ColoredNodes,
     colors: &mut Colors<F>,
     all_colors: &AllColors<F>,
-    spill_work_list: &mut SpillWorkList,
+    spilled_nodes: &mut SpilledNodes,
 ) {
     for id in select_stack {
         let mut ok_colors = all_colors.clone();
@@ -305,11 +336,140 @@ fn assign_colors<F: Frame>(
         }
 
         if ok_colors.is_empty() {
-            spill_work_list.insert(*id);
+            spilled_nodes.insert(id2temp[id]);
         } else {
             colored_nodes.insert(*id);
             let c = ok_colors.iter().next().unwrap();
             colors.insert(*id, c.clone());
         }
     }
+}
+
+fn rewrite_program<C: Codegen>(
+    frame: &mut C::Frame,
+    live_graph: &LiveGraph,
+    spilled_nodes: &SpilledNodes,
+    colored_nodes: &ColoredNodes,
+    instructions: Vec<Instruction>,
+) -> (Vec<Instruction>, Initial) {
+    fn new_instruction<C: Codegen>(
+        live_graph: &LiveGraph,
+        frame: &C::Frame,
+        dst: &[Temp],
+        src: &[Temp],
+        access_map: &HashMap<ID, <C::Frame as Frame>::Access>,
+    ) -> (
+        Vec<Instruction>,
+        (Vec<Temp>, Vec<Temp>),
+        Vec<Instruction>,
+        Vec<Temp>,
+    ) {
+        let mut new_temps = Vec::new();
+        let mut new_dst = Vec::new();
+        let mut begin_instructions = Vec::new();
+
+        for &temp in dst {
+            if let Some(access) = access_map.get(&live_graph.id(&temp)) {
+                let new_temp = CommonTemp::new();
+                new_temps.push(Temp::from(new_temp));
+
+                let mem =
+                    <C::Frame as Frame>::exp(access.clone(), Expr::Temp(<C::Frame as Frame>::fp()));
+                let stmt = Stmt::Move(Box::new(Expr::Temp(new_temp)), Box::new(mem));
+
+                begin_instructions.append(&mut C::codegen(frame, stmt));
+                new_dst.push(Temp::from(new_temp));
+            } else {
+                new_dst.push(temp);
+            }
+        }
+
+        let mut new_src = Vec::new();
+        let mut end_instructions = Vec::new();
+        for &temp in src {
+            if let Some(access) = access_map.get(&live_graph.id(&temp)) {
+                let new_temp = CommonTemp::new();
+                new_temps.push(Temp::from(new_temp));
+
+                let mem =
+                    <C::Frame as Frame>::exp(access.clone(), Expr::Temp(<C::Frame as Frame>::fp()));
+
+                let stmt = Stmt::Move(Box::new(Expr::Temp(new_temp)), Box::new(mem));
+                end_instructions.append(&mut C::codegen(frame, stmt));
+                new_dst.push(Temp::from(new_temp));
+            } else {
+                new_src.push(Temp::from(temp));
+            }
+        }
+
+        (
+            begin_instructions,
+            (new_dst, new_src),
+            end_instructions,
+            new_temps,
+        )
+    }
+
+    let mut access_map = HashMap::new();
+    for spilled in spilled_nodes.iter() {
+        let access = frame.alloc_local(true);
+        let id = live_graph.id(spilled);
+        access_map.insert(id, access);
+    }
+
+    let mut new_instructions = Vec::new();
+    let mut new_temps = Vec::new();
+    for instruction in instructions {
+        match instruction {
+            Instruction::Operand {
+                dst,
+                src,
+                assembly,
+                jump,
+            } => {
+                let (
+                    mut begin_instructions,
+                    (new_dst, new_src),
+                    mut end_instructions,
+                    mut new_temps_inner,
+                ) = new_instruction::<C>(live_graph, frame, &dst, &src, &access_map);
+                new_temps.append(&mut new_temps_inner);
+
+                new_instructions.append(&mut begin_instructions);
+                new_instructions.push(Instruction::Operand {
+                    dst: new_dst,
+                    src: new_src,
+                    assembly,
+                    jump,
+                });
+                new_instructions.append(&mut end_instructions);
+            }
+            Instruction::Move { dst, src, assembly } => {
+                let (
+                    mut begin_instructions,
+                    (new_dst, new_src),
+                    mut end_instructions,
+                    mut new_temps_inner,
+                ) = new_instruction::<C>(live_graph, frame, &[dst], &[src], &access_map);
+                new_temps.append(&mut new_temps_inner);
+
+                assert!(new_dst.len() == 1);
+                assert!(new_src.len() == 1);
+
+                new_instructions.append(&mut begin_instructions);
+                new_instructions.push(Instruction::Move {
+                    dst: new_dst[0],
+                    src: new_src[0],
+                    assembly,
+                });
+                new_instructions.append(&mut end_instructions);
+            }
+            _ => continue,
+        }
+    }
+
+    let new_temps: HashSet<_> = new_temps.into_iter().map(|v| live_graph.id(&v)).collect();
+    let initial: HashSet<_> = new_temps.union(colored_nodes).copied().collect();
+
+    (new_instructions, initial)
 }

@@ -1,20 +1,25 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     asm::{Allocation, Instruction, Temp},
     frame::Frame,
 };
 
-use super::{color, flow::FlowGraph, liveness};
+use super::{
+    color,
+    flow::FlowGraph,
+    liveness::{self},
+    Codegen,
+};
 
-pub fn alloc<F: Frame>(
+pub fn alloc<C: Codegen>(
     instructions: Vec<Instruction>,
-    _frame: &F,
-) -> (Vec<Instruction>, Allocation<F>) {
+    frame: &mut C::Frame,
+) -> (Vec<Instruction>, Allocation<C::Frame>) {
     let flow_graph = FlowGraph::convert(instructions.clone());
     let (interference, _) = liveness::analyze(&flow_graph);
 
-    let initial = F::temp_map()
+    let initial = <C::Frame as Frame>::temp_map()
         .iter()
         .map(|(temp, reg)| (temp.into(), reg.clone()))
         .collect();
@@ -26,9 +31,16 @@ pub fn alloc<F: Frame>(
         .map(|node| (*node.val(), 1))
         .collect();
 
-    let registers = F::registers().to_vec();
+    let registers = <C::Frame as Frame>::registers().to_vec();
 
-    let (alloc, _) = color::color::<F>(interference, initial, spill_cost, registers);
+    let (alloc, _, instructions) = color::color::<C>(
+        frame,
+        instructions,
+        &interference,
+        initial,
+        &spill_cost,
+        registers,
+    );
 
     (instructions, alloc)
 }
