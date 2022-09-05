@@ -265,9 +265,11 @@ impl Frame for ARM64 {
         REGISTERS_GLOBAL.x0
     }
 
-    fn extern_call(_name: &str, _args: Vec<Expr>) -> Expr {
-        // todo!("extern call")
-        Expr::Const(0)
+    fn extern_call(name: &str, args: Vec<Expr>) -> Expr {
+        Expr::Call(
+            Box::new(Expr::Name(Label::with_name(name.to_string()))),
+            args,
+        )
     }
 
     fn proc_entry_exit1(&mut self, body: Stmt) -> Stmt {
