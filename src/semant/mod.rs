@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    codegen::arm64::frame::ARM64,
+    codegen::aarch64_apple_darwin::frame::ARM64,
     common::{Label, Positions, Symbol},
     frame::{Fragment, Frame},
     parser::ast::{
@@ -1205,7 +1205,7 @@ mod tests {
     macro_rules! test_file_inner {
         ($name:ident, $path:expr) => {
             use crate::{
-                codegen::arm64::frame::ARM64,
+                codegen::aarch64_apple_darwin::frame::ARM64,
                 parser::{self},
             };
             use std::fs::File;

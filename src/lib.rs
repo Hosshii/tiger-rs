@@ -16,7 +16,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    codegen::{arm64::ARM64 as ARM64Codegen, reg_alloc, Codegen},
+    codegen::{aarch64_apple_darwin::ARM64 as ARM64Codegen, reg_alloc, Codegen},
     frame::{Fragment, Frame as _},
     semant::Semant,
 };

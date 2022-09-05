@@ -1,6 +1,6 @@
 use crate::{asm::Instruction, frame::Frame, ir::Stmt};
 
-pub mod arm64;
+pub mod aarch64_apple_darwin;
 pub(super) mod color;
 pub(super) mod flow;
 mod graph;
