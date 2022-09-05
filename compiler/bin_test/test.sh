@@ -7,7 +7,7 @@ assert() {
     local expected="$1"
     local file="./bin_test/$2"
 
-    local bin="./target/release/tiger"
+    local bin="../target/release/tiger"
 
     $bin "$file" > tmp.s
     cc -o tmp tmp.s 
