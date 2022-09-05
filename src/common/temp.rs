@@ -36,12 +36,20 @@ static LABEL_GLOBAL: AtomicU32 = AtomicU32::new(0);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Label {
     Num(u32),
+    Fn(u32, String),
     Named(String),
 }
 
 impl Label {
     pub fn new() -> Self {
         Self::Num(LABEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+
+    pub fn new_fn(name: impl Into<String>) -> Self {
+        Self::Fn(
+            LABEL_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            name.into(),
+        )
     }
 
     pub fn with_num(num: u32) -> Self {
@@ -56,7 +64,12 @@ impl Label {
 impl Display for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Label::Num(n) => write!(f, "{}", n),
+            Label::Num(n) => {
+                write!(f, "{}", n)
+            }
+            Label::Fn(n, s) => {
+                write!(f, "{}_{}", n, s)
+            }
             Label::Named(s) => write!(f, "{}", s),
         }
     }

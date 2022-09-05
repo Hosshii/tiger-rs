@@ -244,7 +244,9 @@ impl<'a> Codegen for ARM64<'a> {
 
 fn format_label(label: &Label) -> String {
     match label {
-        Label::Num(_) => format!("L.{}", label),
+        Label::Num(_) | Label::Fn(_, _) => {
+            format!("L.{}", label)
+        }
         Label::Named(_) => format!("    .globl _{}\n    .p2align 2\n_{}", label, label),
     }
 }

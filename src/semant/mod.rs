@@ -450,7 +450,7 @@ impl<F: Frame> Semant<F> {
                         None => Type::Complete(CompleteType::Unit),
                     };
 
-                    let label = Label::new();
+                    let label = Label::new_fn(func_name.name().as_ref());
                     let level = translate::new_level(
                         parent_level.clone(),
                         label.clone(),

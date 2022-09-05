@@ -160,7 +160,7 @@ static TEMP_MAP: Lazy<HashMap<Temp, &'static str>> = Lazy::new(|| {
 pub struct ARM64 {
     name: Label,
     formals: Vec<Access>,
-    pointer: i64,
+    pointer: i64, // greater than 0
 }
 
 impl ARM64 {
@@ -178,6 +178,10 @@ impl ARM64 {
 
     fn sp() -> Temp {
         REGISTERS_GLOBAL.sp
+    }
+
+    fn aligned_ptr(&self) -> i64 {
+        self.pointer + 16 - self.pointer % 16
     }
 }
 
@@ -333,7 +337,7 @@ impl Frame for ARM64 {
                 assembly: "// prologue start".to_string(),
             },
             Instruction::Label {
-                assembly: format!("{}:", super::format_label(self.name())),
+                assembly: format!("    .p2align 2\n{}:", super::format_label(self.name())),
                 label: self.name.clone(),
             },
             // save fp and lr
@@ -350,7 +354,7 @@ impl Frame for ARM64 {
                 jump: None,
             },
             Instruction::Operand {
-                assembly: format!("    sub 'd0, 's0, #{}", self.pointer),
+                assembly: format!("    sub 'd0, 's0, #{}", self.aligned_ptr()),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
                 src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
@@ -365,7 +369,7 @@ impl Frame for ARM64 {
                 assembly: "// epilogue start".to_string(),
             },
             Instruction::Operand {
-                assembly: format!("    add 'd0, 's0, #{}", self.pointer),
+                assembly: format!("    add 'd0, 's0, #{}", self.aligned_ptr()),
                 dst: vec![REGISTERS_GLOBAL.sp.into()],
                 src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
