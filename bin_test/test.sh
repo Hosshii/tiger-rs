@@ -31,3 +31,5 @@ assert 10 test5.tig
 assert 55 test6.tig
 assert 1 test7.tig
 assert 120 test8.tig
+assert 2 test9.tig
+assert 3 test10.tig
