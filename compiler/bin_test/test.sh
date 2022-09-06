@@ -10,7 +10,7 @@ assert() {
     local bin="../target/release/tiger"
 
     $bin "$file" > tmp.s
-    cc -o tmp tmp.s 
+    cc -o tmp tmp.s ../target/release/libcdylib.dylib
     ./tmp
     actual="$?"
 
@@ -33,3 +33,4 @@ assert 1 test7.tig
 assert 120 test8.tig
 assert 2 test9.tig
 assert 3 test10.tig
+assert 1 test11.tig

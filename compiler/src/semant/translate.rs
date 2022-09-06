@@ -98,22 +98,47 @@ pub fn simple_var<F: Frame>(access: Access<F>, fn_level: &Level<F>) -> Expr {
     Expr::Ex(mem)
 }
 
+// `var` is pointer to TigerRecord.
+// So, var[0] is (*var).data.offset(0)
 pub fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
-    Expr::Ex(IrExpr::Mem(
+    // (*var).data
+    let var_data = IrExpr::Mem(
         Box::new(IrExpr::BinOp(
             BinOp::Plus,
             Box::new(var.unwrap_ex()),
+            Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
+        )),
+        F::WORD_SIZE,
+    );
+
+    Expr::Ex(IrExpr::Mem(
+        Box::new(IrExpr::BinOp(
+            BinOp::Plus,
+            Box::new(var_data),
             Box::new(IrExpr::Const(F::WORD_SIZE as i64 * field_index as i64)),
         )),
         F::WORD_SIZE,
     ))
 }
 
+// `var` is pointer to TigerArray.
+// So, var[0] is (*var).data.offset(0)
 pub fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
-    Expr::Ex(IrExpr::Mem(
+    // (*var).data
+    let var_data = IrExpr::Mem(
         Box::new(IrExpr::BinOp(
             BinOp::Plus,
             Box::new(var.unwrap_ex()),
+            Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
+        )),
+        F::WORD_SIZE,
+    );
+
+    // var_data[subscript]
+    Expr::Ex(IrExpr::Mem(
+        Box::new(IrExpr::BinOp(
+            BinOp::Plus,
+            Box::new(var_data),
             Box::new(IrExpr::BinOp(
                 BinOp::Mul,
                 Box::new(subscript.unwrap_ex()),
@@ -313,30 +338,61 @@ pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
     ))
 }
 
+/// `arrtype [size] of init`
+///  Will be converted like follows.
+/// ```tiger
+/// let
+///     var arr := initArray(size);
+///     var idx := 0;
+/// in
+///    while (idx < size) do (
+///        arr[test] := init;
+///        idx := idx + 1;
+///    );
+///    arr
+/// end
+/// ```
+///
+/// The type of `arr` is `&TigerArray`.
 pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
-    let ptr = Temp::new();
-    let len_var = Temp::new();
-    let move_len = Stmt::Move(Box::new(IrExpr::Temp(len_var)), Box::new(len.unwrap_ex()));
+    // mov len_temp, len()
+    // mov init_temp, init()
+    // mov arr_temp, allocArray(len_temp)
+    let len_temp = Temp::new();
+    let init_temp = Temp::new();
+    let arr_temp = Temp::new();
 
-    // allocRecord take size of record.
-    let allocated = F::extern_call("allocRecord", vec![IrExpr::Temp(len_var)]);
+    let stmt = Stmt::seq(vec![
+        Stmt::Move(Box::new(IrExpr::Temp(len_temp)), Box::new(len.unwrap_ex())),
+        Stmt::Move(
+            Box::new(IrExpr::Temp(init_temp)),
+            Box::new(init.unwrap_ex()),
+        ),
+        Stmt::Move(
+            Box::new(IrExpr::Temp(arr_temp)),
+            Box::new(F::extern_call("initArray", vec![IrExpr::Temp(len_temp)])),
+        ),
+    ]);
 
-    // move allocated ptr to reg.
-    let move_result = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
+    // idx := 0
+    let idx = IrExpr::Temp(Temp::new());
+    let stmt = Stmt::seq(vec![
+        stmt,
+        Stmt::Move(Box::new(idx.clone()), Box::new(IrExpr::Const(0))),
+    ]);
 
-    // while i < len {
-    //   allocated[i] = init;
-    //   i++
+    // while idx < len {
+    //   allocated_data[i] = init;
+    //   idx++
     // }
-    let test = IrExpr::Temp(Temp::new());
     let cond = {
-        let test = test.clone();
+        let test = idx.clone();
 
         move |t: Label, f: Label| -> Stmt {
             Stmt::CJump(
                 RelOp::Lt,
                 Box::new(test),
-                Box::new(IrExpr::Temp(len_var)),
+                Box::new(IrExpr::Temp(len_temp)),
                 t,
                 f,
             )
@@ -344,45 +400,48 @@ pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
     };
     let cond = Expr::Cx(Box::new(cond));
 
+    // (*arr).data
+    let allocated_data = IrExpr::Mem(
+        Box::new(IrExpr::BinOp(
+            BinOp::Plus,
+            Box::new(IrExpr::Temp(arr_temp)),
+            Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
+        )),
+        F::WORD_SIZE,
+    );
     let body = Stmt::Seq(
         Box::new(Stmt::Move(
             Box::new(IrExpr::Mem(
                 Box::new(IrExpr::BinOp(
                     BinOp::Plus,
-                    Box::new(IrExpr::Temp(ptr)),
+                    Box::new(allocated_data),
                     Box::new(IrExpr::BinOp(
                         BinOp::Mul,
-                        Box::new(test.clone()),
+                        Box::new(idx.clone()),
                         Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
                     )),
                 )),
                 F::WORD_SIZE,
             )),
-            Box::new(init.unwrap_ex()),
+            Box::new(IrExpr::Temp(init_temp)),
         )),
-        Box::new(Stmt::Expr(Box::new(IrExpr::BinOp(
-            BinOp::Plus,
-            Box::new(test),
-            Box::new(IrExpr::Const(1)),
-        )))),
+        Box::new(Stmt::Move(
+            Box::new(idx.clone()),
+            Box::new(IrExpr::BinOp(
+                BinOp::Plus,
+                Box::new(idx),
+                Box::new(IrExpr::Const(1)),
+            )),
+        )),
     );
     let body = Expr::Nx(body);
 
     let end_label = Label::new();
-    let init = while_expr(cond, body, end_label.clone());
+    let init = while_expr(cond, body, end_label);
 
     let expr = IrExpr::ESeq(
-        Box::new(Stmt::Seq(
-            Box::new(move_len),
-            Box::new(Stmt::Seq(
-                Box::new(move_result),
-                Box::new(Stmt::Seq(
-                    Box::new(init.unwrap_nx()),
-                    Box::new(Stmt::Label(end_label)),
-                )),
-            )),
-        )),
-        Box::new(IrExpr::Temp(ptr)),
+        Box::new(Stmt::seq(vec![stmt, init.unwrap_nx()])),
+        Box::new(IrExpr::Temp(arr_temp)),
     );
 
     Expr::Ex(expr)
