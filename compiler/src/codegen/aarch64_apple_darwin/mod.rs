@@ -202,6 +202,30 @@ impl<'a> ARM64<'a> {
                 };
                 self.emit(instruction);
             }
+            Expr::Call(name, args) if matches!(name.as_ref(), Expr::Name(_)) => {
+                let src = self.munch_args(args);
+                let name = match name.as_ref() {
+                    Expr::Name(name) => name,
+                    _ => unreachable!(),
+                };
+
+                let dst = ARM64Frame::call_defs().iter().map(Temp::from).collect();
+                let instruction = Instruction::Operand {
+                    assembly: format!("    bl {}", format_label(name)),
+                    dst,
+                    src,
+                    jump: None,
+                };
+                self.emit(instruction);
+
+                let instruction = Instruction::Move {
+                    assembly: "    mov 'd0, 's0".to_string(),
+                    dst: result,
+                    src: Temp::from(ARM64Frame::rv()),
+                };
+                self.emit(instruction);
+            }
+
             Expr::Call(name, args) => {
                 let mut src = vec![self.munch_expr(name)];
                 src.append(&mut self.munch_args(args));
