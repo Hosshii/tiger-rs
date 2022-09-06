@@ -13,7 +13,7 @@ const PTR_SIZE: i64 = 8;
 static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
     sp: Temp::new(),
     xzr: Temp::new(),
-    pc: Temp::new(),
+    // pc: Temp::new(),
     x0: Temp::new(),
     x1: Temp::new(),
     x2: Temp::new(),
@@ -47,17 +47,18 @@ static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
     x30: Temp::new(),
 });
 
-static REGISTERS: [&str; 34] = [
-    "sp", "xzr", "pc", "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
-    "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24",
-    "x25", "x26", "x27", "x28", "x29", "x30",
+static REGISTERS_STR: [&str; 33] = [
+    "sp", "xzr", // "pc",
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14",
+    "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27",
+    "x28", "x29", "x30",
 ];
 
 static SPECIAL_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
     vec![
         REGISTERS_GLOBAL.sp,
         REGISTERS_GLOBAL.xzr,
-        REGISTERS_GLOBAL.pc,
+        // REGISTERS_GLOBAL.pc,
         REGISTERS_GLOBAL.x0, // TODO: Duplicate with ARG_REGS.
         REGISTERS_GLOBAL.x29,
         REGISTERS_GLOBAL.x30,
@@ -119,40 +120,40 @@ static CALL_DEFS: Lazy<Vec<Temp>> = Lazy::new(|| {
 
 static TEMP_MAP: Lazy<HashMap<Temp, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
-    m.insert(REGISTERS_GLOBAL.sp, REGISTERS[0]);
-    m.insert(REGISTERS_GLOBAL.xzr, REGISTERS[1]);
-    m.insert(REGISTERS_GLOBAL.pc, REGISTERS[2]);
-    m.insert(REGISTERS_GLOBAL.x0, REGISTERS[3]);
-    m.insert(REGISTERS_GLOBAL.x1, REGISTERS[4]);
-    m.insert(REGISTERS_GLOBAL.x2, REGISTERS[5]);
-    m.insert(REGISTERS_GLOBAL.x3, REGISTERS[6]);
-    m.insert(REGISTERS_GLOBAL.x4, REGISTERS[7]);
-    m.insert(REGISTERS_GLOBAL.x5, REGISTERS[8]);
-    m.insert(REGISTERS_GLOBAL.x6, REGISTERS[9]);
-    m.insert(REGISTERS_GLOBAL.x7, REGISTERS[10]);
-    m.insert(REGISTERS_GLOBAL.x8, REGISTERS[11]);
-    m.insert(REGISTERS_GLOBAL.x9, REGISTERS[12]);
-    m.insert(REGISTERS_GLOBAL.x10, REGISTERS[13]);
-    m.insert(REGISTERS_GLOBAL.x11, REGISTERS[14]);
-    m.insert(REGISTERS_GLOBAL.x12, REGISTERS[15]);
-    m.insert(REGISTERS_GLOBAL.x13, REGISTERS[16]);
-    m.insert(REGISTERS_GLOBAL.x14, REGISTERS[17]);
-    m.insert(REGISTERS_GLOBAL.x15, REGISTERS[18]);
-    m.insert(REGISTERS_GLOBAL.x16, REGISTERS[19]);
-    m.insert(REGISTERS_GLOBAL.x17, REGISTERS[20]);
-    m.insert(REGISTERS_GLOBAL.x18, REGISTERS[21]);
-    m.insert(REGISTERS_GLOBAL.x19, REGISTERS[22]);
-    m.insert(REGISTERS_GLOBAL.x20, REGISTERS[23]);
-    m.insert(REGISTERS_GLOBAL.x21, REGISTERS[24]);
-    m.insert(REGISTERS_GLOBAL.x22, REGISTERS[25]);
-    m.insert(REGISTERS_GLOBAL.x23, REGISTERS[26]);
-    m.insert(REGISTERS_GLOBAL.x24, REGISTERS[27]);
-    m.insert(REGISTERS_GLOBAL.x25, REGISTERS[28]);
-    m.insert(REGISTERS_GLOBAL.x26, REGISTERS[29]);
-    m.insert(REGISTERS_GLOBAL.x27, REGISTERS[30]);
-    m.insert(REGISTERS_GLOBAL.x28, REGISTERS[31]);
-    m.insert(REGISTERS_GLOBAL.x29, REGISTERS[32]);
-    m.insert(REGISTERS_GLOBAL.x30, REGISTERS[33]);
+    m.insert(REGISTERS_GLOBAL.sp, REGISTERS_STR[0]);
+    m.insert(REGISTERS_GLOBAL.xzr, REGISTERS_STR[1]);
+    // m.insert(REGISTERS_GLOBAL.pc, REGISTERS[2]);
+    m.insert(REGISTERS_GLOBAL.x0, REGISTERS_STR[2]);
+    m.insert(REGISTERS_GLOBAL.x1, REGISTERS_STR[3]);
+    m.insert(REGISTERS_GLOBAL.x2, REGISTERS_STR[4]);
+    m.insert(REGISTERS_GLOBAL.x3, REGISTERS_STR[5]);
+    m.insert(REGISTERS_GLOBAL.x4, REGISTERS_STR[6]);
+    m.insert(REGISTERS_GLOBAL.x5, REGISTERS_STR[7]);
+    m.insert(REGISTERS_GLOBAL.x6, REGISTERS_STR[8]);
+    m.insert(REGISTERS_GLOBAL.x7, REGISTERS_STR[9]);
+    m.insert(REGISTERS_GLOBAL.x8, REGISTERS_STR[10]);
+    m.insert(REGISTERS_GLOBAL.x9, REGISTERS_STR[11]);
+    m.insert(REGISTERS_GLOBAL.x10, REGISTERS_STR[12]);
+    m.insert(REGISTERS_GLOBAL.x11, REGISTERS_STR[13]);
+    m.insert(REGISTERS_GLOBAL.x12, REGISTERS_STR[14]);
+    m.insert(REGISTERS_GLOBAL.x13, REGISTERS_STR[15]);
+    m.insert(REGISTERS_GLOBAL.x14, REGISTERS_STR[16]);
+    m.insert(REGISTERS_GLOBAL.x15, REGISTERS_STR[17]);
+    m.insert(REGISTERS_GLOBAL.x16, REGISTERS_STR[18]);
+    m.insert(REGISTERS_GLOBAL.x17, REGISTERS_STR[19]);
+    m.insert(REGISTERS_GLOBAL.x18, REGISTERS_STR[20]);
+    m.insert(REGISTERS_GLOBAL.x19, REGISTERS_STR[21]);
+    m.insert(REGISTERS_GLOBAL.x20, REGISTERS_STR[22]);
+    m.insert(REGISTERS_GLOBAL.x21, REGISTERS_STR[23]);
+    m.insert(REGISTERS_GLOBAL.x22, REGISTERS_STR[24]);
+    m.insert(REGISTERS_GLOBAL.x23, REGISTERS_STR[25]);
+    m.insert(REGISTERS_GLOBAL.x24, REGISTERS_STR[26]);
+    m.insert(REGISTERS_GLOBAL.x25, REGISTERS_STR[27]);
+    m.insert(REGISTERS_GLOBAL.x26, REGISTERS_STR[28]);
+    m.insert(REGISTERS_GLOBAL.x27, REGISTERS_STR[29]);
+    m.insert(REGISTERS_GLOBAL.x28, REGISTERS_STR[30]);
+    m.insert(REGISTERS_GLOBAL.x29, REGISTERS_STR[31]);
+    m.insert(REGISTERS_GLOBAL.x30, REGISTERS_STR[32]);
     m
 });
 
@@ -234,7 +235,7 @@ impl Frame for ARM64 {
     }
 
     fn registers() -> &'static [Self::Register] {
-        REGISTERS.as_ref()
+        REGISTERS_STR.as_ref()
     }
 
     fn special_regs() -> &'static [Temp] {
@@ -267,7 +268,7 @@ impl Frame for ARM64 {
 
     fn extern_call(name: &str, args: Vec<Expr>) -> Expr {
         Expr::Call(
-            Box::new(Expr::Name(Label::with_name(name.to_string()))),
+            Box::new(Expr::Name(Label::with_named_fn(name.to_string()))),
             args,
         )
     }
@@ -339,7 +340,7 @@ impl Frame for ARM64 {
                 assembly: "// prologue start".to_string(),
             },
             Instruction::Label {
-                assembly: format!("    .p2align 2\n{}:", super::format_label(self.name())),
+                assembly: super::format_label_stmt(self.name()),
                 label: self.name.clone(),
             },
             // save fp and lr
@@ -411,7 +412,7 @@ pub enum Access {
 struct Registers {
     sp: Temp,
     xzr: Temp,
-    pc: Temp,
+    // pc: Temp,
     x0: Temp,
     x1: Temp,
     x2: Temp,

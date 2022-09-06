@@ -128,8 +128,9 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
             }
             Stmt::Label(label) => {
+                let assembly = format_label_stmt(label);
                 let instruction = Instruction::Label {
-                    assembly: format!("{}:", format_label(label)),
+                    assembly,
                     label: label.clone(),
                 };
                 self.emit(instruction);
@@ -247,7 +248,28 @@ fn format_label(label: &Label) -> String {
         Label::Num(_) | Label::Fn(_, _) => {
             format!("L.{}", label)
         }
-        Label::Named(_) => format!("    .globl _{}\n    .p2align 2\n_{}", label, label),
+        Label::NamedFn(_) => format!("_{}", label),
+    }
+}
+
+/// label which is address
+/// that is used like
+///
+/// LABEL:
+///
+fn format_label_stmt(label: &Label) -> String {
+    match label {
+        Label::Num(_) => {
+            format!("{}:", format_label(label))
+        }
+        Label::Fn(_, _) => {
+            format!("    .p2align 2\n{}:", format_label(label))
+        }
+        Label::NamedFn(_) => format!(
+            "    .globl {}\n    .p2align 2\n{}:",
+            format_label(label),
+            format_label(label)
+        ),
     }
 }
 

@@ -35,9 +35,12 @@ static LABEL_GLOBAL: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Label {
+    // unique identifier.
     Num(u32),
+    // function that has unique identifier.
     Fn(u32, String),
-    Named(String),
+    // use name directory.
+    NamedFn(String),
 }
 
 impl Label {
@@ -56,8 +59,8 @@ impl Label {
         Self::Num(num)
     }
 
-    pub fn with_name(name: String) -> Self {
-        Self::Named(name)
+    pub fn with_named_fn(name: String) -> Self {
+        Self::NamedFn(name)
     }
 }
 
@@ -70,7 +73,7 @@ impl Display for Label {
             Label::Fn(n, s) => {
                 write!(f, "{}_{}", n, s)
             }
-            Label::Named(s) => write!(f, "{}", s),
+            Label::NamedFn(s) => write!(f, "{}", s),
         }
     }
 }

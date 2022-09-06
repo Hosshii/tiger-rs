@@ -238,7 +238,7 @@ impl<F: Frame> Semant<F> {
         };
 
         self.translator.proc_entry_exit(
-            Level::outermost_with_name(Label::with_name(main_name.to_string())),
+            Level::outermost_with_name(Label::with_named_fn(main_name.to_string())),
             body.expr,
         );
 
