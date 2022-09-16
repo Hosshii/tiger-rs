@@ -18,13 +18,12 @@ type Registers<F> = Vec<<F as Frame>::Register>;
 type SpilledNodes = HashSet<Temp>;
 
 pub fn color<C: Codegen>(
-    frame: &mut C::Frame,
-    instructions: Vec<Instruction>,
+    _frame: &mut C::Frame,
     interference: &LiveGraph,
     initial: Allocation<C::Frame>,
     _spill_cost: &SpillCost,
     registers: Registers<C::Frame>,
-) -> (Allocation<C::Frame>, SpilledNodes, Vec<Instruction>) {
+) -> (Allocation<C::Frame>, SpilledNodes) {
     // All machine register that is already colored.
     let pre_colored: PreColored = initial.keys().copied().collect();
 
@@ -55,9 +54,8 @@ pub fn color<C: Codegen>(
         .cloned()
         .collect();
 
-    let (colors, spills, instructions) = _main::<C>(
-        frame,
-        instructions,
+    let (colors, spilled_node) = _main::<C>(
+        _frame,
         interference,
         &pre_colored,
         colors,
@@ -70,7 +68,7 @@ pub fn color<C: Codegen>(
         .map(|(id, reg)| (interference.temp(id), reg))
         .collect();
 
-    (allocation, spills, instructions)
+    (allocation, spilled_node)
 }
 
 type Degree = HashMap<LiveID, usize>;
@@ -90,14 +88,13 @@ type ID2Temp = HashMap<LiveID, Temp>;
 // type Temp2ID = HashMap<Temp, LiveID>;
 
 fn _main<C: Codegen>(
-    frame: &mut C::Frame,
-    instructions: Vec<Instruction>,
+    _frame: &mut C::Frame,
     live_graph: &LiveGraph,
     precolored: &PreColored,
     mut colors: Colors<C::Frame>,
     all_colors: &AllColors<C::Frame>,
     initial: Initial,
-) -> (Colors<C::Frame>, SpilledNodes, Vec<Instruction>) {
+) -> (Colors<C::Frame>, SpilledNodes) {
     // dbg!(&live_graph);
     // dbg!(&precolored);
     // dbg!(&colors);
@@ -142,27 +139,7 @@ fn _main<C: Codegen>(
         &mut spilled_nodes,
     );
 
-    if !spilled_nodes.is_empty() {
-        let (new_instruction, initial) = rewrite_program::<C>(
-            frame,
-            live_graph,
-            &spilled_nodes,
-            &colored_nodes,
-            instructions,
-        );
-
-        _main::<C>(
-            frame,
-            new_instruction,
-            live_graph,
-            precolored,
-            colors,
-            all_colors,
-            initial,
-        )
-    } else {
-        (colors, spilled_nodes, instructions)
-    }
+    (colors, spilled_nodes)
 }
 
 fn build(
@@ -345,11 +322,10 @@ fn assign_colors<F: Frame>(
     }
 }
 
-fn rewrite_program<C: Codegen>(
+pub fn rewrite_program<C: Codegen>(
     frame: &mut C::Frame,
     live_graph: &LiveGraph,
     spilled_nodes: &SpilledNodes,
-    colored_nodes: &ColoredNodes,
     instructions: Vec<Instruction>,
 ) -> (Vec<Instruction>, Initial) {
     fn new_instruction<C: Codegen>(
@@ -444,6 +420,7 @@ fn rewrite_program<C: Codegen>(
                 });
                 new_instructions.append(&mut end_instructions);
             }
+
             Instruction::Move { dst, src, assembly } => {
                 let (
                     mut begin_instructions,
@@ -464,12 +441,17 @@ fn rewrite_program<C: Codegen>(
                 });
                 new_instructions.append(&mut end_instructions);
             }
-            _ => continue,
+
+            x => {
+                new_instructions.push(x);
+            }
         }
     }
 
-    let new_temps: HashSet<_> = new_temps.into_iter().map(|v| live_graph.id(&v)).collect();
-    let initial: HashSet<_> = new_temps.union(colored_nodes).copied().collect();
+    // TODO: initial
+    // let new_temps: HashSet<_> = new_temps.into_iter().map(|v| live_graph.id(&v)).collect();
+    // let initial: HashSet<_> = new_temps.union(colored_nodes).copied().collect();
+    let initial = Initial::new();
 
     (new_instructions, initial)
 }
