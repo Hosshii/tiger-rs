@@ -1,0 +1,7 @@
+let 
+    var a := 2
+    function test(): int = 1
+in
+    test();
+    a
+end
