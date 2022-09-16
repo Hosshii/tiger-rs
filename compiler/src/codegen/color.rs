@@ -396,9 +396,9 @@ fn rewrite_program<C: Codegen>(
 
                 let stmt = Stmt::Move(Box::new(Expr::Temp(new_temp)), Box::new(mem));
                 end_instructions.append(&mut C::codegen(frame, stmt));
-                new_dst.push(Temp::from(new_temp));
+                new_src.push(Temp::from(new_temp));
             } else {
-                new_src.push(Temp::from(temp));
+                new_src.push(temp);
             }
         }
 

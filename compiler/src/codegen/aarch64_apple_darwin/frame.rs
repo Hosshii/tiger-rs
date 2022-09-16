@@ -60,6 +60,10 @@ static SPECIAL_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
         REGISTERS_GLOBAL.xzr,
         // REGISTERS_GLOBAL.pc,
         REGISTERS_GLOBAL.x0, // TODO: Duplicate with ARG_REGS.
+        REGISTERS_GLOBAL.x8,
+        REGISTERS_GLOBAL.x16,
+        REGISTERS_GLOBAL.x17,
+        REGISTERS_GLOBAL.x18,
         REGISTERS_GLOBAL.x29,
         REGISTERS_GLOBAL.x30,
     ]
@@ -80,10 +84,6 @@ static ARG_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
 
 static CALEE_SAVE_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
     vec![
-        REGISTERS_GLOBAL.x8,
-        REGISTERS_GLOBAL.x16,
-        REGISTERS_GLOBAL.x17,
-        REGISTERS_GLOBAL.x18,
         REGISTERS_GLOBAL.x19,
         REGISTERS_GLOBAL.x20,
         REGISTERS_GLOBAL.x21,
@@ -94,6 +94,7 @@ static CALEE_SAVE_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
         REGISTERS_GLOBAL.x26,
         REGISTERS_GLOBAL.x27,
         REGISTERS_GLOBAL.x28,
+        // REGISTERS_GLOBAL.x29, // in special regs
     ]
 });
 
@@ -345,7 +346,7 @@ impl Frame for ARM64 {
             },
             // save fp and lr
             Instruction::Operand {
-                assembly: "    stp 's0, 's1, ['s2, -16]!".to_string(),
+                assembly: "    stp 's0, 's1, ['s2, #-16]!".to_string(),
                 dst: vec![],
                 src: vec![Self::fp().into(), Self::lr().into(), Self::sp().into()],
                 jump: None,

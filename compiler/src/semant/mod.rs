@@ -225,7 +225,9 @@ impl<F: Frame> Semant<F> {
 
         // if body returns int, then use that value as exit code.
         // otherwise use 0 as exit code.
-        let body = self.trans_expr(expr, &mut Level::outermost(), None)?;
+        let mut main_level =
+            Level::outermost_with_name(Label::with_named_fn(main_name.to_string()));
+        let body = self.trans_expr(expr, &mut main_level, None)?;
         let body = if body.ty == CompleteType::Int {
             body
         } else {
@@ -237,10 +239,7 @@ impl<F: Frame> Semant<F> {
             }
         };
 
-        self.translator.proc_entry_exit(
-            Level::outermost_with_name(Label::with_named_fn(main_name.to_string())),
-            body.expr,
-        );
+        self.translator.proc_entry_exit(main_level, body.expr);
 
         Ok(self.translator.get_result())
     }
