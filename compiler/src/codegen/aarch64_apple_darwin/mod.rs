@@ -265,6 +265,29 @@ impl<'a> Codegen for ARM64<'a> {
         codegen.munch_stmt(&stmt);
         codegen.instructions
     }
+
+    fn string(label: &Label, s: &str) -> String {
+        let label = format_label(label);
+
+        format!(
+            r##"    .section    __TEXT,__const
+{}.STR:
+    .ascii "{}"
+
+    .section    __DATA,__data
+    .p2align 3
+{}:
+    .xword {}
+    .xword {}.STR
+
+    .section	__TEXT,__text,regular,pure_instructions"##,
+            label,
+            s,
+            label,
+            s.len(),
+            label
+        )
+    }
 }
 
 fn format_label(label: &Label) -> String {

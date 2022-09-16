@@ -532,7 +532,7 @@ impl<F: Frame> Translator<F> {
                 label
             }
         };
-        Expr::Nx(Stmt::Label(label))
+        Expr::Ex(IrExpr::Name(label))
     }
 
     pub fn proc_entry_exit(&mut self, level: Level<F>, body: Expr) {

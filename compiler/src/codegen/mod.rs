@@ -1,4 +1,4 @@
-use crate::{asm::Instruction, frame::Frame, ir::Stmt};
+use crate::{asm::Instruction, common::Label, frame::Frame, ir::Stmt};
 
 pub mod aarch64_apple_darwin;
 pub(super) mod color;
@@ -12,4 +12,7 @@ pub trait Codegen {
     const MAIN_SYMBOL: &'static str;
 
     fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction>;
+
+    /// Convert string literal to asm.
+    fn string(label: &Label, s: &str) -> String;
 }

@@ -74,8 +74,9 @@ where
                     }
                 }
             }
-            Fragment::String(label, st) => {
-                dbg!(label, st);
+            Fragment::String(label, s) => {
+                let asm = C::string(&label, &s);
+                writeln!(o, "{}", asm)?;
             }
         }
     }
