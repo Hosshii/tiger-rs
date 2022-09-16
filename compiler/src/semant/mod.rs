@@ -1161,6 +1161,8 @@ impl Env<Type> {
 impl<F: Frame> Env<EnvEntry<F>> {
     pub fn with_base_var(mut self) -> Self {
         use self::CompleteType::*;
+
+        // TODO: use external call for these functions.
         let base_func = vec![
             ("print", vec![String], Unit),
             ("flush", vec![], Unit),
@@ -1176,7 +1178,7 @@ impl<F: Frame> Env<EnvEntry<F>> {
 
         for (sym, formals, ret_type) in base_func {
             let sym = Symbol::from(sym);
-            let label = Label::new();
+            let label = Label::with_named_fn(sym.to_string());
             let formals = formals.into_iter().map(Type::Complete).collect();
             let result = Type::Complete(ret_type);
             self.enter(

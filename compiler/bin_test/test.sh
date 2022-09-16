@@ -39,3 +39,8 @@ assert 12 test13.tig
 assert 20 test14.tig
 assert 90 test15.tig
 assert 0 test16.tig
+assert 0 test17.tig
+assert 0 test18.tig
+# assert 0 test16.tig
+assert 0 test20.tig
+assert 1 test21.tig

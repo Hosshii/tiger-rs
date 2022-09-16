@@ -1,0 +1,5 @@
+let 
+    var a:= getchar()
+in 
+    print(a)
+end
