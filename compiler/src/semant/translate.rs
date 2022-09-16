@@ -98,6 +98,7 @@ pub fn simple_var<F: Frame>(access: Access<F>, fn_level: &Level<F>) -> Expr {
     Expr::Ex(mem)
 }
 
+/// Returns Mem(record.field)
 // `var` is pointer to TigerRecord.
 // So, var[0] is (*var).data.offset(0)
 pub fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
@@ -121,6 +122,7 @@ pub fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
     ))
 }
 
+/// Returns Mem(Var(offset))
 // `var` is pointer to TigerArray.
 // So, var[0] is (*var).data.offset(0)
 pub fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
@@ -303,30 +305,27 @@ pub fn neg(e: Expr) -> Expr {
 /// Create record.
 /// For simplicity, the size of each record field must be 1 WORD.
 pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
-    let ptr = Temp::new();
+    let record_temp = Temp::new();
     let record_size = exprs.len();
 
-    // allocRecord take size of record.
-    let allocated = F::extern_call("allocRecord", vec![IrExpr::Const(record_size as i64)]);
-
-    // move allocated ptr to reg.
-    let init = Stmt::Move(Box::new(IrExpr::Temp(ptr)), Box::new(allocated));
+    let stmt = Stmt::Move(
+        Box::new(IrExpr::Temp(record_temp)),
+        Box::new(F::extern_call(
+            "allocRecord",
+            vec![IrExpr::Const(record_size as i64)],
+        )),
+    );
 
     let sequence = exprs
         .into_iter()
         .enumerate()
-        .fold(init, |acc, (idx, expr)| {
+        .fold(stmt, |acc, (idx, expr)| {
             Stmt::Seq(
                 Box::new(acc),
                 Box::new(Stmt::Move(
-                    Box::new(IrExpr::Mem(
-                        Box::new(IrExpr::BinOp(
-                            BinOp::Plus,
-                            Box::new(IrExpr::Temp(ptr)),
-                            Box::new(IrExpr::Const(idx as i64)),
-                        )),
-                        F::WORD_SIZE,
-                    )),
+                    Box::new(
+                        record_field::<F>(Expr::Ex(IrExpr::Temp(record_temp)), idx).unwrap_ex(),
+                    ),
                     Box::new(expr.unwrap_ex()),
                 )),
             )
@@ -334,7 +333,7 @@ pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
 
     Expr::Ex(IrExpr::ESeq(
         Box::new(sequence),
-        Box::new(IrExpr::Temp(ptr)),
+        Box::new(IrExpr::Temp(record_temp)),
     ))
 }
 
