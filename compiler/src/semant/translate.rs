@@ -339,7 +339,7 @@ pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
 }
 
 /// `arrtype [size] of init`
-///  Will be converted like follows.
+///  Will be converted as follows.
 /// ```tiger
 /// let
 ///     var arr := initArray(size);
@@ -400,29 +400,12 @@ pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
     };
     let cond = Expr::Cx(Box::new(cond));
 
-    // (*arr).data
-    let allocated_data = IrExpr::Mem(
-        Box::new(IrExpr::BinOp(
-            BinOp::Plus,
-            Box::new(IrExpr::Temp(arr_temp)),
-            Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
-        )),
-        F::WORD_SIZE,
-    );
     let body = Stmt::Seq(
         Box::new(Stmt::Move(
-            Box::new(IrExpr::Mem(
-                Box::new(IrExpr::BinOp(
-                    BinOp::Plus,
-                    Box::new(allocated_data),
-                    Box::new(IrExpr::BinOp(
-                        BinOp::Mul,
-                        Box::new(idx.clone()),
-                        Box::new(IrExpr::Const(F::WORD_SIZE as i64)),
-                    )),
-                )),
-                F::WORD_SIZE,
-            )),
+            Box::new(
+                array_subscript::<F>(Expr::Ex(IrExpr::Temp(arr_temp)), Expr::Ex(idx.clone()))
+                    .unwrap_ex(),
+            ),
             Box::new(IrExpr::Temp(init_temp)),
         )),
         Box::new(Stmt::Move(
