@@ -1,6 +1,6 @@
 let 
     var a:= "aaaa"
-    var b := "aaab"
+    var b := "aaaa"
 in 
-    a > b
+    a >= b
 end

@@ -276,7 +276,7 @@ pub fn string_ord<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     };
 
     // `stringOrd` take op as const.
-    // It returns 0 if condition is satisfied, and 1 if not.
+    // It returns 1 if condition is satisfied, and 0 if not.
     let result = F::extern_call(
         "stringOrd",
         vec![IrExpr::Const(num), lhs.unwrap_ex(), rhs.unwrap_ex()],
@@ -285,7 +285,7 @@ pub fn string_ord<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     let f = |t: Label, f: Label| -> Stmt {
         Stmt::CJump(
             RelOp::Eq,
-            Box::new(IrExpr::Const(0)),
+            Box::new(IrExpr::Const(1)),
             Box::new(result),
             t,
             f,

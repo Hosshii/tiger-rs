@@ -2,5 +2,5 @@ let
     var a:= "aaaa"
     var b := "aaab"
 in 
-    a > b
+    a >= b
 end

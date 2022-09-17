@@ -52,12 +52,32 @@ pub unsafe extern "C" fn stringEqual(a: *const TigerSting, b: *const TigerSting)
     (a == b) as TigerInt
 }
 
+/// calculate `a op b`
+/// If result is true, then return 1, otherwise return 0
+/// `op` must between 1 and 4
+/// op | 1  | 2 | 3  | 4
+///    | <= | < | >= | >
 #[no_mangle]
-pub unsafe extern "C" fn stringOrd(a: *const TigerSting, b: *const TigerSting) -> TigerInt {
+pub unsafe extern "C" fn stringOrd(
+    op: TigerInt,
+    a: *const TigerSting,
+    b: *const TigerSting,
+) -> TigerInt {
     let a = unsafe { std::slice::from_raw_parts((*a).data, (*a).len as usize) };
     let b = unsafe { std::slice::from_raw_parts((*b).data, (*b).len as usize) };
 
-    a.cmp(b) as TigerInt
+    let a = std::str::from_utf8(a).unwrap();
+    let b = std::str::from_utf8(b).unwrap();
+
+    let result = match op {
+        1 => a <= b,
+        2 => a < b,
+        3 => a >= b,
+        4 => a > b,
+        _ => panic!("invalid op"),
+    };
+
+    result as TigerInt
 }
 
 #[no_mangle]

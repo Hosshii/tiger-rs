@@ -44,3 +44,9 @@ assert 0 test18.tig
 # assert 0 test16.tig
 assert 0 test20.tig
 assert 1 test21.tig
+assert 0 test22.tig
+assert 0 test23.tig
+assert 1 test24.tig
+assert 1 test25.tig
+assert 1 test26.tig
+assert 1 test27.tig
