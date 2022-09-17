@@ -244,7 +244,7 @@ pub fn rel_op(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
 
 /// `op` must be Eq or Ne.
 pub fn string_eq<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
-    // stringEqual returns 0 if equal and 1 if not equal.
+    // stringEqual returns 1 if equal and 0 if not equal.
     let result = F::extern_call("stringEqual", vec![lhs.unwrap_ex(), rhs.unwrap_ex()]);
 
     let result = match op {
@@ -256,7 +256,7 @@ pub fn string_eq<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     let f = |t: Label, f: Label| -> Stmt {
         Stmt::CJump(
             RelOp::Eq,
-            Box::new(IrExpr::Const(0)),
+            Box::new(IrExpr::Const(1)),
             Box::new(result),
             t,
             f,
