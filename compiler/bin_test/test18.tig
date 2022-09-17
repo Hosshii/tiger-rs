@@ -1,0 +1,7 @@
+let 
+    var a:= "hello "
+    var b:= " world"
+in 
+    a := concat(a,b);
+    print(a)
+end

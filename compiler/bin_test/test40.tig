@@ -1,0 +1,6 @@
+let
+    var a := "hello world"
+    var b := "world"
+in
+    substring(a, 6, 5) = b
+end

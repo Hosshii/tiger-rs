@@ -1,0 +1,5 @@
+let 
+    function test(): int = 1
+in 
+    test()
+end

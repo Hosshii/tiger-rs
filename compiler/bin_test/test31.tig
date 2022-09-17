@@ -1,0 +1,7 @@
+let
+	type  arrtype = array of int
+    
+	var arr1:arrtype := arrtype [10] of 1
+in
+	arr1 = arr1
+end

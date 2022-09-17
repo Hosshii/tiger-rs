@@ -1,0 +1,7 @@
+let 
+   var a := 1
+   function capture(n: int): int =
+        a + n
+in 
+    capture(2)
+end

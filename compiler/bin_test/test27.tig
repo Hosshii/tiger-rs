@@ -1,0 +1,6 @@
+let 
+    var a:= "aaaa"
+    var b := "aaaa"
+in 
+    a >= b
+end
