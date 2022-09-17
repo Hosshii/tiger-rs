@@ -85,7 +85,7 @@ pub unsafe extern "C" fn print(s: *const TigerSting) {
     let s = unsafe { std::slice::from_raw_parts((*s).data, (*s).len as usize) };
     let s = std::str::from_utf8(s).unwrap();
 
-    println!("{}", s);
+    print!("{}", s);
 }
 
 #[no_mangle]
