@@ -52,3 +52,7 @@ assert 1 test26.tig
 assert 1 test27.tig
 assert 0 test28.tig
 assert 1 test29.tig
+assert 0 test30.tig
+assert 1 test31.tig
+assert 0 test32.tig
+assert 1 test33.tig

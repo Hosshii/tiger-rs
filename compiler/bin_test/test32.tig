@@ -1,0 +1,7 @@
+let
+	type rectype = {num:int, age:int}
+	var rec1:rectype := rectype {num=20, age=50}
+	var rec2:rectype := rectype {num=20, age=50}
+in
+    rec1 = rec2
+end
