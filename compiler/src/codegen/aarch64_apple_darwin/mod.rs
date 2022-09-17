@@ -339,7 +339,15 @@ fn format_label(label: &Label) -> String {
         Label::Num(_) | Label::Fn(_, _) => {
             format!("L.{}", label)
         }
-        Label::NamedFn(_) => format!("_{}", label),
+        Label::NamedFn(s) => {
+            // Calling function named `exit` is not working correctry.
+            // So rename it to `tiger_exit`.
+            if s == "exit" {
+                "_tiger_exit".to_string()
+            } else {
+                format!("_{}", label)
+            }
+        }
     }
 }
 
