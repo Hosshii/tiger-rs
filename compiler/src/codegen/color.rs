@@ -101,7 +101,7 @@ fn _main<C: Codegen>(
     // dbg!(&all_colors);
     // dbg!(&initial);
 
-    let (_matrix, _adj_set, adj_list, mut degree) = build(live_graph, &precolored);
+    let (_matrix, _adj_set, adj_list, mut degree) = build(live_graph, precolored);
     let k = <C::Frame as Frame>::registers().len();
     let (mut simplify_worklist, mut spill_work_list) = make_work_list(&initial, &degree, k);
 
@@ -293,6 +293,7 @@ fn select_spill(
     key
 }
 
+#[allow(clippy::too_many_arguments)]
 fn assign_colors<F: Frame>(
     id2temp: &ID2Temp,
     select_stack: &SelectStack,
@@ -328,6 +329,7 @@ pub fn rewrite_program<C: Codegen>(
     spilled_nodes: &SpilledNodes,
     instructions: Vec<Instruction>,
 ) -> (Vec<Instruction>, Initial) {
+    #[allow(clippy::type_complexity)]
     fn new_instruction<C: Codegen>(
         live_graph: &LiveGraph,
         frame: &C::Frame,

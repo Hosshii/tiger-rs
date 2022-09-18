@@ -44,6 +44,8 @@ pub struct TigerSting {
     data: *mut u8,
 }
 
+/// # Safety
+/// `a` and `b` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn stringEqual(a: *const TigerSting, b: *const TigerSting) -> TigerInt {
     let a = unsafe { std::slice::from_raw_parts((*a).data, (*a).len as usize) };
@@ -57,6 +59,8 @@ pub unsafe extern "C" fn stringEqual(a: *const TigerSting, b: *const TigerSting)
 /// `op` must between 1 and 4
 /// op | 1  | 2 | 3  | 4
 ///    | <= | < | >= | >
+/// # Safety
+/// `a` and `b` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn stringOrd(
     op: TigerInt,
@@ -80,6 +84,8 @@ pub unsafe extern "C" fn stringOrd(
     result as TigerInt
 }
 
+/// # Safety
+/// `s` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn print(s: *const TigerSting) {
     let s = unsafe { std::slice::from_raw_parts((*s).data, (*s).len as usize) };
@@ -105,6 +111,8 @@ pub extern "C" fn getchar() -> *mut TigerSting {
     }))
 }
 
+/// # Safety
+/// `s` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn ord(s: *const TigerSting) -> TigerInt {
     let s = unsafe { std::slice::from_raw_parts((*s).data, (*s).len as usize) };
@@ -136,6 +144,8 @@ fn is_ascii(i: TigerInt) -> bool {
     (0x41..=0x5a).contains(&i) || (0x61..=0x7a).contains(&i) || (0x30..=0x39).contains(&i)
 }
 
+/// # Safety
+/// `s` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn size(s: *const TigerSting) -> TigerInt {
     let s = unsafe { std::slice::from_raw_parts((*s).data, (*s).len as usize) };
@@ -143,6 +153,8 @@ pub unsafe extern "C" fn size(s: *const TigerSting) -> TigerInt {
     s.chars().count() as TigerInt
 }
 
+/// # Safety
+/// `s` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn substring(
     s: *const TigerSting,
@@ -164,6 +176,8 @@ pub unsafe extern "C" fn substring(
     }))
 }
 
+/// # Safety
+/// `a` and `b` must be point to valid `TigerString`.
 #[no_mangle]
 pub unsafe extern "C" fn concat(a: *const TigerSting, b: *const TigerSting) -> *mut TigerSting {
     let a = unsafe { std::slice::from_raw_parts((*a).data, (*a).len as usize) };

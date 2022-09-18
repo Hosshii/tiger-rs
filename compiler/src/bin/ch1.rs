@@ -40,8 +40,8 @@ fn max_args(s: &Stmt) -> Option<usize> {
 fn max_args_expr(e: &Expr) -> Option<usize> {
     match e {
         Id(_) | Num(_) => None,
-        Op(lhs, _, rhs) => cmp::max(max_args_expr(&*lhs), max_args_expr(&*rhs)),
-        Eseq(stmt, expr) => cmp::max(max_args(&*stmt), max_args_expr(&*expr)),
+        Op(lhs, _, rhs) => cmp::max(max_args_expr(lhs), max_args_expr(rhs)),
+        Eseq(stmt, expr) => cmp::max(max_args(stmt), max_args_expr(expr)),
     }
 }
 
