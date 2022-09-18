@@ -21,7 +21,7 @@ use crate::{
     semant::Semant,
 };
 
-pub const ARM64: PhantomData<ARM64Codegen> = PhantomData;
+pub const ARM64_APPLE_DARWIN: PhantomData<ARM64Codegen> = PhantomData;
 
 pub fn compile<C, N, R, O>(
     filename: N,
