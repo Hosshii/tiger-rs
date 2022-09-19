@@ -15,4 +15,6 @@ pub trait Codegen {
 
     /// Convert string literal to asm.
     fn string(label: &Label, s: &str) -> String;
+
+    fn header() -> String;
 }

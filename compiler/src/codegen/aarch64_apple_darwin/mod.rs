@@ -332,6 +332,10 @@ impl<'a> Codegen for ARM64<'a> {
             label
         )
     }
+
+    fn header() -> String {
+        String::new()
+    }
 }
 
 fn format_label(label: &Label) -> String {

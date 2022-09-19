@@ -41,6 +41,8 @@ where
 
     let fragments = semantic_analyzer.trans_prog(ast, C::MAIN_SYMBOL)?;
 
+    writeln!(o, "{}", C::header())?;
+
     for fragment in fragments {
         match fragment {
             Fragment::Proc(body, frame) => {
