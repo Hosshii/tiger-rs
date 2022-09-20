@@ -5,21 +5,21 @@ use crate::{
     common::Label,
     ir::{BinOp, Expr, RelOp, Stmt},
 };
-use frame::ARM64 as ARM64Frame;
+use frame::X86 as X86_64Frame;
 
 use super::{Codegen, Frame as _};
 
-pub struct ARM64<'a> {
-    _frame: &'a ARM64Frame,
+pub struct X86_64<'a> {
+    _frame: &'a X86_64Frame,
     instructions: Vec<Instruction>,
 }
 
-impl<'a> ARM64<'a> {
+impl<'a> X86_64<'a> {
     pub fn debug() {
-        ARM64Frame::debug_registers()
+        X86_64Frame::debug_registers()
     }
 
-    fn new(frame: &'a ARM64Frame) -> Self {
+    fn new(frame: &'a X86_64Frame) -> Self {
         Self {
             _frame: frame,
             instructions: Vec::new(),
@@ -28,12 +28,12 @@ impl<'a> ARM64<'a> {
 
     // TODO: use efficient algorithm (dp).
     fn munch_args(&mut self, args: &[Expr]) -> Vec<Temp> {
-        if args.len() > ARM64Frame::arg_regs().len() {
+        if args.len() > X86_64Frame::arg_regs().len() {
             unimplemented!("too many arguments");
         }
 
         let mut temps = Vec::new();
-        for (reg, arg) in ARM64Frame::arg_regs().iter().zip(args.iter()) {
+        for (reg, arg) in X86_64Frame::arg_regs().iter().zip(args.iter()) {
             let instruction = Instruction::Move {
                 assembly: "    mov 'd0, 's0".to_string(),
                 dst: reg.into(),
@@ -66,12 +66,12 @@ impl<'a> ARM64<'a> {
                     self.emit(instruction);
                 }
                 Expr::Mem(mem, size) => {
-                    assert_eq!(*size, ARM64Frame::WORD_SIZE);
+                    assert_eq!(*size, X86_64Frame::WORD_SIZE);
 
                     let instruction = Instruction::Operand {
-                        assembly: "    str 's0, ['s1, #0]".to_string(),
+                        assembly: "    mov ['s0], 's1".to_string(),
                         dst: vec![],
-                        src: vec![self.munch_expr(src), self.munch_expr(mem)],
+                        src: vec![self.munch_expr(mem), self.munch_expr(src)],
                         jump: None,
                     };
 
@@ -83,20 +83,17 @@ impl<'a> ARM64<'a> {
                 self.munch_expr(expr);
             }
             Stmt::Jump(exp, labels) => {
-                let temp = Temp::new();
-                let instruction1 = Instruction::Move {
-                    assembly: "    mov 'd0, 's0".to_string(),
-                    dst: temp,
-                    src: self.munch_expr(exp),
+                let label = match &**exp {
+                    Expr::Name(label) => label,
+                    _ => todo!(),
                 };
-                let instruction2 = Instruction::Operand {
-                    assembly: "    br 's0".to_string(),
+                let instruction = Instruction::Operand {
+                    assembly: format!("    jmp {}", format_label(label)),
                     dst: vec![],
-                    src: vec![temp],
+                    src: vec![],
                     jump: Some(labels.clone()),
                 };
-                self.emit(instruction1);
-                self.emit(instruction2);
+                self.emit(instruction);
             }
             Stmt::CJump(op, lhs, rhs, t, f) => {
                 let instruction = Instruction::Operand {
@@ -108,19 +105,19 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
 
                 let suffix = match op {
-                    RelOp::Eq => "eq",
-                    RelOp::Ne => "ne",
-                    RelOp::Lt => "lt",
-                    RelOp::Le => "le",
-                    RelOp::Gt => "gt",
-                    RelOp::Ge => "ge",
-                    RelOp::Ult => "cc",
-                    RelOp::Ule => "ls",
-                    RelOp::Ugt => "hi",
-                    RelOp::Uge => "cs",
+                    RelOp::Eq => "je",
+                    RelOp::Ne => "jne",
+                    RelOp::Lt => "jl",
+                    RelOp::Le => "jle",
+                    RelOp::Gt => "jg",
+                    RelOp::Ge => "jge",
+                    RelOp::Ult => "jb",
+                    RelOp::Ule => "jbe",
+                    RelOp::Ugt => "ja",
+                    RelOp::Uge => "jae",
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("    b.{} {}", suffix, format_label(t)),
+                    assembly: format!("    {} {}", suffix, format_label(t)),
                     dst: vec![],
                     src: vec![],
                     jump: Some(vec![t.clone(), f.clone()]),
@@ -153,16 +150,16 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
             }
             Expr::Name(label) => {
-                let instruction = Instruction::Operand {
-                    assembly: format!("    adrp 'd0, {}@PAGE", format_label(label)),
-                    dst: vec![result],
-                    src: vec![],
-                    jump: None,
+                let assembly = match label {
+                    Label::Num(_) | Label::Fn(_, _) => {
+                        format!("    lea 'd0, {}[rip]", format_label(label))
+                    }
+                    Label::NamedFn(_) => {
+                        format!("    mov 'd0, {}@GOTPCREL[rip]", format_label(label))
+                    }
                 };
-                self.emit(instruction);
-
                 let instruction = Instruction::Operand {
-                    assembly: format!("    add 'd0, 'd0, {}@PAGEOFF", format_label(label)),
+                    assembly,
                     dst: vec![result],
                     src: vec![],
                     jump: None,
@@ -170,104 +167,90 @@ impl<'a> ARM64<'a> {
                 self.emit(instruction);
             }
             Expr::Temp(temp) => return Temp::from(temp),
-            Expr::BinOp(op, lhs, rhs) => {
+            Expr::BinOp(
+                op @ (BinOp::Plus
+                | BinOp::Minus
+                | BinOp::Mul
+                | BinOp::And
+                | BinOp::Or
+                | BinOp::XOr
+                | BinOp::LShift
+                | BinOp::ARShift
+                | BinOp::RShift),
+                lhs,
+                rhs,
+            ) => {
                 let opcode = match op {
                     BinOp::Plus => "add",
                     BinOp::Minus => "sub",
-                    BinOp::Mul => "mul",
-                    BinOp::Div => "sdiv",
+                    BinOp::Mul => "imul",
                     BinOp::And => "and",
-                    BinOp::Or => "orr",
-                    BinOp::LShift => "lsl",
-                    BinOp::RShift => "lsr",
-                    BinOp::ARShift => "asr",
-                    BinOp::XOr => "eor",
+                    BinOp::Or => "or",
+                    BinOp::LShift => "shl",
+                    BinOp::RShift => "shr",
+                    BinOp::ARShift => "sar",
+                    BinOp::XOr => "xor",
+                    _ => unreachable!(),
                 };
                 let instruction = Instruction::Operand {
-                    assembly: format!("    {} 'd0, 's0, 's1", opcode),
+                    assembly: "    mov 'd0, 's0".to_string(),
                     dst: vec![result],
-                    src: vec![self.munch_expr(lhs), self.munch_expr(rhs)],
+                    src: vec![self.munch_expr(lhs)],
+                    jump: None,
+                };
+                self.emit(instruction);
+
+                let instruction = Instruction::Operand {
+                    assembly: format!("    {} 'd0, 's0", opcode),
+                    dst: vec![result],
+                    src: vec![self.munch_expr(rhs), result],
+                    jump: None,
+                };
+                self.emit(instruction);
+            }
+            Expr::BinOp(BinOp::Div, lhs, rhs) => {
+                let instruction = Instruction::Operand {
+                    assembly: "    mov 'd0, 's0".to_string(),
+                    dst: vec![X86_64Frame::rax().into()],
+                    src: vec![self.munch_expr(lhs)],
+                    jump: None,
+                };
+                self.emit(instruction);
+
+                let instruction = Instruction::Operand {
+                    assembly: "    cqo".to_string(),
+                    dst: vec![X86_64Frame::rax().into(), X86_64Frame::rdx().into()],
+                    src: vec![],
+                    jump: None,
+                };
+                self.emit(instruction);
+
+                let instruction = Instruction::Operand {
+                    assembly: "    idiv 's0".to_string(),
+                    dst: vec![X86_64Frame::rax().into()],
+                    src: vec![self.munch_expr(rhs)],
                     jump: None,
                 };
                 self.emit(instruction);
             }
             Expr::Mem(expr, size) => {
-                assert_eq!(*size, ARM64Frame::WORD_SIZE);
+                assert_eq!(*size, X86_64Frame::WORD_SIZE);
 
                 let instruction = Instruction::Operand {
-                    assembly: "    ldr 'd0, ['s0, #0]".to_string(),
+                    assembly: "    mov 'd0, ['s0]".to_string(),
                     dst: vec![result],
                     src: vec![self.munch_expr(expr)],
                     jump: None,
                 };
                 self.emit(instruction);
             }
-            Expr::Call(name, args) if matches!(name.as_ref(), Expr::Name(_)) => {
-                let src = self.munch_args(args);
-                let name = match name.as_ref() {
-                    Expr::Name(name) => name,
-                    _ => unreachable!(),
-                };
-
-                // save fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    stp 's0, 's1, ['s2, #-16]!".to_string(),
-                    dst: vec![],
-                    src: vec![
-                        ARM64Frame::fp().into(),
-                        ARM64Frame::lr().into(),
-                        ARM64Frame::sp().into(),
-                    ],
-                    jump: None,
-                };
-                self.emit(instruction);
-
-                let dst = ARM64Frame::call_defs().iter().map(Temp::from).collect();
-                let instruction = Instruction::Operand {
-                    assembly: format!("    bl {}", format_label(name)),
-                    dst,
-                    src,
-                    jump: None,
-                };
-                self.emit(instruction);
-
-                let instruction = Instruction::Move {
-                    assembly: "    mov 'd0, 's0".to_string(),
-                    dst: result,
-                    src: Temp::from(ARM64Frame::rv()),
-                };
-                self.emit(instruction);
-
-                // load fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
-                    dst: vec![ARM64Frame::fp().into(), ARM64Frame::lr().into()],
-                    src: vec![ARM64Frame::sp().into()],
-                    jump: None,
-                };
-                self.emit(instruction);
-            }
-
             Expr::Call(name, args) => {
                 let mut src = vec![self.munch_expr(name)];
                 src.append(&mut self.munch_args(args));
 
-                // save fp and lr
+                let dst = X86_64Frame::call_defs().iter().map(Temp::from).collect();
                 let instruction = Instruction::Operand {
-                    assembly: "    stp 's0, 's1, ['s2, #-16]!".to_string(),
-                    dst: vec![],
-                    src: vec![
-                        ARM64Frame::fp().into(),
-                        ARM64Frame::lr().into(),
-                        ARM64Frame::sp().into(),
-                    ],
-                    jump: None,
-                };
-                self.emit(instruction);
-
-                let dst = ARM64Frame::call_defs().iter().map(Temp::from).collect();
-                let instruction = Instruction::Operand {
-                    assembly: "    blr 's0".to_string(),
+                    assembly: "    call 's0".to_string(),
                     dst,
                     src,
                     jump: None,
@@ -277,16 +260,7 @@ impl<'a> ARM64<'a> {
                 let instruction = Instruction::Move {
                     assembly: "    mov 'd0, 's0".to_string(),
                     dst: result,
-                    src: Temp::from(ARM64Frame::rv()),
-                };
-                self.emit(instruction);
-
-                // load fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
-                    dst: vec![ARM64Frame::fp().into(), ARM64Frame::lr().into()],
-                    src: vec![ARM64Frame::sp().into()],
-                    jump: None,
+                    src: Temp::from(X86_64Frame::rv()),
                 };
                 self.emit(instruction);
             }
@@ -300,12 +274,12 @@ impl<'a> ARM64<'a> {
     }
 }
 
-impl<'a> Codegen for ARM64<'a> {
-    type Frame = ARM64Frame;
+impl<'a> Codegen for X86_64<'a> {
+    type Frame = X86_64Frame;
     const MAIN_SYMBOL: &'static str = "main";
 
     fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
-        let mut codegen = ARM64::new(frame);
+        let mut codegen = X86_64::new(frame);
         codegen.munch_stmt(&stmt);
         codegen.instructions
     }
@@ -313,20 +287,27 @@ impl<'a> Codegen for ARM64<'a> {
     fn string(label: &Label, s: &str) -> String {
         let label = format_label(label);
 
+        // `.ascii ""` cause linker error. So use `.byte 0` when s is empty.
+        let str_directive = if s.is_empty() {
+            ".byte 0".to_string()
+        } else {
+            format!(".ascii \"{}\"", s)
+        };
+
         format!(
             r##"    .section    __TEXT,__const
 {}.STR:
-    .ascii "{}"
+    {}
 
     .section    __DATA,__data
     .p2align 3
 {}:
-    .xword {}
-    .xword {}.STR
+    .quad {}
+    .quad {}.STR
 
     .section	__TEXT,__text,regular,pure_instructions"##,
             label,
-            s,
+            str_directive,
             label,
             s.len(),
             label
@@ -334,7 +315,7 @@ impl<'a> Codegen for ARM64<'a> {
     }
 
     fn header() -> String {
-        String::new()
+        r##".intel_syntax noprefix"##.to_string()
     }
 }
 
@@ -405,8 +386,8 @@ mod tests {
         ];
 
         for (stmt, expected_dst, expected_src) in cases {
-            let frame = ARM64Frame::new(Label::Num(0), vec![]);
-            let mut codegen = ARM64::new(&frame);
+            let frame = X86_64Frame::new(Label::Num(0), vec![]);
+            let mut codegen = X86_64::new(&frame);
             codegen.munch_stmt(&stmt);
             let instructions = codegen.instructions;
             for instruction in instructions {

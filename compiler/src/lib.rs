@@ -16,12 +16,16 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    codegen::{aarch64_apple_darwin::ARM64 as ARM64Codegen, reg_alloc, Codegen},
+    codegen::{
+        aarch64_apple_darwin::ARM64 as ARM64Codegen, reg_alloc,
+        x86_64_apple_darwin::X86_64 as X86_64Codegen, Codegen,
+    },
     frame::{Fragment, Frame as _},
     semant::Semant,
 };
 
-pub const ARM64: PhantomData<ARM64Codegen> = PhantomData;
+pub const AARCH64_APPLE_DARWIN: PhantomData<ARM64Codegen> = PhantomData;
+pub const X86_64_APPLE_DARWIN: PhantomData<X86_64Codegen> = PhantomData;
 
 pub fn compile<C, N, R, O>(
     filename: N,
@@ -40,6 +44,8 @@ where
     let semantic_analyzer = Semant::<C::Frame>::new_with_base();
 
     let fragments = semantic_analyzer.trans_prog(ast, C::MAIN_SYMBOL)?;
+
+    writeln!(o, "{}", C::header())?;
 
     for fragment in fragments {
         match fragment {
