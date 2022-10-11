@@ -534,7 +534,7 @@ impl<F: Frame> Semant<F> {
                         expr: translate::num(0),
                         ty: CompleteType::Unit,
                     },
-                    1 => (transed.pop().unwrap()),
+                    1 => transed.pop().unwrap(),
                     _ => {
                         let ty = transed.last().unwrap().ty.clone();
                         let exprs = transed.into_iter().map(|e| e.expr).collect();
