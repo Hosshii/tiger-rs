@@ -1,6 +1,7 @@
 mod ctx;
 mod env;
 mod escape;
+mod hir;
 mod translate;
 mod types;
 
