@@ -3,8 +3,6 @@ use std::{fmt::Display, sync::atomic::AtomicU32};
 use crate::common::Symbol;
 use thiserror::Error;
 
-use super::env::Env;
-
 static TYPEID_GLOBAL: AtomicU32 = AtomicU32::new(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

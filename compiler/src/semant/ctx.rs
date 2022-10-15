@@ -48,12 +48,6 @@ impl TyCtx {
         env
     }
 
-    pub fn insert(&mut self, ty: Type) -> TypeId {
-        let id = TypeId::new_uniq();
-        self.insert_inner(id, ty);
-        id
-    }
-
     fn insert_inner(&mut self, id: TypeId, ty: Type) {
         let ty = Rc::new(ty);
         self.ty.insert(id, ty.clone());
@@ -72,19 +66,10 @@ impl TyCtx {
         self.insert_inner(id, ty);
     }
 
-    pub fn has_invalid_recursion(&self) -> bool {
-        !self.reserved.is_empty()
-    }
-
     pub fn type_(&self, id: TypeId) -> &Type {
         assert!(!self.reserved.contains(&id));
 
         // TODO
         self.ty.get(&id).expect("type not found")
-    }
-
-    pub fn type_id(&self, ty: &Type) -> Option<TypeId> {
-        // TODO
-        self.ty_rev.get(ty).copied()
     }
 }

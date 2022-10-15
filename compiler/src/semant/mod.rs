@@ -44,13 +44,6 @@ impl Error {
         }
     }
 
-    fn new_incomplete_type(pos: Positions, e: IncompleteTypeError) -> Self {
-        Self {
-            pos,
-            kind: e.into(),
-        }
-    }
-
     fn new_unexpected_func(pos: Positions, sym: Symbol) -> Self {
         Self {
             pos,
@@ -220,10 +213,6 @@ impl<F: Frame> Semant<F> {
         lhs.assignable(rhs)
     }
 
-    fn type_id(&self, ty: &Type) -> Option<TypeId> {
-        self.ty_ctx.type_id(ty)
-    }
-
     fn type_(&self, type_id: TypeId) -> &Type {
         self.ty_ctx.type_(type_id)
     }
@@ -266,33 +255,6 @@ impl<F: Frame> Semant<F> {
         }
     }
 
-    fn unify_type_id(&mut self, unify: &mut HashMap<TypeId, TypeId>) -> bool {
-        let start = unify
-            .keys()
-            .find(|v| unify.values().all(|w| w != *v))
-            .copied();
-        if let Some(start) = start {
-            let to = unify.remove(&start);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn detect_invalid_recursion(&self, iter: &[(Symbol, Positions)]) -> Result<()> {
-        if iter.is_empty() {
-            return Ok(());
-        }
-
-        if self.ty_ctx.has_invalid_recursion() {
-            let pos = iter[0].1;
-            let syms = iter.iter().map(|(s, _)| *s).collect();
-            Err(Error::new_invalid_recursion(syms, pos))
-        } else {
-            Ok(())
-        }
-    }
-
     fn is_brekable(&self) -> bool {
         self.break_count > 0
     }
@@ -326,7 +288,7 @@ impl<F: Frame> Semant<F> {
         break_label: Option<Label>,
     ) -> Result<Option<TransExpr>> {
         match decl {
-            Decl::Type(mut type_decls) => {
+            Decl::Type(type_decls) => {
                 let mut seen = HashSet::new();
 
                 for decl in type_decls.iter() {
@@ -383,7 +345,7 @@ impl<F: Frame> Semant<F> {
                     let type_id = self
                         .type_env
                         .look(sym)
-                        .expect(format!("type not found {}", sym).as_str());
+                        .unwrap_or_else(|| panic!("type not found {}", sym));
 
                     self.trans_type(*type_id, decl.ty)?;
                 }
@@ -445,7 +407,7 @@ impl<F: Frame> Semant<F> {
                         .map(|f| {
                             let ty_sym = Symbol::from(&f.type_id);
                             match self.type_env.look(ty_sym) {
-                                Some(ty) => Ok(ty.clone()),
+                                Some(ty) => Ok(*ty),
                                 None => Err(Error::new_undefined_item(f.pos, Item::Type, ty_sym)),
                             }
                         })
@@ -458,7 +420,7 @@ impl<F: Frame> Semant<F> {
                         Some(type_id) => {
                             let ty_sym = Symbol::from(type_id);
                             match self.type_env.look(ty_sym) {
-                                Some(t) => t.clone(),
+                                Some(t) => *t,
                                 None => {
                                     return Err(Error::new_undefined_item(
                                         func_decl.pos,
@@ -480,7 +442,7 @@ impl<F: Frame> Semant<F> {
                     levels.push(level.clone());
                     self.var_env.enter(
                         func_name,
-                        EnvEntry::new_func(level, label, formals.clone(), ret_type.clone()),
+                        EnvEntry::new_func(level, label, formals.clone(), ret_type),
                     );
                     header.push((formals, ret_type));
                     if !seen.insert(func_name) {
@@ -557,7 +519,7 @@ impl<F: Frame> Semant<F> {
                     },
                     1 => transed.pop().unwrap(),
                     _ => {
-                        let ty = transed.last().unwrap().ty.clone();
+                        let ty = transed.last().unwrap().ty;
                         let exprs = transed.into_iter().map(|e| e.expr).collect();
                         let expr = translate::sequence(exprs);
                         ExprType { expr, ty }
@@ -1040,7 +1002,7 @@ impl<F: Frame> Semant<F> {
                                 pos,
                                 Type::Record {
                                     fields: fields.clone(),
-                                    unique: unique.clone(),
+                                    unique: *unique,
                                 },
                                 sym,
                             )),

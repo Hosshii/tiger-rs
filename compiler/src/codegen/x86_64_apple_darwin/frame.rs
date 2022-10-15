@@ -294,7 +294,7 @@ impl Frame for X86 {
                 jump: None,
             },
             Instruction::Operand {
-                assembly: format!("    mov 'd0, 's0"),
+                assembly: "    mov 'd0, 's0".to_string(),
                 dst: vec![Self::fp().into()],
                 src: vec![Self::sp().into()],
                 jump: None,
@@ -315,7 +315,7 @@ impl Frame for X86 {
                 assembly: "// epilogue start".to_string(),
             },
             Instruction::Operand {
-                assembly: format!("    mov 'd0, 's0"),
+                assembly: "    mov 'd0, 's0".to_string(),
                 dst: vec![Self::sp().into()],
                 src: vec![Self::fp().into()],
                 jump: None,
