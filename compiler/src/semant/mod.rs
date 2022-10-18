@@ -11,23 +11,27 @@ use std::{
 };
 
 use crate::{
-    codegen::aarch64_apple_darwin::frame::ARM64,
     common::{Label, Positions, Symbol},
-    frame::{Fragment, Frame},
     parser::ast::{
-        Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
+        Decl as AstDecl, Expr as AstExpr, LValue as AstLValue, Operator, RecordField,
+        Type as AstType, TypeField as AstTypeField, VarDecl as AstVarDecl,
     },
+    semant::hir::FuncDecl,
 };
 use {
     env::Env,
     escape::EscapeFinder,
-    translate::{Access, Expr as TransExpr, Level, Translator},
+    hir::{Expr as HirExpr, ExprKind},
     types::{IncompleteTypeError, Type, Unique},
 };
 
 use thiserror::Error;
 
-use self::{ctx::TyCtx, types::TypeId};
+use self::{
+    ctx::TyCtx,
+    hir::{Decl, LValue, TypeDecl, TypeField, VarDecl},
+    types::TypeId,
+};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -178,24 +182,20 @@ impl Display for Item {
     }
 }
 
-pub struct Semant<F: Frame> {
-    var_env: Env<EnvEntry<F>>, // var and func env
-    type_env: Env<TypeId>,     // type env
+pub struct Semant {
+    var_env: Env<EnvEntry>, // var and func env
+    type_env: Env<TypeId>,  // type env
     ty_ctx: TyCtx,
     break_count: u32, // 0 means not inside break or while. greater than 1 means inside break or while
-    translator: Translator<F>,
 }
 
-impl Semant<ARM64> {}
-
-impl<F: Frame> Semant<F> {
-    pub fn new(var_base: Env<EnvEntry<F>>, type_base: Env<TypeId>, ty_ctx: TyCtx) -> Self {
+impl Semant {
+    pub fn new(var_base: Env<EnvEntry>, type_base: Env<TypeId>, ty_ctx: TyCtx) -> Self {
         Self {
             var_env: var_base,
             type_env: type_base,
             ty_ctx,
             break_count: 0,
-            translator: Translator::default(),
         }
     }
 
@@ -218,41 +218,30 @@ impl<F: Frame> Semant<F> {
         self.ty_ctx.type_(type_id)
     }
 
-    pub fn trans_prog(mut self, mut expr: AstExpr, main_name: &str) -> Result<Vec<Fragment<F>>> {
+    fn type_id(&self, sym: Symbol, pos: Positions) -> Result<&TypeId> {
+        self.type_env
+            .look(sym)
+            .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))
+    }
+
+    pub fn trans_prog(mut self, mut expr: AstExpr) -> Result<(HirExpr, TyCtx)> {
         EscapeFinder::find_escape(&mut expr);
 
         // if body returns int, then use that value as exit code.
         // otherwise use 0 as exit code.
-        let mut main_level =
-            Level::outermost_with_name(Label::with_named_fn(main_name.to_string()));
-        let body = self.trans_expr(expr, &mut main_level, None)?;
-        let body = if body.ty == TypeId::int() {
-            body
-        } else {
-            let seq = vec![body.expr, translate::num(0)];
-            let expr = translate::sequence(seq);
-            ExprType {
-                expr,
-                ty: TypeId::int(),
-            }
-        };
-
-        self.translator.proc_entry_exit(main_level, body.expr);
-
-        Ok(self.translator.get_result())
+        let expr = self.trans_expr(expr)?;
+        Ok((expr, self.ty_ctx))
     }
 
     fn check_type(&self, actual: TypeId, expected: &[TypeId], pos: Positions) -> Result<()> {
         if expected.iter().any(|e| e == &actual) {
             Ok(())
         } else {
-            Err(Error {
+            Err(Error::new_unexpected_type(
                 pos,
-                kind: ErrorKind::UnExpectedType(
-                    expected.iter().map(|v| self.type_(*v)).cloned().collect(),
-                    self.type_(actual).clone(),
-                ),
-            })
+                expected.iter().map(|v| self.type_(*v)).cloned().collect(),
+                self.type_(actual).clone(),
+            ))
         }
     }
 
@@ -282,14 +271,9 @@ impl<F: Frame> Semant<F> {
         result
     }
 
-    fn trans_decl(
-        &mut self,
-        decl: Decl,
-        parent_level: &mut Level<F>,
-        break_label: Option<Label>,
-    ) -> Result<Option<TransExpr>> {
+    fn trans_decl(&mut self, decl: AstDecl) -> Result<Decl> {
         match decl {
-            Decl::Type(type_decls) => {
+            AstDecl::Type(type_decls) => {
                 let mut seen = HashSet::new();
 
                 for decl in type_decls.iter() {
@@ -324,10 +308,10 @@ impl<F: Frame> Semant<F> {
                     });
 
                     if let Some(idx) = leaf {
-                        let (lhs, rhs, _) = aliases.swap_remove(idx);
+                        let (lhs, rhs, pos) = aliases.swap_remove(idx);
                         let lhs = Symbol::from(lhs);
                         let rhs = Symbol::from(rhs);
-                        let type_id = self.type_env.look(rhs).unwrap();
+                        let type_id = self.type_id(rhs, pos)?;
                         self.type_env.enter(lhs, *type_id);
                     } else {
                         break;
@@ -340,24 +324,64 @@ impl<F: Frame> Semant<F> {
                 }
 
                 // Resolve record and array.
-                for decl in type_decls.into_iter() {
-                    let id = decl.id;
+                for decl in type_decls.iter() {
+                    let id = &decl.id;
                     let sym = Symbol::from(id);
-                    let type_id = self
-                        .type_env
-                        .look(sym)
-                        .unwrap_or_else(|| panic!("type not found {}", sym));
+                    let &type_id = self.type_id(sym, decl.pos)?;
 
-                    self.trans_type(*type_id, decl.ty)?;
+                    match &decl.ty {
+                        AstType::Fields(fields, _) => {
+                            let fields = fields
+                                .iter()
+                                .map(|f| {
+                                    let name = Symbol::from(&f.id);
+                                    let _type = Symbol::from(&f.type_id);
+                                    let _type = self.type_id(_type, f.pos).copied();
+                                    _type.map(|v| (name, v))
+                                })
+                                .collect::<Result<Vec<_>>>()?;
+
+                            let ty = Type::Record {
+                                fields,
+                                unique: Unique::new(),
+                            };
+
+                            self.ty_ctx.set_reserved(type_id, ty);
+                        }
+
+                        AstType::Array(type_ident, pos) => {
+                            let sym = Symbol::from(type_ident);
+                            let &elem_ty = self.type_id(sym, *pos)?;
+
+                            let ty = Type::Array {
+                                ty: elem_ty,
+                                unique: Unique::new(),
+                            };
+
+                            self.ty_ctx.set_reserved(type_id, ty);
+                        }
+                        AstType::Id(_, _) => (),
+                    }
                 }
 
-                Ok(None)
-            }
-            Decl::Var(VarDecl(id, is_escape, ty, expr, pos)) => {
-                let sym = Symbol::from(id);
-                let expr = self.trans_expr(expr, parent_level, break_label)?;
+                let mut converted = Vec::new();
+                for decl in type_decls {
+                    let sym = Symbol::from(&decl.id);
+                    let &type_id = self.type_id(sym, decl.pos)?;
+                    converted.push(TypeDecl {
+                        id: decl.id.into(),
+                        type_id,
+                        pos: decl.pos,
+                    })
+                }
 
-                if let Some(type_id) = ty {
+                Ok(Decl::Type(converted))
+            }
+            AstDecl::Var(AstVarDecl(id, is_escape, ty, expr, pos)) => {
+                let sym = Symbol::from(id.clone());
+                let expr = self.trans_expr(expr)?;
+
+                if let Some(ref type_id) = ty {
                     let ty_symbol = Symbol::from(type_id);
                     match self.type_env.look(ty_symbol) {
                         Some(expected_ty) => {
@@ -388,17 +412,20 @@ impl<F: Frame> Semant<F> {
                     }
                 }
 
-                let access = translate::alloc_local(parent_level.clone(), is_escape);
-                self.var_env
-                    .enter(sym, EnvEntry::new_var(access.clone(), expr.ty));
-                let lhs = translate::var_decl(access, expr.expr);
+                self.var_env.enter(sym, EnvEntry::new_var(expr.ty));
 
-                Ok(Some(lhs))
+                Ok(Decl::Var(VarDecl(
+                    id,
+                    is_escape,
+                    ty.map(Into::into),
+                    expr.ty,
+                    expr,
+                    pos,
+                )))
             }
-            Decl::Func(fn_decls) => {
+            AstDecl::Func(fn_decls) => {
                 let mut header = vec![];
                 let mut seen = HashSet::new();
-                let mut levels = vec![];
                 for func_decl in fn_decls.iter() {
                     // enter function defs
                     let func_name = Symbol::from(&func_decl.name);
@@ -407,43 +434,22 @@ impl<F: Frame> Semant<F> {
                         .iter()
                         .map(|f| {
                             let ty_sym = Symbol::from(&f.type_id);
-                            match self.type_env.look(ty_sym) {
-                                Some(ty) => Ok(*ty),
-                                None => Err(Error::new_undefined_item(f.pos, Item::Type, ty_sym)),
-                            }
+                            self.type_id(ty_sym, f.pos).copied()
                         })
                         .collect::<Result<Vec<_>>>()?;
-
-                    let formals_is_escape: Vec<_> =
-                        func_decl.params.iter().map(|p| p.is_escape).collect();
 
                     let ret_type = match &func_decl.ret_type {
                         Some(type_id) => {
                             let ty_sym = Symbol::from(type_id);
-                            match self.type_env.look(ty_sym) {
-                                Some(t) => *t,
-                                None => {
-                                    return Err(Error::new_undefined_item(
-                                        func_decl.pos,
-                                        Item::Type,
-                                        ty_sym,
-                                    ));
-                                }
-                            }
+                            self.type_id(ty_sym, func_decl.pos).copied()?
                         }
                         None => TypeId::unit(),
                     };
 
                     let label = Label::new_fn(func_name.name().as_ref());
-                    let level = translate::new_level(
-                        parent_level.clone(),
-                        label.clone(),
-                        formals_is_escape,
-                    );
-                    levels.push(level.clone());
                     self.var_env.enter(
                         func_name,
-                        EnvEntry::new_func(level, label, formals.clone(), ret_type),
+                        EnvEntry::new_func(label, formals.clone(), ret_type),
                     );
                     header.push((formals, ret_type));
                     if !seen.insert(func_name) {
@@ -453,109 +459,107 @@ impl<F: Frame> Semant<F> {
 
                 assert_eq!(header.len(), fn_decls.len());
 
-                for ((func_decl, (formals, ret_type)), mut level) in fn_decls
-                    .into_iter()
-                    .zip(header.into_iter())
-                    .zip(levels.into_iter())
+                let mut converted = Vec::new();
+                for (func_decl, (formals, ret_type)) in fn_decls.into_iter().zip(header.into_iter())
                 {
                     // function body
 
-                    self.new_scope(|_self| {
-                        for ((ty, f), access) in formals
-                            .into_iter()
-                            .zip(func_decl.params.into_iter())
-                            .zip(level.formals())
-                        {
-                            let sym = Symbol::from(f.id);
-                            _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
+                    let body = self.new_scope(|_self| {
+                        for (&ty, f) in formals.iter().zip(func_decl.params.iter()) {
+                            let sym = Symbol::from(&f.id);
+                            _self.var_env.enter(sym, EnvEntry::new_var(ty))
                         }
 
-                        let ty =
-                            _self.trans_expr(func_decl.body, &mut level, break_label.clone())?;
+                        let ty = _self.trans_expr(func_decl.body)?;
 
-                        if ty.ty != ret_type {
-                            Err(Error::new_unexpected_type(
-                                func_decl.pos,
-                                vec![_self.type_(ret_type).clone()],
-                                _self.type_(ty.ty).clone(),
-                            ))
-                        } else {
-                            _self.translator.proc_entry_exit(level, ty.expr);
-                            Ok(())
-                        }
+                        _self.check_type(ty.ty, &[ret_type], func_decl.pos)?;
+                        Ok(ty)
                     })?;
+
+                    let mut formals = Vec::new();
+                    for param in func_decl.params {
+                        formals.push(self.trans_type_field(param)?);
+                    }
+                    converted.push(FuncDecl {
+                        name: func_decl.name,
+                        params: formals,
+                        ret_type: func_decl.ret_type.map(Into::into),
+                        re_type_id: ret_type,
+                        body,
+                        pos: func_decl.pos,
+                    })
                 }
 
-                Ok(None)
+                Ok(Decl::Func(converted))
             }
         }
     }
 
-    fn trans_expr(
-        &mut self,
-        expr: AstExpr,
-        level: &mut Level<F>,
-        break_label: Option<Label>,
-    ) -> Result<ExprType> {
+    fn trans_expr(&mut self, expr: AstExpr) -> Result<ExprType> {
         match expr {
-            AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue, level, break_label),
+            AstExpr::LValue(lvalue, pos) => {
+                let (lvalue, ty) = self.trans_lvalue(lvalue)?;
+                Ok(ExprType {
+                    expr: ExprKind::LValue(lvalue, pos),
+                    ty,
+                })
+            }
 
-            AstExpr::Nil(_) => Ok(ExprType {
-                expr: translate::num(0),
+            AstExpr::Nil(pos) => Ok(ExprType {
+                expr: ExprKind::Nil(pos),
                 ty: TypeId::nil(),
             }),
 
             // exprs.len() may be 0.
-            AstExpr::Sequence(exprs, _) => {
+            AstExpr::Sequence(exprs, pos) => {
                 // TODO: refactor
                 let mut transed = exprs
                     .into_iter()
-                    .map(|e| self.trans_expr(e, level, break_label.clone()))
+                    .map(|e| self.trans_expr(e))
                     .collect::<Result<Vec<_>>>()?;
 
                 let expr_type = match transed.len() {
                     0 => ExprType {
-                        expr: translate::num(0),
+                        expr: ExprKind::Int(0, pos),
                         ty: TypeId::unit(),
                     },
                     1 => transed.pop().unwrap(),
                     _ => {
                         let ty = transed.last().unwrap().ty;
-                        let exprs = transed.into_iter().map(|e| e.expr).collect();
-                        let expr = translate::sequence(exprs);
-                        ExprType { expr, ty }
+                        let pos = transed.last().unwrap().pos();
+                        ExprType {
+                            expr: ExprKind::Sequence(transed, pos),
+                            ty,
+                        }
                     }
                 };
 
                 Ok(expr_type)
             }
 
-            AstExpr::Int(num, _) => Ok(ExprType {
-                expr: translate::num(num as i64),
+            AstExpr::Int(num, pos) => Ok(ExprType {
+                expr: ExprKind::Int(num, pos),
                 ty: TypeId::int(),
             }),
 
-            AstExpr::Str(lit, _) => Ok(ExprType {
-                expr: self.translator.string_literal(lit.to_string()),
+            AstExpr::Str(lit, pos) => Ok(ExprType {
+                expr: ExprKind::Str(lit, pos),
                 ty: TypeId::string(),
             }),
 
             AstExpr::FuncCall(ident, args, pos) => {
-                let sym = Symbol::from(ident);
+                let sym = Symbol::from(ident.clone());
                 let args_len = args.len();
 
                 // proceed trans_expr first for ownership reason.
                 let arg_iter = args
                     .into_iter()
-                    .map(|e| self.trans_expr(e, level, break_label.clone()))
+                    .map(|e| self.trans_expr(e))
                     .collect::<Result<Vec<_>>>()?;
 
                 match self.var_env.look(sym) {
                     Some(EnvEntry::Func {
-                        level: fn_level,
-                        label,
-                        formals,
-                        result,
+                        formals, result, ..
                     }) => {
                         if args_len != formals.len() {
                             return Err(Error::new_mismatch_arg_count(
@@ -580,15 +584,10 @@ impl<F: Frame> Semant<F> {
                                     self.type_(*actual).clone(),
                                 ))
                             }
-                            None => {
-                                let args = arg_iter.into_iter().map(|v| v.expr).collect();
-                                let fn_exp =
-                                    translate::fn_call(label.clone(), fn_level, level, args);
-                                Ok(ExprType {
-                                    expr: fn_exp,
-                                    ty: *result,
-                                })
-                            }
+                            None => Ok(ExprType {
+                                expr: ExprKind::FuncCall(ident, arg_iter, pos),
+                                ty: *result,
+                            }),
                         }
                     }
 
@@ -609,12 +608,12 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                let lhs = self.trans_expr(*lhs, level, break_label.clone())?;
-                let rhs = self.trans_expr(*rhs, level, break_label)?;
+                let lhs = self.trans_expr(*lhs)?;
+                let rhs = self.trans_expr(*rhs)?;
                 self.check_type(lhs.ty, &[TypeId::int()], pos)?;
                 self.check_type(rhs.ty, &[TypeId::int()], pos)?;
                 Ok(ExprType {
-                    expr: translate::bin_op(op.try_into().expect("convert op"), lhs.expr, rhs.expr),
+                    expr: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                     ty: TypeId::int(),
                 })
             }
@@ -626,24 +625,12 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                let lhs = self.trans_expr(*lhs, level, break_label.clone())?;
-                let rhs = self.trans_expr(*rhs, level, break_label)?;
+                let lhs = self.trans_expr(*lhs)?;
+                let rhs = self.trans_expr(*rhs)?;
 
                 match (self.type_(lhs.ty), self.type_(rhs.ty)) {
-                    (Type::Int, Type::Int) => Ok(ExprType {
-                        expr: translate::rel_op(
-                            op.try_into().expect("convert op"),
-                            lhs.expr,
-                            rhs.expr,
-                        ),
-                        ty: TypeId::int(),
-                    }),
-                    (Type::String, Type::String) => Ok(ExprType {
-                        expr: translate::string_ord::<F>(
-                            op.try_into().expect("convert op"),
-                            lhs.expr,
-                            rhs.expr,
-                        ),
+                    (Type::Int, Type::Int) | (Type::String, Type::String) => Ok(ExprType {
+                        expr: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                         ty: TypeId::int(),
                     }),
                     other => Err(Error::new_unexpected_type(
@@ -656,20 +643,11 @@ impl<F: Frame> Semant<F> {
 
             // compare two type
             AstExpr::Op(op @ (Operator::Eq | Operator::Neq), lhs, rhs, pos) => {
-                let lhs = self.trans_expr(*lhs, level, break_label.clone())?;
-                let rhs = self.trans_expr(*rhs, level, break_label)?;
+                let lhs = self.trans_expr(*lhs)?;
+                let rhs = self.trans_expr(*rhs)?;
                 if self.assignable(lhs.ty, rhs.ty) {
-                    let expr = if lhs.ty == TypeId::string() {
-                        translate::string_eq::<F>(
-                            op.try_into().expect("convert op"),
-                            lhs.expr,
-                            rhs.expr,
-                        )
-                    } else {
-                        translate::rel_op(op.try_into().expect("convert op"), lhs.expr, rhs.expr)
-                    };
                     Ok(ExprType {
-                        expr,
+                        expr: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                         ty: TypeId::int(),
                     })
                 } else {
@@ -681,19 +659,19 @@ impl<F: Frame> Semant<F> {
                 }
             }
 
-            AstExpr::Neg(e, _) => {
-                let pos = e.pos();
-                let expr_ty = self.trans_expr(*e, level, break_label)?;
-                self.check_type(expr_ty.ty, &[TypeId::int()], pos)?;
+            AstExpr::Neg(e, pos) => {
+                let expr = self.trans_expr(*e)?;
+                self.check_type(expr.ty, &[TypeId::int()], pos)?;
 
+                let ty = expr.ty;
                 Ok(ExprType {
-                    expr: translate::neg(expr_ty.expr),
-                    ty: expr_ty.ty,
+                    expr: ExprKind::Neg(Box::new(expr), pos),
+                    ty,
                 })
             }
 
-            AstExpr::RecordCreation(type_id, actual_fields, pos) => {
-                let sym = Symbol::from(type_id);
+            AstExpr::RecordCreation(type_ident, actual_fields, pos) => {
+                let sym = Symbol::from(&type_ident);
                 match self.type_env.look(sym) {
                     Some(&type_id) => {
                         let ty = self.type_(type_id);
@@ -709,7 +687,7 @@ impl<F: Frame> Semant<F> {
                                 let ty = ty.clone();
                                 let mut exprs = Vec::new();
                                 for RecordField { id, expr, pos } in actual_fields {
-                                    let actual_sym = Symbol::from(id);
+                                    let actual_sym = Symbol::from(id.clone());
                                     match expected_map.remove(&actual_sym) {
                                         None => {
                                             return Err(Error::new_missing_field(
@@ -718,29 +696,32 @@ impl<F: Frame> Semant<F> {
                                         }
 
                                         Some(expected_field_type) => {
-                                            let ExprType {
-                                                ty: actual_field_type,
-                                                expr,
-                                            } =
-                                                self.trans_expr(expr, level, break_label.clone())?;
+                                            let expr = self.trans_expr(expr)?;
 
-                                            if !self
-                                                .assignable(expected_field_type, actual_field_type)
-                                            {
+                                            if !self.assignable(expected_field_type, expr.ty) {
                                                 return Err(Error::new_unexpected_type(
                                                     pos,
                                                     vec![self.type_(expected_field_type).clone()],
-                                                    self.type_(actual_field_type).clone(),
+                                                    self.type_(expr.ty).clone(),
                                                 ));
                                             }
-                                            exprs.push(expr);
+                                            exprs.push(hir::RecordField {
+                                                ident: id,
+                                                expr,
+                                                field_type: expected_field_type,
+                                                pos,
+                                            });
                                         }
                                     }
                                 }
 
                                 if expected_map.is_empty() {
                                     Ok(ExprType {
-                                        expr: translate::record_creation::<F>(exprs),
+                                        expr: ExprKind::RecordCreation(
+                                            type_ident.into(),
+                                            exprs,
+                                            pos,
+                                        ),
                                         ty: type_id,
                                     })
                                 } else {
@@ -762,12 +743,12 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::ArrayCreation {
-                type_id,
+                type_id: type_ident,
                 size,
                 init,
                 pos,
             } => {
-                let sym = Symbol::from(type_id);
+                let sym = Symbol::from(&type_ident);
                 match self.type_env.look(sym) {
                     Some(&type_id) => {
                         let ty = self.type_(type_id).clone();
@@ -775,15 +756,20 @@ impl<F: Frame> Semant<F> {
                         match ty {
                             Type::Array { ty: elem_ty, .. } => {
                                 let size_pos = size.pos();
-                                let size = self.trans_expr(*size, level, break_label.clone())?;
+                                let size = self.trans_expr(*size)?;
                                 self.check_type(size.ty, &[TypeId::int()], size_pos)?;
 
                                 let init_pos = init.pos();
-                                let init = self.trans_expr(*init, level, break_label)?;
+                                let init = self.trans_expr(*init)?;
                                 self.check_type(init.ty, &[elem_ty], init_pos)?;
 
                                 Ok(ExprType {
-                                    expr: translate::array_creation::<F>(size.expr, init.expr),
+                                    expr: ExprKind::ArrayCreation {
+                                        type_ident: type_ident.into(),
+                                        size: Box::new(size),
+                                        init: Box::new(init),
+                                        pos,
+                                    },
                                     ty: type_id,
                                 })
                             }
@@ -799,38 +785,31 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Assign(lvalue, expr, pos) => {
-                let lhs = self.trans_lvalue(lvalue, level, break_label.clone())?;
-                let rhs = self.trans_expr(*expr, level, break_label)?;
-                if lhs.ty == rhs.ty {
-                    Ok(ExprType {
-                        expr: translate::assign(lhs.expr, rhs.expr),
-                        ty: TypeId::unit(),
-                    })
-                } else {
-                    Err(Error::new_unexpected_type(
-                        pos,
-                        vec![self.type_(lhs.ty).clone()],
-                        self.type_(rhs.ty).clone(),
-                    ))
-                }
+                let (lvalue, type_id) = self.trans_lvalue(lvalue)?;
+
+                let rhs = self.trans_expr(*expr)?;
+                self.check_type(rhs.ty, &[type_id], pos)?;
+                Ok(ExprType {
+                    expr: ExprKind::Assign(lvalue, Box::new(rhs), pos),
+                    ty: TypeId::unit(),
+                })
             }
 
             AstExpr::If {
                 cond,
                 then,
                 els,
-                pos: _,
+                pos,
             } => {
                 let cond_pos = cond.pos();
-                let cond = self.trans_expr(*cond, level, break_label.clone())?;
+                let cond = self.trans_expr(*cond)?;
                 self.check_type(cond.ty, &[TypeId::int()], cond_pos)?;
 
-                let then_pos = then.pos();
-                let then = self.trans_expr(*then, level, break_label.clone())?;
+                let then = self.trans_expr(*then)?;
                 match els {
                     Some(els) => {
                         let els_pos = els.pos();
-                        let els = self.trans_expr(*els, level, break_label)?;
+                        let els = self.trans_expr(*els)?;
 
                         if !self.assignable(then.ty, els.ty) {
                             Err(Error::new_unexpected_type(
@@ -840,45 +819,42 @@ impl<F: Frame> Semant<F> {
                             ))
                         } else {
                             Ok(ExprType {
-                                expr: translate::if_expr(
-                                    level,
-                                    cond.expr,
-                                    then.expr,
-                                    Some(els.expr),
-                                ),
                                 ty: then.ty,
+                                expr: ExprKind::If {
+                                    cond: Box::new(cond),
+                                    then: Box::new(then),
+                                    els: Some(Box::new(els)),
+                                    pos,
+                                },
                             })
                         }
                     }
                     None => {
-                        if then.ty == TypeId::unit() {
-                            Ok(ExprType {
-                                expr: translate::if_expr(level, cond.expr, then.expr, None),
-                                ty: TypeId::unit(),
-                            })
-                        } else {
-                            Err(Error::new_unexpected_type(
-                                then_pos,
-                                vec![Type::Unit],
-                                self.type_(then.ty).clone(),
-                            ))
-                        }
+                        self.check_type(then.ty, &[TypeId::unit()], pos)?;
+                        Ok(ExprType {
+                            expr: ExprKind::If {
+                                cond: Box::new(cond),
+                                then: Box::new(then),
+                                els: None,
+                                pos,
+                            },
+                            ty: TypeId::unit(),
+                        })
                     }
                 }
             }
 
-            AstExpr::While(cond, then, _) => self.new_break_scope(|_self| {
+            AstExpr::While(cond, then, pos) => self.new_break_scope(|_self| {
                 let cond_pos = cond.pos();
-                let cond = _self.trans_expr(*cond, level, break_label)?;
+                let cond = _self.trans_expr(*cond)?;
                 _self.check_type(cond.ty, &[TypeId::int()], cond_pos)?;
 
-                let inner_break_label = Label::new();
                 let then_pos = then.pos();
-                let then = _self.trans_expr(*then, level, Some(inner_break_label.clone()))?;
+                let then = _self.trans_expr(*then)?;
                 _self.check_type(then.ty, &[TypeId::unit()], then_pos)?;
 
                 Ok(ExprType {
-                    expr: translate::while_expr(cond.expr, then.expr, inner_break_label),
+                    expr: ExprKind::While(Box::new(cond), Box::new(then), pos),
                     ty: TypeId::unit(),
                 })
             }),
@@ -891,62 +867,38 @@ impl<F: Frame> Semant<F> {
                 then,
                 pos,
             } => {
-                // convert
-                //
-                //   for id := `from` to `to` do then
-                //
-                // into
-                //
-                //   let
-                //     id := from
-                //     __id__limit := to
-                //   in
-                //     while id < __id__limit do (
-                //       then;
-                //       id := id + 1;
-                //     )
-                //   end
-                let limit_id = Ident::new(format!("__{}__limit", id));
-                let new_ast = AstExpr::Let(
-                    vec![
-                        Decl::Var(VarDecl(id.clone(), is_escape, None, *from, pos)),
-                        Decl::Var(VarDecl(limit_id.clone(), false, None, *to, pos)),
-                    ],
-                    vec![AstExpr::While(
-                        Box::new(AstExpr::Op(
-                            Operator::Le,
-                            Box::new(AstExpr::LValue(LValue::Var(id.clone(), pos), pos)),
-                            Box::new(AstExpr::LValue(LValue::Var(limit_id, pos), pos)),
-                            pos,
-                        )),
-                        Box::new(AstExpr::Sequence(
-                            vec![
-                                *then,
-                                AstExpr::Assign(
-                                    LValue::Var(id.clone(), pos),
-                                    Box::new(AstExpr::Op(
-                                        Operator::Plus,
-                                        Box::new(AstExpr::LValue(LValue::Var(id, pos), pos)),
-                                        Box::new(AstExpr::Int(1, pos)),
-                                        pos,
-                                    )),
-                                    pos,
-                                ),
-                            ],
-                            pos,
-                        )),
-                        pos,
-                    )],
-                    pos,
-                );
+                let from = self.trans_expr(*from)?;
+                self.check_type(from.ty, &[TypeId::int()], from.pos())?;
 
-                self.trans_expr(new_ast, level, break_label)
+                let to = self.trans_expr(*to)?;
+                self.check_type(to.ty, &[TypeId::int()], to.pos())?;
+
+                let then = self.new_break_scope(|_self| {
+                    let sym = Symbol::from(&id);
+                    _self.var_env.enter(sym, EnvEntry::new_var(TypeId::int()));
+
+                    let then = _self.trans_expr(*then)?;
+                    _self.check_type(then.ty, &[TypeId::unit()], then.pos())?;
+                    Ok(then)
+                })?;
+
+                Ok(ExprType {
+                    expr: ExprKind::For {
+                        id,
+                        is_escape,
+                        from: Box::new(from),
+                        to: Box::new(to),
+                        then: Box::new(then),
+                        pos,
+                    },
+                    ty: TypeId::unit(),
+                })
             }
 
             AstExpr::Break(pos) => {
                 if self.is_brekable() {
                     Ok(ExprType {
-                        expr: translate::break_expr(break_label.expect("break label")),
+                        expr: ExprKind::Break(pos),
                         ty: TypeId::unit(),
                     })
                 } else {
@@ -955,49 +907,45 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Let(decls, exprs, pos) => self.new_scope(|_self| {
-                let mut decls_expr = Vec::new();
+                let mut converted_decls = Vec::new();
                 for decl in decls {
-                    let decl = _self.trans_decl(decl, level, break_label.clone())?;
-                    if let Some(stmt) = decl {
-                        decls_expr.push(stmt);
-                    }
+                    let decl = _self.trans_decl(decl)?;
+                    converted_decls.push(decl);
                 }
-                let body = _self.trans_expr(AstExpr::Sequence(exprs, pos), level, break_label)?;
+
+                let mut converted_exprs = Vec::new();
+                for expr in exprs {
+                    converted_exprs.push(_self.trans_expr(expr)?);
+                }
+                let ty = if let Some(e) = converted_exprs.last() {
+                    e.ty
+                } else {
+                    TypeId::unit()
+                };
                 Ok(ExprType {
-                    expr: translate::let_expr(decls_expr, body.expr),
-                    ty: body.ty,
+                    expr: ExprKind::Let(converted_decls, converted_exprs, pos),
+                    ty,
                 })
             }),
         }
     }
 
-    fn trans_lvalue(
-        &mut self,
-        var: LValue,
-        level: &mut Level<F>,
-        break_label: Option<Label>,
-    ) -> Result<ExprType> {
+    fn trans_lvalue(&mut self, var: AstLValue) -> Result<(LValue, TypeId)> {
         match var {
-            LValue::Var(id, pos) => {
-                let sym = Symbol::from(id);
+            AstLValue::Var(id, pos) => {
+                let sym = Symbol::from(id.clone());
                 match self.var_env.look(sym) {
-                    Some(EnvEntry::Var { access, ty }) => Ok(ExprType {
-                        expr: translate::simple_var(access.clone(), level),
-                        ty: *ty,
-                    }),
+                    Some(EnvEntry::Var { ty }) => Ok((LValue::Var(id, *ty, pos), *ty)),
                     Some(_) => Err(Error::new_unexpected_func(pos, sym)),
                     None => Err(Error::new_undefined_item(pos, Item::Var, sym)),
                 }
             }
-            LValue::RecordField(lvar, id, pos) => {
-                let ExprType { ty, expr } = self.trans_lvalue(*lvar, level, break_label)?;
-                let sym = Symbol::from(id);
+            AstLValue::RecordField(lvar, id, pos) => {
+                let (lvar, ty) = self.trans_lvalue(*lvar)?;
+                let sym = Symbol::from(&id);
                 match self.type_(ty) {
                     Type::Record { fields, unique } => {
-                        let field = fields
-                            .iter()
-                            .enumerate()
-                            .find(|(_, (_sym, _))| _sym == &sym);
+                        let field = fields.iter().find(|(_sym, _)| _sym == &sym);
                         match field {
                             None => Err(Error::new_missing_field(
                                 pos,
@@ -1007,10 +955,16 @@ impl<F: Frame> Semant<F> {
                                 },
                                 sym,
                             )),
-                            Some((field_index, (_, ty))) => Ok(ExprType {
-                                expr: translate::record_field::<F>(expr, field_index),
-                                ty: *ty,
-                            }),
+                            Some((_, field_type)) => Ok((
+                                LValue::RecordField {
+                                    record: Box::new(lvar),
+                                    record_type: ty,
+                                    field_ident: id,
+                                    field_type: *field_type,
+                                    pos,
+                                },
+                                *field_type,
+                            )),
                         }
                     }
                     other => Err(Error::new_unexpected_type(
@@ -1020,25 +974,28 @@ impl<F: Frame> Semant<F> {
                     )),
                 }
             }
-            LValue::Array(lvar, expr, pos) => {
-                let ExprType {
-                    ty,
-                    expr: subscript,
-                } = self.trans_expr(*expr, level, break_label.clone())?;
-                if ty != TypeId::int() {
+            AstLValue::Array(lvar, expr, pos) => {
+                let index_expr = self.trans_expr(*expr)?;
+                if index_expr.ty != TypeId::int() {
                     return Err(Error::new_unexpected_type(
                         pos,
                         vec![Type::Int],
-                        self.type_(ty).clone(),
+                        self.type_(index_expr.ty).clone(),
                     ));
                 }
 
-                let ExprType { ty, expr: var } = self.trans_lvalue(*lvar, level, break_label)?;
-                match self.type_(ty) {
-                    Type::Array { ty, unique: _ } => Ok(ExprType {
-                        expr: translate::array_subscript::<F>(var, subscript),
-                        ty: *ty,
-                    }),
+                let (lvar, arr_ty) = self.trans_lvalue(*lvar)?;
+                match self.type_(arr_ty) {
+                    Type::Array { ty, unique: _ } => Ok((
+                        LValue::Array {
+                            array: Box::new(lvar),
+                            array_type: arr_ty,
+                            index_type: index_expr.ty,
+                            index: Box::new(index_expr),
+                            pos,
+                        },
+                        *ty,
+                    )),
                     other => Err(Error::new_unexpected_type(
                         pos,
                         vec![Type::dummy_array()],
@@ -1049,84 +1006,40 @@ impl<F: Frame> Semant<F> {
         }
     }
 
-    fn trans_type(&mut self, type_id: TypeId, ast_type: AstType) -> Result<()> {
-        match ast_type {
-            AstType::Id(type_ident, pos) => {
-                let sym = Symbol::from(type_ident);
-                if self.type_env.look(sym).is_some() {
-                    Ok(())
-                } else {
-                    Err(Error::new_undefined_item(pos, Item::Type, sym))
-                }
-            }
+    fn trans_type_field(&self, field: AstTypeField) -> Result<TypeField> {
+        let ty_sym = Symbol::from(&field.type_id);
 
-            AstType::Fields(fields, _) => {
-                let fields = fields
-                    .into_iter()
-                    .map(|f| {
-                        let name = Symbol::from(f.id);
-                        let _type = Symbol::from(f.type_id);
-                        let _type = self
-                            .type_env
-                            .look(_type)
-                            .cloned()
-                            .ok_or_else(|| Error::new_undefined_item(f.pos, Item::Type, _type));
-                        _type.map(|v| (name, v))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+        let type_id = self.type_id(ty_sym, field.pos)?;
 
-                let ty = Type::Record {
-                    fields,
-                    unique: Unique::new(),
-                };
-
-                self.ty_ctx.set_reserved(type_id, ty);
-
-                Ok(())
-            }
-
-            AstType::Array(type_ident, pos) => {
-                let sym = Symbol::from(type_ident);
-                let elem_ty = self
-                    .type_env
-                    .look(sym)
-                    .cloned()
-                    .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))?;
-
-                let ty = Type::Array {
-                    ty: elem_ty,
-                    unique: Unique::new(),
-                };
-
-                self.ty_ctx.set_reserved(type_id, ty);
-                Ok(())
-            }
-        }
+        Ok(TypeField {
+            ident: field.id,
+            is_escape: field.is_escape,
+            type_ident: field.type_id.into(),
+            type_id: *type_id,
+            pos: field.pos,
+        })
     }
 }
 
 /// Variable and function entry
-pub enum EnvEntry<F: Frame> {
+pub enum EnvEntry {
     Var {
-        access: Access<F>,
         ty: TypeId,
     },
     Func {
-        level: Level<F>,
         label: Label,
         formals: Vec<TypeId>,
         result: TypeId,
     },
 }
 
-impl<F: Frame> EnvEntry<F> {
-    pub fn new_var(access: Access<F>, ty: TypeId) -> Self {
-        Self::Var { access, ty }
+impl EnvEntry {
+    pub fn new_var(ty: TypeId) -> Self {
+        Self::Var { ty }
     }
 
-    pub fn new_func(level: Level<F>, label: Label, formals: Vec<TypeId>, result: TypeId) -> Self {
+    pub fn new_func(label: Label, formals: Vec<TypeId>, result: TypeId) -> Self {
         Self::Func {
-            level,
             label,
             formals,
             result,
@@ -1134,7 +1047,7 @@ impl<F: Frame> EnvEntry<F> {
     }
 }
 
-impl<F: Frame> Env<EnvEntry<F>> {
+impl Env<EnvEntry> {
     pub fn with_base_var(mut self) -> Self {
         // TODO: use external call for these functions.
         let base_func = vec![
@@ -1161,10 +1074,7 @@ impl<F: Frame> Env<EnvEntry<F>> {
         for (sym, formals, ret_type) in base_func {
             let sym = Symbol::from(sym);
             let label = Label::with_named_fn(sym.to_string());
-            self.enter(
-                sym,
-                EnvEntry::new_func(Level::outermost(), label, formals, ret_type),
-            );
+            self.enter(sym, EnvEntry::new_func(label, formals, ret_type));
         }
 
         self.begin_scope();
@@ -1172,12 +1082,8 @@ impl<F: Frame> Env<EnvEntry<F>> {
     }
 }
 
-#[derive(Debug)]
-pub struct ExprType {
-    #[allow(dead_code)]
-    expr: TransExpr,
-    ty: TypeId,
-}
+// #[derive(Debug)]
+pub type ExprType = HirExpr;
 
 #[cfg(test)]
 mod tests {
@@ -1185,17 +1091,14 @@ mod tests {
 
     macro_rules! test_file_inner {
         ($name:ident, $path:expr) => {
-            use crate::{
-                codegen::aarch64_apple_darwin::frame::ARM64,
-                parser::{self},
-            };
+            use crate::parser;
             use std::fs::File;
             let file = File::open($path).unwrap();
             let e = parser::parse($path, file).unwrap();
 
-            let semantic_analyzer = Semant::<ARM64>::new_with_base();
+            let semantic_analyzer = Semant::new_with_base();
 
-            match semantic_analyzer.trans_prog(e, "main") {
+            match semantic_analyzer.trans_prog(e) {
                 Ok(_) => println!("success!"),
                 Err(e) => panic!("fail! {}", e),
             }

@@ -1,6 +1,7 @@
 use crate::{
     common::Positions,
     lexer::{self},
+    parser::ast::{Operator as AstOp, TypeIdent as AstTypeIdent},
 };
 
 use super::types::TypeId;
@@ -21,7 +22,6 @@ pub enum Decl {
 #[derive(Debug, PartialEq, Eq)]
 pub struct TypeDecl {
     pub id: TypeIdent,
-    pub ty: Type,
     pub type_id: TypeId,
     pub pos: Positions,
 }
@@ -66,6 +66,11 @@ pub struct FuncDecl {
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct TypeIdent(pub Ident);
+impl From<AstTypeIdent> for TypeIdent {
+    fn from(i: AstTypeIdent) -> Self {
+        Self(i.0)
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LValue {
@@ -88,8 +93,8 @@ pub enum LValue {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Expr {
-    kind: ExprKind,
-    type_id: TypeId,
+    pub expr: ExprKind,
+    pub ty: TypeId,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -104,7 +109,7 @@ pub enum ExprKind {
     Neg(Box<Expr>, Positions),
     RecordCreation(TypeIdent, RecordFields, Positions),
     ArrayCreation {
-        type_id: TypeIdent,
+        type_ident: TypeIdent,
         size: Box<Expr>,
         init: Box<Expr>,
         pos: Positions,
@@ -131,7 +136,7 @@ pub enum ExprKind {
 
 impl Expr {
     pub fn pos(&self) -> Positions {
-        match &self.kind {
+        match &self.expr {
             ExprKind::LValue(_, pos) => *pos,
             ExprKind::Nil(pos) => *pos,
             ExprKind::Sequence(_, pos) => *pos,
@@ -191,4 +196,23 @@ pub enum Operator {
 
     And,
     Or,
+}
+
+impl From<AstOp> for Operator {
+    fn from(op: AstOp) -> Self {
+        match op {
+            AstOp::Plus => Self::Plus,
+            AstOp::Minus => Self::Minus,
+            AstOp::Mul => Self::Mul,
+            AstOp::Div => Self::Div,
+            AstOp::Eq => Self::Eq,
+            AstOp::Neq => Self::Neq,
+            AstOp::Ge => Self::Ge,
+            AstOp::Gt => Self::Gt,
+            AstOp::Le => Self::Le,
+            AstOp::Lt => Self::Lt,
+            AstOp::And => Self::And,
+            AstOp::Or => Self::Or,
+        }
+    }
 }
