@@ -30,15 +30,6 @@ pub struct TypeDecl {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Type {
-    Id(TypeIdent, TypeId, Positions),
-    Fields(TypeFields, TypeId, Positions),
-    Array(TypeIdent, TypeId, Positions),
-}
-
-pub type TypeFields = Vec<TypeField>;
-
-#[derive(Debug, PartialEq, Eq)]
 pub struct TypeField {
     pub ident: Ident,
     pub is_escape: bool,

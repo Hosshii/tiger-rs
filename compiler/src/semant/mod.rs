@@ -14,15 +14,15 @@ use std::{
 use crate::{
     common::{Label, Positions, Symbol},
     parser::ast::{
-        Decl as AstDecl, Expr as AstExpr, Ident, LValue as AstLValue, Operator, RecordField,
-        Type as AstType, TypeField as AstTypeField, VarDecl as AstVarDecl,
+        Decl as AstDecl, Expr as AstExpr, Ident, LValue as AstLValue, Operator, Program,
+        RecordField, Type as AstType, TypeField as AstTypeField, VarDecl as AstVarDecl,
     },
     semant::{ctx::FnEntry, hir::FuncDecl},
 };
 use {
     env::Env,
     escape::EscapeFinder,
-    hir::{Expr as HirExpr, ExprKind},
+    hir::{Expr as HirExpr, ExprKind, Program as HirProgram},
     types::{IncompleteTypeError, Type, Unique},
 };
 
@@ -31,7 +31,7 @@ use thiserror::Error;
 use self::{
     builtin::Builtin,
     ctx::{FnId, TyCtx, VarEntry, VarId},
-    hir::{Decl, LValue, Param, TypeDecl, TypeField, VarDecl},
+    hir::{Decl, LValue, Param, TypeDecl, VarDecl},
     types::TypeId,
 };
 
@@ -226,13 +226,13 @@ impl Semant {
             .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))
     }
 
-    pub fn trans_prog(mut self, mut expr: AstExpr) -> Result<(HirExpr, TyCtx)> {
-        EscapeFinder::find_escape(&mut expr);
+    pub fn trans_prog(mut self, mut prog: Program) -> Result<(HirProgram, TyCtx)> {
+        EscapeFinder::find_escape(&mut prog);
 
         // if body returns int, then use that value as exit code.
         // otherwise use 0 as exit code.
-        let expr = self.trans_expr(expr)?;
-        Ok((expr, self.ty_ctx))
+        let prog = self.trans_prog_(prog)?;
+        Ok((prog, self.ty_ctx))
     }
 
     fn check_type(&self, actual: TypeId, expected: &[TypeId], pos: Positions) -> Result<()> {
@@ -263,9 +263,9 @@ impl Semant {
         result
     }
 
-    fn new_break_scope<G>(&mut self, f: G) -> Result<ExprType>
+    fn new_break_scope<G>(&mut self, f: G) -> Result<HirExpr>
     where
-        G: FnOnce(&mut Self) -> Result<ExprType>,
+        G: FnOnce(&mut Self) -> Result<HirExpr>,
     {
         self.break_count += 1;
         let result = f(self);
@@ -515,17 +515,21 @@ impl Semant {
         }
     }
 
-    fn trans_expr(&mut self, expr: AstExpr) -> Result<ExprType> {
+    fn trans_prog_(&mut self, prog: Program) -> Result<HirProgram> {
+        self.trans_expr(prog)
+    }
+
+    fn trans_expr(&mut self, expr: AstExpr) -> Result<HirExpr> {
         match expr {
             AstExpr::LValue(lvalue, pos) => {
                 let (lvalue, ty) = self.trans_lvalue(lvalue)?;
-                Ok(ExprType {
+                Ok(HirExpr {
                     kind: ExprKind::LValue(lvalue, pos),
                     ty,
                 })
             }
 
-            AstExpr::Nil(pos) => Ok(ExprType {
+            AstExpr::Nil(pos) => Ok(HirExpr {
                 kind: ExprKind::Nil(pos),
                 ty: TypeId::nil(),
             }),
@@ -539,7 +543,7 @@ impl Semant {
                     .collect::<Result<Vec<_>>>()?;
 
                 let expr_type = match transed.len() {
-                    0 => ExprType {
+                    0 => HirExpr {
                         kind: ExprKind::Int(0, pos),
                         ty: TypeId::unit(),
                     },
@@ -547,7 +551,7 @@ impl Semant {
                     _ => {
                         let ty = transed.last().unwrap().ty;
                         let pos = transed.last().unwrap().pos();
-                        ExprType {
+                        HirExpr {
                             kind: ExprKind::Sequence(transed, pos),
                             ty,
                         }
@@ -557,12 +561,12 @@ impl Semant {
                 Ok(expr_type)
             }
 
-            AstExpr::Int(num, pos) => Ok(ExprType {
+            AstExpr::Int(num, pos) => Ok(HirExpr {
                 kind: ExprKind::Int(num, pos),
                 ty: TypeId::int(),
             }),
 
-            AstExpr::Str(lit, pos) => Ok(ExprType {
+            AstExpr::Str(lit, pos) => Ok(HirExpr {
                 kind: ExprKind::Str(lit, pos),
                 ty: TypeId::string(),
             }),
@@ -593,17 +597,17 @@ impl Semant {
                             .iter()
                             .zip(e.formals().iter())
                             .enumerate()
-                            .find(|(_, (ExprType { ty: lhs, .. }, rhs))| lhs != *rhs);
+                            .find(|(_, (HirExpr { ty: lhs, .. }, rhs))| lhs != *rhs);
 
                         match unmatched {
-                            Some((_, (ExprType { ty: actual, .. }, &expected))) => {
+                            Some((_, (HirExpr { ty: actual, .. }, &expected))) => {
                                 Err(Error::new_unexpected_type(
                                     pos,
                                     vec![self.type_(expected).clone()],
                                     self.type_(*actual).clone(),
                                 ))
                             }
-                            None => Ok(ExprType {
+                            None => Ok(HirExpr {
                                 kind: ExprKind::FuncCall(ident, *id, arg_iter, pos),
                                 ty: e.result(),
                             }),
@@ -631,7 +635,7 @@ impl Semant {
                 let rhs = self.trans_expr(*rhs)?;
                 self.check_type(lhs.ty, &[TypeId::int()], pos)?;
                 self.check_type(rhs.ty, &[TypeId::int()], pos)?;
-                Ok(ExprType {
+                Ok(HirExpr {
                     kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                     ty: TypeId::int(),
                 })
@@ -648,7 +652,7 @@ impl Semant {
                 let rhs = self.trans_expr(*rhs)?;
 
                 match (self.type_(lhs.ty), self.type_(rhs.ty)) {
-                    (Type::Int, Type::Int) | (Type::String, Type::String) => Ok(ExprType {
+                    (Type::Int, Type::Int) | (Type::String, Type::String) => Ok(HirExpr {
                         kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                         ty: TypeId::int(),
                     }),
@@ -665,7 +669,7 @@ impl Semant {
                 let lhs = self.trans_expr(*lhs)?;
                 let rhs = self.trans_expr(*rhs)?;
                 if self.assignable(lhs.ty, rhs.ty) {
-                    Ok(ExprType {
+                    Ok(HirExpr {
                         kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                         ty: TypeId::int(),
                     })
@@ -683,7 +687,7 @@ impl Semant {
                 self.check_type(expr.ty, &[TypeId::int()], pos)?;
 
                 let ty = expr.ty;
-                Ok(ExprType {
+                Ok(HirExpr {
                     kind: ExprKind::Neg(Box::new(expr), pos),
                     ty,
                 })
@@ -735,7 +739,7 @@ impl Semant {
                                 }
 
                                 if expected_map.is_empty() {
-                                    Ok(ExprType {
+                                    Ok(HirExpr {
                                         kind: ExprKind::RecordCreation(
                                             type_ident.into(),
                                             exprs,
@@ -782,7 +786,7 @@ impl Semant {
                                 let init = self.trans_expr(*init)?;
                                 self.check_type(init.ty, &[elem_ty], init_pos)?;
 
-                                Ok(ExprType {
+                                Ok(HirExpr {
                                     kind: ExprKind::ArrayCreation {
                                         type_ident: type_ident.into(),
                                         size: Box::new(size),
@@ -808,7 +812,7 @@ impl Semant {
 
                 let rhs = self.trans_expr(*expr)?;
                 self.check_type(rhs.ty, &[type_id], pos)?;
-                Ok(ExprType {
+                Ok(HirExpr {
                     kind: ExprKind::Assign(lvalue, Box::new(rhs), pos),
                     ty: TypeId::unit(),
                 })
@@ -837,7 +841,7 @@ impl Semant {
                                 self.type_(els.ty).clone(),
                             ))
                         } else {
-                            Ok(ExprType {
+                            Ok(HirExpr {
                                 ty: then.ty,
                                 kind: ExprKind::If {
                                     cond: Box::new(cond),
@@ -850,7 +854,7 @@ impl Semant {
                     }
                     None => {
                         self.check_type(then.ty, &[TypeId::unit()], pos)?;
-                        Ok(ExprType {
+                        Ok(HirExpr {
                             kind: ExprKind::If {
                                 cond: Box::new(cond),
                                 then: Box::new(then),
@@ -872,7 +876,7 @@ impl Semant {
                 let then = _self.trans_expr(*then)?;
                 _self.check_type(then.ty, &[TypeId::unit()], then_pos)?;
 
-                Ok(ExprType {
+                Ok(HirExpr {
                     kind: ExprKind::While(Box::new(cond), Box::new(then), pos),
                     ty: TypeId::unit(),
                 })
@@ -940,7 +944,7 @@ impl Semant {
 
             AstExpr::Break(pos) => {
                 if self.is_brekable() {
-                    Ok(ExprType {
+                    Ok(HirExpr {
                         kind: ExprKind::Break(pos),
                         ty: TypeId::unit(),
                     })
@@ -965,7 +969,7 @@ impl Semant {
                 } else {
                     TypeId::unit()
                 };
-                Ok(ExprType {
+                Ok(HirExpr {
                     kind: ExprKind::Let(converted_decls, converted_exprs, pos),
                     ty,
                 })
@@ -1060,7 +1064,6 @@ impl Semant {
     fn trans_param(&self, param: AstTypeField, var_id: VarId) -> Result<Param> {
         let ty_sym = Symbol::from(&param.type_id);
         let type_id = self.type_id(ty_sym, param.pos)?;
-        let var_sym = Symbol::from(&param.id);
 
         Ok(Param {
             ident: param.id,
@@ -1088,9 +1091,6 @@ impl EnvEntry {
         Self::Func { id }
     }
 }
-
-// #[derive(Debug)]
-pub type ExprType = HirExpr;
 
 #[cfg(test)]
 mod tests {

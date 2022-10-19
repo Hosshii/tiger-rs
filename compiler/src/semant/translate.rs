@@ -681,7 +681,7 @@ impl<'tcx, F: Frame> Translator<'tcx, F> {
                 while_expr(cond, body, inner_break_label)
             }
             ExprKind::Break(_) => break_expr(break_label.expect("break label not found").clone()),
-            ExprKind::Let(decls, exprs, pos) => {
+            ExprKind::Let(decls, exprs, _) => {
                 let decls = decls
                     .iter()
                     .flat_map(|v| self.trans_decl(v, level, break_label))

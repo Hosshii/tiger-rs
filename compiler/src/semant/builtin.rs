@@ -68,7 +68,7 @@ impl TypeId {
 }
 
 impl FnId {
-    pub(super) const fn dummy() -> Self {
+    pub(super) const fn _dummy() -> Self {
         Self::new(0)
     }
 

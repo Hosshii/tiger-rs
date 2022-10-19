@@ -89,7 +89,7 @@ pub struct TyCtx {
 
 impl TyCtx {
     pub fn new() -> Self {
-        let mut s = Self {
+        Self {
             ty_count: 10,
             ty: HashMap::new(),
             ty_rev: HashMap::new(),
@@ -98,9 +98,7 @@ impl TyCtx {
             var_count: 10,
             var: HashMap::new(),
             func: HashMap::new(),
-        };
-
-        s
+        }
     }
 
     fn gen_type_id(&mut self) -> TypeId {
