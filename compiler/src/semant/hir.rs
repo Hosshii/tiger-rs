@@ -98,7 +98,7 @@ pub enum LValue {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Expr {
-    pub expr: ExprKind,
+    pub kind: ExprKind,
     pub ty: TypeId,
 }
 
@@ -141,7 +141,7 @@ pub enum ExprKind {
 
 impl Expr {
     pub fn pos(&self) -> Positions {
-        match &self.expr {
+        match &self.kind {
             ExprKind::LValue(_, pos) => *pos,
             ExprKind::Nil(pos) => *pos,
             ExprKind::Sequence(_, pos) => *pos,

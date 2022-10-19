@@ -517,13 +517,13 @@ impl Semant {
             AstExpr::LValue(lvalue, pos) => {
                 let (lvalue, ty) = self.trans_lvalue(lvalue)?;
                 Ok(ExprType {
-                    expr: ExprKind::LValue(lvalue, pos),
+                    kind: ExprKind::LValue(lvalue, pos),
                     ty,
                 })
             }
 
             AstExpr::Nil(pos) => Ok(ExprType {
-                expr: ExprKind::Nil(pos),
+                kind: ExprKind::Nil(pos),
                 ty: TypeId::nil(),
             }),
 
@@ -537,7 +537,7 @@ impl Semant {
 
                 let expr_type = match transed.len() {
                     0 => ExprType {
-                        expr: ExprKind::Int(0, pos),
+                        kind: ExprKind::Int(0, pos),
                         ty: TypeId::unit(),
                     },
                     1 => transed.pop().unwrap(),
@@ -545,7 +545,7 @@ impl Semant {
                         let ty = transed.last().unwrap().ty;
                         let pos = transed.last().unwrap().pos();
                         ExprType {
-                            expr: ExprKind::Sequence(transed, pos),
+                            kind: ExprKind::Sequence(transed, pos),
                             ty,
                         }
                     }
@@ -555,12 +555,12 @@ impl Semant {
             }
 
             AstExpr::Int(num, pos) => Ok(ExprType {
-                expr: ExprKind::Int(num, pos),
+                kind: ExprKind::Int(num, pos),
                 ty: TypeId::int(),
             }),
 
             AstExpr::Str(lit, pos) => Ok(ExprType {
-                expr: ExprKind::Str(lit, pos),
+                kind: ExprKind::Str(lit, pos),
                 ty: TypeId::string(),
             }),
 
@@ -601,7 +601,7 @@ impl Semant {
                                 ))
                             }
                             None => Ok(ExprType {
-                                expr: ExprKind::FuncCall(ident, *id, arg_iter, pos),
+                                kind: ExprKind::FuncCall(ident, *id, arg_iter, pos),
                                 ty: e.result(),
                             }),
                         }
@@ -629,7 +629,7 @@ impl Semant {
                 self.check_type(lhs.ty, &[TypeId::int()], pos)?;
                 self.check_type(rhs.ty, &[TypeId::int()], pos)?;
                 Ok(ExprType {
-                    expr: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
+                    kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                     ty: TypeId::int(),
                 })
             }
@@ -646,7 +646,7 @@ impl Semant {
 
                 match (self.type_(lhs.ty), self.type_(rhs.ty)) {
                     (Type::Int, Type::Int) | (Type::String, Type::String) => Ok(ExprType {
-                        expr: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
+                        kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                         ty: TypeId::int(),
                     }),
                     other => Err(Error::new_unexpected_type(
@@ -663,7 +663,7 @@ impl Semant {
                 let rhs = self.trans_expr(*rhs)?;
                 if self.assignable(lhs.ty, rhs.ty) {
                     Ok(ExprType {
-                        expr: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
+                        kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
                         ty: TypeId::int(),
                     })
                 } else {
@@ -681,7 +681,7 @@ impl Semant {
 
                 let ty = expr.ty;
                 Ok(ExprType {
-                    expr: ExprKind::Neg(Box::new(expr), pos),
+                    kind: ExprKind::Neg(Box::new(expr), pos),
                     ty,
                 })
             }
@@ -733,7 +733,7 @@ impl Semant {
 
                                 if expected_map.is_empty() {
                                     Ok(ExprType {
-                                        expr: ExprKind::RecordCreation(
+                                        kind: ExprKind::RecordCreation(
                                             type_ident.into(),
                                             exprs,
                                             pos,
@@ -780,7 +780,7 @@ impl Semant {
                                 self.check_type(init.ty, &[elem_ty], init_pos)?;
 
                                 Ok(ExprType {
-                                    expr: ExprKind::ArrayCreation {
+                                    kind: ExprKind::ArrayCreation {
                                         type_ident: type_ident.into(),
                                         size: Box::new(size),
                                         init: Box::new(init),
@@ -806,7 +806,7 @@ impl Semant {
                 let rhs = self.trans_expr(*expr)?;
                 self.check_type(rhs.ty, &[type_id], pos)?;
                 Ok(ExprType {
-                    expr: ExprKind::Assign(lvalue, Box::new(rhs), pos),
+                    kind: ExprKind::Assign(lvalue, Box::new(rhs), pos),
                     ty: TypeId::unit(),
                 })
             }
@@ -836,7 +836,7 @@ impl Semant {
                         } else {
                             Ok(ExprType {
                                 ty: then.ty,
-                                expr: ExprKind::If {
+                                kind: ExprKind::If {
                                     cond: Box::new(cond),
                                     then: Box::new(then),
                                     els: Some(Box::new(els)),
@@ -848,7 +848,7 @@ impl Semant {
                     None => {
                         self.check_type(then.ty, &[TypeId::unit()], pos)?;
                         Ok(ExprType {
-                            expr: ExprKind::If {
+                            kind: ExprKind::If {
                                 cond: Box::new(cond),
                                 then: Box::new(then),
                                 els: None,
@@ -870,7 +870,7 @@ impl Semant {
                 _self.check_type(then.ty, &[TypeId::unit()], then_pos)?;
 
                 Ok(ExprType {
-                    expr: ExprKind::While(Box::new(cond), Box::new(then), pos),
+                    kind: ExprKind::While(Box::new(cond), Box::new(then), pos),
                     ty: TypeId::unit(),
                 })
             }),
@@ -899,7 +899,7 @@ impl Semant {
                 })?;
 
                 Ok(ExprType {
-                    expr: ExprKind::For {
+                    kind: ExprKind::For {
                         id,
                         is_escape,
                         from: Box::new(from),
@@ -914,7 +914,7 @@ impl Semant {
             AstExpr::Break(pos) => {
                 if self.is_brekable() {
                     Ok(ExprType {
-                        expr: ExprKind::Break(pos),
+                        kind: ExprKind::Break(pos),
                         ty: TypeId::unit(),
                     })
                 } else {
@@ -939,7 +939,7 @@ impl Semant {
                     TypeId::unit()
                 };
                 Ok(ExprType {
-                    expr: ExprKind::Let(converted_decls, converted_exprs, pos),
+                    kind: ExprKind::Let(converted_decls, converted_exprs, pos),
                     ty,
                 })
             }),
