@@ -1,11 +1,19 @@
-use crate::common::{Label, Symbol};
+use crate::{
+    common::{Label, Symbol},
+    frame::Frame,
+};
 
 use super::{
     ctx::{FnEntry, FnId, TyCtx},
     env::Env,
+    translate::{Level, Translator},
     types::{Type, TypeId},
     EnvEntry,
 };
+
+pub(super) trait Builtin: Sized {
+    fn with_builtin(self) -> Self;
+}
 
 pub const BUILTIN_TYPES: &[(&str, TypeId, Type)] = &[
     ("unit", TypeId::unit(), Type::Unit),
@@ -105,8 +113,8 @@ impl FnId {
     }
 }
 
-impl Env<TypeId> {
-    pub fn with_builtin_type(mut self) -> Self {
+impl Builtin for Env<TypeId> {
+    fn with_builtin(mut self) -> Self {
         let base_types = vec![("int", TypeId::int()), ("string", TypeId::string())];
 
         for (sym, type_id) in base_types {
@@ -118,8 +126,8 @@ impl Env<TypeId> {
     }
 }
 
-impl Env<EnvEntry> {
-    pub fn with_builtin_fn(mut self) -> Self {
+impl Builtin for Env<EnvEntry> {
+    fn with_builtin(mut self) -> Self {
         for (name, id, _, _) in BUILTIN_FUNCS {
             let sym = Symbol::from(*name);
             self.enter(sym, EnvEntry::new_func(*id));
@@ -130,8 +138,8 @@ impl Env<EnvEntry> {
     }
 }
 
-impl TyCtx {
-    pub fn with_builtin(mut self) -> Self {
+impl Builtin for TyCtx {
+    fn with_builtin(mut self) -> Self {
         for (_, type_id, type_) in BUILTIN_TYPES {
             self.insert_ty_inner(*type_id, type_.clone())
         }
@@ -144,6 +152,16 @@ impl TyCtx {
                 *result,
             );
             self.insert_fn_inner(*id, entry);
+        }
+
+        self
+    }
+}
+
+impl<'tcx, F: Frame> Builtin for Translator<'tcx, F> {
+    fn with_builtin(mut self) -> Self {
+        for (_, id, _, _) in BUILTIN_FUNCS {
+            self.fn_env.insert(*id, Level::outermost());
         }
 
         self

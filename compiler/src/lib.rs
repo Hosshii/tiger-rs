@@ -13,6 +13,7 @@ use std::{
     marker::PhantomData,
 };
 
+use semant::translate;
 use thiserror::Error;
 
 use crate::{
@@ -41,9 +42,10 @@ where
 {
     let ast = parser::parse(filename, r)?;
 
-    let semantic_analyzer = Semant::<C::Frame>::new_with_base();
+    let semantic_analyzer = Semant::new_with_base();
 
-    let fragments = semantic_analyzer.trans_prog(ast, C::MAIN_SYMBOL)?;
+    let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
+    let fragments = translate::translate::<C::Frame>(&tcx, &hir, C::MAIN_SYMBOL);
 
     writeln!(o, "{}", C::header())?;
 

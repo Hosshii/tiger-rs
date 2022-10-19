@@ -2,8 +2,8 @@ mod builtin;
 mod ctx;
 mod env;
 mod escape;
-mod hir;
-mod translate;
+pub(crate) mod hir;
+pub mod translate;
 mod types;
 
 use std::{
@@ -14,7 +14,7 @@ use std::{
 use crate::{
     common::{Label, Positions, Symbol},
     parser::ast::{
-        Decl as AstDecl, Expr as AstExpr, LValue as AstLValue, Operator, RecordField,
+        Decl as AstDecl, Expr as AstExpr, Ident, LValue as AstLValue, Operator, RecordField,
         Type as AstType, TypeField as AstTypeField, VarDecl as AstVarDecl,
     },
     semant::{ctx::FnEntry, hir::FuncDecl},
@@ -29,8 +29,9 @@ use {
 use thiserror::Error;
 
 use self::{
+    builtin::Builtin,
     ctx::{FnId, TyCtx, VarEntry, VarId},
-    hir::{Decl, LValue, TypeDecl, TypeField, VarDecl},
+    hir::{Decl, LValue, Param, TypeDecl, TypeField, VarDecl},
     types::TypeId,
 };
 
@@ -202,8 +203,8 @@ impl Semant {
 
     pub fn new_with_base() -> Self {
         let ty_ctx = TyCtx::new().with_builtin();
-        let type_env = Env::new().with_builtin_type();
-        let var_env = Env::new().with_builtin_fn();
+        let type_env = Env::new().with_builtin();
+        let var_env = Env::new().with_builtin();
 
         Self::new(var_env, type_env, ty_ctx)
     }
@@ -480,21 +481,23 @@ impl Semant {
                 {
                     // function body
 
-                    let body = self.new_scope(|_self| {
+                    let (body, params) = self.new_scope(|_self| {
+                        let mut params = Vec::new();
                         for (&ty, f) in formals.iter().zip(func_decl.params.iter()) {
                             let e = VarEntry::new(ty, Symbol::from(&f.id));
-                            _self.new_var(e);
+                            let id = _self.new_var(e);
+                            params.push(id);
                         }
 
                         let ty = _self.trans_expr(func_decl.body)?;
 
                         _self.check_type(ty.ty, &[ret_type], func_decl.pos)?;
-                        Ok(ty)
+                        Ok((ty, params))
                     })?;
 
                     let mut formals = Vec::new();
-                    for param in func_decl.params {
-                        formals.push(self.trans_type_field(param)?);
+                    for (param, var_id) in func_decl.params.into_iter().zip(params.iter()) {
+                        formals.push(self.trans_param(param, *var_id)?);
                     }
                     converted.push(FuncDecl {
                         name: func_decl.name,
@@ -883,32 +886,56 @@ impl Semant {
                 then,
                 pos,
             } => {
-                let from = self.trans_expr(*from)?;
-                self.check_type(from.ty, &[TypeId::int()], from.pos())?;
-
-                let to = self.trans_expr(*to)?;
-                self.check_type(to.ty, &[TypeId::int()], to.pos())?;
-
-                let then = self.new_break_scope(|_self| {
-                    let sym = Symbol::from(&id);
-                    _self.new_var(VarEntry::new(TypeId::int(), sym));
-
-                    let then = _self.trans_expr(*then)?;
-                    _self.check_type(then.ty, &[TypeId::unit()], then.pos())?;
-                    Ok(then)
-                })?;
-
-                Ok(ExprType {
-                    kind: ExprKind::For {
-                        id,
-                        is_escape,
-                        from: Box::new(from),
-                        to: Box::new(to),
-                        then: Box::new(then),
+                // convert
+                //
+                //   for id := `from` to `to` do then
+                //
+                // into
+                //
+                //   let
+                //     id := from
+                //     __id__limit := to
+                //   in
+                //     while id < __id__limit do (
+                //       then;
+                //       id := id + 1;
+                //     )
+                //   end
+                let limit_id = Ident::new(format!("__{}__limit", id));
+                let new_ast = AstExpr::Let(
+                    vec![
+                        AstDecl::Var(AstVarDecl(id.clone(), is_escape, None, *from, pos)),
+                        AstDecl::Var(AstVarDecl(limit_id.clone(), false, None, *to, pos)),
+                    ],
+                    vec![AstExpr::While(
+                        Box::new(AstExpr::Op(
+                            Operator::Le,
+                            Box::new(AstExpr::LValue(AstLValue::Var(id.clone(), pos), pos)),
+                            Box::new(AstExpr::LValue(AstLValue::Var(limit_id, pos), pos)),
+                            pos,
+                        )),
+                        Box::new(AstExpr::Sequence(
+                            vec![
+                                *then,
+                                AstExpr::Assign(
+                                    AstLValue::Var(id.clone(), pos),
+                                    Box::new(AstExpr::Op(
+                                        Operator::Plus,
+                                        Box::new(AstExpr::LValue(AstLValue::Var(id, pos), pos)),
+                                        Box::new(AstExpr::Int(1, pos)),
+                                        pos,
+                                    )),
+                                    pos,
+                                ),
+                            ],
+                            pos,
+                        )),
                         pos,
-                    },
-                    ty: TypeId::unit(),
-                })
+                    )],
+                    pos,
+                );
+
+                self.trans_expr(new_ast)
             }
 
             AstExpr::Break(pos) => {
@@ -965,7 +992,10 @@ impl Semant {
                 let sym = Symbol::from(&id);
                 match self.type_(ty) {
                     Type::Record { fields, unique } => {
-                        let field = fields.iter().find(|(_sym, _)| _sym == &sym);
+                        let field = fields
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (_sym, _))| _sym == &sym);
                         match field {
                             None => Err(Error::new_missing_field(
                                 pos,
@@ -975,11 +1005,12 @@ impl Semant {
                                 },
                                 sym,
                             )),
-                            Some((_, field_type)) => Ok((
+                            Some((field_index, (_, field_type))) => Ok((
                                 LValue::RecordField {
                                     record: Box::new(lvar),
                                     record_type: ty,
                                     field_ident: id,
+                                    field_index,
                                     field_type: *field_type,
                                     pos,
                                 },
@@ -1026,17 +1057,18 @@ impl Semant {
         }
     }
 
-    fn trans_type_field(&self, field: AstTypeField) -> Result<TypeField> {
-        let ty_sym = Symbol::from(&field.type_id);
+    fn trans_param(&self, param: AstTypeField, var_id: VarId) -> Result<Param> {
+        let ty_sym = Symbol::from(&param.type_id);
+        let type_id = self.type_id(ty_sym, param.pos)?;
+        let var_sym = Symbol::from(&param.id);
 
-        let type_id = self.type_id(ty_sym, field.pos)?;
-
-        Ok(TypeField {
-            ident: field.id,
-            is_escape: field.is_escape,
-            type_ident: field.type_id.into(),
+        Ok(Param {
+            ident: param.id,
+            var_id,
+            is_escape: param.is_escape,
+            type_ident: param.type_id.into(),
             type_id: *type_id,
-            pos: field.pos,
+            pos: param.pos,
         })
     }
 }

@@ -6,6 +6,13 @@ use crate::{
     ir::{BinOp, Expr as IrExpr, RelOp, Stmt},
 };
 
+use super::{
+    builtin::Builtin,
+    ctx::{FnId, TyCtx, VarId},
+    hir::{Decl, Expr as HirExpr, ExprKind, LValue, Operator, VarDecl},
+    types::{Type, TypeId},
+};
+
 type CxFn<'a> = dyn (FnOnce(Label, Label) -> Stmt) + 'a;
 
 pub enum Expr {
@@ -78,7 +85,7 @@ impl Debug for Expr {
 
 pub type Access<F> = (Level<F>, <F as Frame>::Access);
 
-pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>) -> Level<F> {
+fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>) -> Level<F> {
     // for static link
     formals.push(true);
 
@@ -86,13 +93,13 @@ pub fn new_level<F: Frame>(parent: Level<F>, name: Label, mut formals: Vec<bool>
     Level::new(parent, frame)
 }
 
-pub fn alloc_local<F: Frame>(level: Level<F>, is_escape: bool) -> Access<F> {
+fn alloc_local<F: Frame>(level: Level<F>, is_escape: bool) -> Access<F> {
     let frame = level.inner.frame.borrow_mut().alloc_local(is_escape);
     (level, frame)
 }
 
 // `access` in which variable is defined and `fn_level` in which variable is used.
-pub fn simple_var<F: Frame>(access: Access<F>, fn_level: &Level<F>) -> Expr {
+fn simple_var<F: Frame>(access: Access<F>, fn_level: &Level<F>) -> Expr {
     let access_link = calc_static_link(fn_level, &access.0);
     let mem = F::exp(access.1, access_link);
     Expr::Ex(mem)
@@ -101,7 +108,7 @@ pub fn simple_var<F: Frame>(access: Access<F>, fn_level: &Level<F>) -> Expr {
 /// Returns Mem(record.field)
 // `var` is pointer to TigerRecord.
 // So, var[0] is (*var).data.offset(0)
-pub fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
+fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
     // (*var).data
     let var_data = IrExpr::Mem(
         Box::new(IrExpr::BinOp(
@@ -125,7 +132,7 @@ pub fn record_field<F: Frame>(var: Expr, field_index: usize) -> Expr {
 /// Returns Mem(Var(offset))
 // `var` is pointer to TigerArray.
 // So, var[0] is (*var).data.offset(0)
-pub fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
+fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
     // (*var).data
     let var_data = IrExpr::Mem(
         Box::new(IrExpr::BinOp(
@@ -151,34 +158,27 @@ pub fn array_subscript<F: Frame>(var: Expr, subscript: Expr) -> Expr {
     ))
 }
 
-pub fn num(v: i64) -> Expr {
+fn num(v: i64) -> Expr {
     Expr::Ex(IrExpr::Const(v))
 }
 
-/// The length of argument must be greater than 1.
-pub fn sequence(mut exprs: Vec<Expr>) -> Expr {
-    assert!(exprs.len() > 1);
-
-    let last = exprs.pop().unwrap();
-    let last_1 = exprs.pop().unwrap();
-
-    let stmt =
-        exprs
+fn sequence(mut exprs: Vec<Expr>) -> Expr {
+    if exprs.is_empty() {
+        nop()
+    } else {
+        let last = exprs.pop().unwrap();
+        let stmts = exprs
             .into_iter()
-            .rev()
-            .fold(Stmt::Expr(Box::new(last_1.unwrap_ex())), |acc, cur| {
-                Stmt::Seq(
-                    Box::new(Stmt::Expr(Box::new(cur.unwrap_ex()))),
-                    Box::new(acc),
-                )
-            });
+            .map(|v| Stmt::Expr(Box::new(v.unwrap_ex())))
+            .collect();
+        let stmt = Stmt::seq(stmts);
+        let e_seq = IrExpr::ESeq(Box::new(stmt), Box::new(last.unwrap_ex()));
 
-    let e_seq = IrExpr::ESeq(Box::new(stmt), Box::new(last.unwrap_ex()));
-
-    Expr::Ex(e_seq)
+        Expr::Ex(e_seq)
+    }
 }
 
-pub fn fn_call<F: Frame>(
+fn fn_call<F: Frame>(
     fn_label: Label,
     fn_level: &Level<F>,
     cur_level: &Level<F>,
@@ -221,7 +221,7 @@ fn calc_static_link<F: Frame>(mut cur_level: &Level<F>, ancestor_level: &Level<F
     link
 }
 
-pub fn bin_op(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+fn bin_op(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
     Expr::Ex(IrExpr::BinOp(
         op,
         Box::new(lhs.unwrap_ex()),
@@ -229,7 +229,7 @@ pub fn bin_op(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
     ))
 }
 
-pub fn rel_op(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
+fn rel_op(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     let f = move |t: Label, f: Label| -> Stmt {
         Stmt::CJump(
             op,
@@ -243,7 +243,7 @@ pub fn rel_op(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
 }
 
 /// `op` must be Eq or Ne.
-pub fn string_eq<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
+fn string_eq<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     // stringEqual returns 1 if equal and 0 if not equal.
     let result = F::extern_call("stringEqual", vec![lhs.unwrap_ex(), rhs.unwrap_ex()]);
 
@@ -266,7 +266,7 @@ pub fn string_eq<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
 }
 
 /// `op` must be one of the le, lt, ge, gt.
-pub fn string_ord<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
+fn string_ord<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     let num = match op {
         RelOp::Le => 1,
         RelOp::Lt => 2,
@@ -294,7 +294,7 @@ pub fn string_ord<F: Frame>(op: RelOp, lhs: Expr, rhs: Expr) -> Expr {
     Expr::Cx(Box::new(f))
 }
 
-pub fn neg(e: Expr) -> Expr {
+fn neg(e: Expr) -> Expr {
     Expr::Ex(IrExpr::BinOp(
         BinOp::Minus,
         Box::new(IrExpr::Const(0)),
@@ -304,7 +304,7 @@ pub fn neg(e: Expr) -> Expr {
 
 /// Create record.
 /// For simplicity, the size of each record field must be 1 WORD.
-pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
+fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
     let record_temp = Temp::new();
     let record_size = exprs.len();
 
@@ -353,7 +353,7 @@ pub fn record_creation<F: Frame>(exprs: Vec<Expr>) -> Expr {
 /// ```
 ///
 /// The type of `arr` is `&TigerArray`.
-pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
+fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
     // mov len_temp, len()
     // mov init_temp, init()
     // mov arr_temp, allocArray(len_temp)
@@ -429,14 +429,14 @@ pub fn array_creation<F: Frame>(len: Expr, init: Expr) -> Expr {
     Expr::Ex(expr)
 }
 
-pub fn assign(lhs: Expr, rhs: Expr) -> Expr {
+fn assign(lhs: Expr, rhs: Expr) -> Expr {
     Expr::Nx(Stmt::Move(
         Box::new(lhs.unwrap_ex()),
         Box::new(rhs.unwrap_ex()),
     ))
 }
 
-pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Option<Expr>) -> Expr {
+fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Option<Expr>) -> Expr {
     let t = Label::new();
     let f = Label::new();
     let merge = Label::new();
@@ -467,7 +467,7 @@ pub fn if_expr<F: Frame>(level: &mut Level<F>, cond: Expr, then: Expr, els: Opti
     ))
 }
 
-pub fn while_expr(cond: Expr, body: Expr, break_label: Label) -> Expr {
+fn while_expr(cond: Expr, body: Expr, break_label: Label) -> Expr {
     let test = Label::new();
     let body_label = Label::new();
 
@@ -483,14 +483,14 @@ pub fn while_expr(cond: Expr, body: Expr, break_label: Label) -> Expr {
     Expr::Nx(Stmt::seq(vec![Stmt::Label(test), cond, body]))
 }
 
-pub fn break_expr(break_label: Label) -> Expr {
+fn break_expr(break_label: Label) -> Expr {
     Expr::Nx(Stmt::Jump(
         Box::new(IrExpr::Name(break_label.clone())),
         vec![break_label],
     ))
 }
 
-pub fn let_expr(decls: Vec<Expr>, body: Expr) -> Expr {
+fn let_expr(decls: Vec<Expr>, body: Expr) -> Expr {
     let decls: Vec<_> = decls.into_iter().map(|v| v.unwrap_nx()).collect();
     let decls = Stmt::seq(decls);
 
@@ -499,29 +499,55 @@ pub fn let_expr(decls: Vec<Expr>, body: Expr) -> Expr {
     Expr::Ex(expr)
 }
 
-pub fn var_decl<F: Frame>(access: Access<F>, value: Expr) -> Expr {
+fn var_decl<F: Frame>(access: Access<F>, value: Expr) -> Expr {
     let lhs = F::exp(access.1, IrExpr::Temp(F::fp()));
     Expr::Nx(Stmt::Move(Box::new(lhs), Box::new(value.unwrap_ex())))
 }
 
-pub fn nop() -> Expr {
+fn nop() -> Expr {
     Expr::Nx(Stmt::nop())
 }
 
-pub struct Translator<F: Frame> {
-    string_literal_map: HashMap<Symbol, Label>,
-    fragments: Vec<Fragment<F>>,
+pub fn translate<F: Frame>(tcx: &TyCtx, expr: &HirExpr, main_name: &str) -> Vec<Fragment<F>> {
+    let mut translator = Translator::new(tcx).with_builtin();
+    // if body returns int, then use that value as exit code.
+    // otherwise use 0 as exit code.
+    let mut main_level = Level::outermost_with_name(Label::with_named_fn(main_name.to_string()));
+
+    let body = translator.trans_expr(expr, &mut main_level, None);
+    let expr = if expr.ty == TypeId::int() {
+        body
+    } else {
+        let seq = vec![body, num(0)];
+        sequence(seq)
+    };
+    translator.proc_entry_exit(main_level, expr);
+
+    translator.get_result()
 }
 
-impl<F: Frame> Translator<F> {
-    pub fn new() -> Self {
+pub struct Translator<'tcx, F: Frame> {
+    string_literal_map: HashMap<Symbol, Label>,
+    fragments: Vec<Fragment<F>>,
+
+    var_env: HashMap<VarId, Access<F>>,
+    pub(super) fn_env: HashMap<FnId, Level<F>>,
+    tcx: &'tcx TyCtx,
+}
+
+impl<'tcx, F: Frame> Translator<'tcx, F> {
+    fn new(tcx: &'tcx TyCtx) -> Self {
         Self {
             string_literal_map: HashMap::new(),
             fragments: Vec::new(),
+
+            var_env: HashMap::new(),
+            fn_env: HashMap::new(),
+            tcx,
         }
     }
 
-    pub fn string_literal(&mut self, string: String) -> Expr {
+    fn string_literal(&mut self, string: String) -> Expr {
         let sym = Symbol::new(string.clone());
         let label = match self.string_literal_map.get(&sym) {
             Some(label) => label.clone(),
@@ -535,20 +561,212 @@ impl<F: Frame> Translator<F> {
         Expr::Ex(IrExpr::Name(label))
     }
 
-    pub fn proc_entry_exit(&mut self, level: Level<F>, body: Expr) {
+    fn proc_entry_exit(&mut self, level: Level<F>, body: Expr) {
         let body = Stmt::Move(Box::new(IrExpr::Temp(F::rv())), Box::new(body.unwrap_ex()));
 
         self.fragments.push(Fragment::Proc(body, level.inner.frame))
     }
 
-    pub fn get_result(self) -> Vec<Fragment<F>> {
+    fn get_result(self) -> Vec<Fragment<F>> {
         self.fragments
     }
-}
 
-impl<F: Frame> Default for Translator<F> {
-    fn default() -> Self {
-        Self::new()
+    fn trans_expr(
+        &mut self,
+        expr: &HirExpr,
+        level: &mut Level<F>,
+        break_label: Option<&Label>,
+    ) -> Expr {
+        match &expr.kind {
+            ExprKind::LValue(lvar, _) => self.trans_lvalue(lvar, level, break_label),
+            ExprKind::Nil(_) => num(0),
+            ExprKind::Sequence(exprs, _) => {
+                let exprs = exprs
+                    .iter()
+                    .map(|v| self.trans_expr(v, level, break_label))
+                    .collect::<Vec<_>>();
+                sequence(exprs)
+            }
+            ExprKind::Int(n, _) => num(*n as i64),
+            ExprKind::Str(lit, _) => self.string_literal(lit.to_string()),
+            ExprKind::FuncCall(_, fn_id, args, _) => {
+                let e = self.tcx.fn_(*fn_id);
+                let args = args
+                    .iter()
+                    .map(|v| self.trans_expr(v, level, break_label))
+                    .collect::<Vec<_>>();
+                let fn_level = self.fn_env.get(fn_id).expect("fn level not found");
+                fn_call(e.label().clone(), fn_level, level, args)
+            }
+            // int only
+            ExprKind::Op(
+                op @ (Operator::Plus
+                | Operator::Minus
+                | Operator::Mul
+                | Operator::Div
+                | Operator::And
+                | Operator::Or),
+                lhs,
+                rhs,
+                _,
+            ) => {
+                let lhs = self.trans_expr(lhs, level, break_label);
+                let rhs = self.trans_expr(rhs, level, break_label);
+                bin_op((*op).try_into().unwrap(), lhs, rhs)
+            }
+            // int and string
+            ExprKind::Op(
+                op @ (Operator::Le | Operator::Lt | Operator::Ge | Operator::Gt),
+                lhs,
+                rhs,
+                _,
+            ) => {
+                let lhs_ty = self.tcx.type_(lhs.ty);
+                let rhs_ty = self.tcx.type_(rhs.ty);
+                let lhs = self.trans_expr(lhs, level, break_label);
+                let rhs = self.trans_expr(rhs, level, break_label);
+                match (lhs_ty, rhs_ty) {
+                    (Type::Int, Type::Int) => rel_op((*op).try_into().unwrap(), lhs, rhs),
+                    (Type::String, Type::String) => {
+                        string_ord::<F>((*op).try_into().unwrap(), lhs, rhs)
+                    }
+                    _ => unreachable!("ICE"),
+                }
+            }
+            // compare two type
+            ExprKind::Op(op @ (Operator::Eq | Operator::Neq), lhs, rhs, _) => {
+                let ty = lhs.ty;
+                let lhs = self.trans_expr(lhs, level, break_label);
+                let rhs = self.trans_expr(rhs, level, break_label);
+                if ty == TypeId::string() {
+                    string_eq::<F>((*op).try_into().unwrap(), lhs, rhs)
+                } else {
+                    rel_op((*op).try_into().unwrap(), lhs, rhs)
+                }
+            }
+            ExprKind::Neg(e, _) => {
+                let e = self.trans_expr(e, level, break_label);
+                neg(e)
+            }
+            ExprKind::RecordCreation(_, field, _) => {
+                let exprs = field
+                    .iter()
+                    .map(|v| self.trans_expr(&v.expr, level, break_label))
+                    .collect::<Vec<_>>();
+                record_creation::<F>(exprs)
+            }
+            ExprKind::ArrayCreation { size, init, .. } => {
+                let size = self.trans_expr(size, level, break_label);
+                let init = self.trans_expr(init, level, break_label);
+                array_creation::<F>(size, init)
+            }
+            ExprKind::Assign(lvalue, expr, _) => {
+                let lhs = self.trans_lvalue(lvalue, level, break_label);
+                let rhs = self.trans_expr(expr, level, break_label);
+                assign(lhs, rhs)
+            }
+            ExprKind::If {
+                cond, then, els, ..
+            } => {
+                let cond = self.trans_expr(cond, level, break_label);
+                let then = self.trans_expr(then, level, break_label);
+                let els = els.as_ref().map(|v| self.trans_expr(v, level, break_label));
+                if_expr(level, cond, then, els)
+            }
+            ExprKind::While(cond, body, _) => {
+                let cond = self.trans_expr(cond, level, break_label);
+
+                let inner_break_label = Label::new();
+                let body = self.trans_expr(body, level, Some(&inner_break_label));
+                while_expr(cond, body, inner_break_label)
+            }
+            ExprKind::Break(_) => break_expr(break_label.expect("break label not found").clone()),
+            ExprKind::Let(decls, exprs, pos) => {
+                let decls = decls
+                    .iter()
+                    .flat_map(|v| self.trans_decl(v, level, break_label))
+                    .collect::<Vec<_>>();
+
+                // TODO: duplicate of ExprKind::Sequence
+                let exprs = exprs
+                    .iter()
+                    .map(|v| self.trans_expr(v, level, break_label))
+                    .collect::<Vec<_>>();
+                let exprs = sequence(exprs);
+
+                let_expr(decls, exprs)
+            }
+        }
+    }
+
+    fn trans_lvalue(
+        &mut self,
+        lvar: &LValue,
+        level: &mut Level<F>,
+        break_label: Option<&Label>,
+    ) -> Expr {
+        match lvar {
+            LValue::Var(_, var_id, _, _) => {
+                let access = self.var_env.get(var_id).expect("var access not found");
+                simple_var(access.clone(), level)
+            }
+            LValue::RecordField {
+                record,
+                field_index,
+                ..
+            } => {
+                let var = self.trans_lvalue(record, level, break_label);
+                record_field::<F>(var, *field_index)
+            }
+            LValue::Array { array, index, .. } => {
+                let var = self.trans_lvalue(array, level, break_label);
+                let subscript = self.trans_expr(index, level, break_label);
+                array_subscript::<F>(var, subscript)
+            }
+        }
+    }
+
+    fn trans_decl(
+        &mut self,
+        decl: &Decl,
+        parent_level: &mut Level<F>,
+        break_label: Option<&Label>,
+    ) -> Option<Expr> {
+        match decl {
+            Decl::Type(_) => None,
+            Decl::Var(VarDecl(_, var_id, is_escape, _, _, expr, _)) => {
+                let expr = self.trans_expr(expr, parent_level, break_label);
+                let access = alloc_local(parent_level.clone(), *is_escape);
+                self.var_env.insert(*var_id, access.clone());
+                Some(var_decl(access, expr))
+            }
+            Decl::Func(fn_decls) => {
+                // Define fn_level.
+                for decl in fn_decls {
+                    let formals_is_escape: Vec<_> =
+                        decl.params.iter().map(|p| p.is_escape).collect();
+                    let e = self.tcx.fn_(decl.fn_id);
+                    let level =
+                        new_level(parent_level.clone(), e.label().clone(), formals_is_escape);
+                    self.fn_env.insert(decl.fn_id, level);
+                }
+
+                for decl in fn_decls {
+                    let mut level = self
+                        .fn_env
+                        .get(&decl.fn_id)
+                        .expect("fn level not found")
+                        .clone();
+                    for (param, level) in decl.params.iter().zip(level.formals()) {
+                        self.var_env.insert(param.var_id, level);
+                    }
+
+                    let body = self.trans_expr(&decl.body, &mut level, break_label);
+                    self.proc_entry_exit(level, body);
+                }
+                None
+            }
+        }
     }
 }
 
@@ -560,7 +778,7 @@ pub struct Level<F: Frame> {
 }
 
 impl<F: Frame> Level<F> {
-    pub fn new(parent: Level<F>, frame: F) -> Self {
+    fn new(parent: Level<F>, frame: F) -> Self {
         Self {
             inner: LevelInner::new(parent, frame),
         }
@@ -572,13 +790,13 @@ impl<F: Frame> Level<F> {
         }
     }
 
-    pub fn outermost_with_name(name: Label) -> Self {
+    fn outermost_with_name(name: Label) -> Self {
         Self {
             inner: LevelInner::outermost_with_name(name),
         }
     }
 
-    pub fn formals(&self) -> Vec<Access<F>> {
+    fn formals(&self) -> Vec<Access<F>> {
         self.inner
             .frame
             .borrow()
@@ -622,11 +840,11 @@ impl<F: Frame> LevelInner<F> {
         }
     }
 
-    pub fn outermost() -> Self {
+    fn outermost() -> Self {
         Self::outermost_with_name(Label::new())
     }
 
-    pub fn outermost_with_name(name: Label) -> Self {
+    fn outermost_with_name(name: Label) -> Self {
         Self {
             current: 0,
             frame: Rc::new(RefCell::new(F::new(name, vec![]))),

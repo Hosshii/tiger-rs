@@ -58,11 +58,23 @@ pub struct VarDecl(
     pub Positions,
 );
 
+pub type Params = Vec<Param>;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Param {
+    pub ident: Ident,
+    pub var_id: VarId,
+    pub is_escape: bool,
+    pub type_ident: TypeIdent,
+    pub type_id: TypeId,
+    pub pos: Positions,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct FuncDecl {
     pub name: Ident,
     pub fn_id: FnId,
-    pub params: TypeFields,
+    pub params: Params,
     pub ret_type: Option<TypeIdent>,
     pub re_type_id: TypeId,
     pub body: Expr,
@@ -84,6 +96,7 @@ pub enum LValue {
         record: Box<LValue>,
         record_type: TypeId,
         field_ident: Ident,
+        field_index: usize,
         field_type: TypeId,
         pos: Positions,
     },
@@ -127,14 +140,6 @@ pub enum ExprKind {
         pos: Positions,
     },
     While(Box<Expr>, Box<Expr>, Positions),
-    For {
-        id: Ident,
-        is_escape: bool,
-        from: Box<Expr>,
-        to: Box<Expr>,
-        then: Box<Expr>,
-        pos: Positions,
-    },
     Break(Positions),
     Let(Decls, Vec<Expr>, Positions),
 }
@@ -160,14 +165,6 @@ impl Expr {
                 pos,
             } => *pos,
             ExprKind::While(_, _, pos) => *pos,
-            ExprKind::For {
-                id: _,
-                is_escape: _,
-                from: _,
-                to: _,
-                then: _,
-                pos,
-            } => *pos,
             ExprKind::Break(pos) => *pos,
             ExprKind::Let(_, _, pos) => *pos,
         }
@@ -185,7 +182,7 @@ pub struct RecordField {
     pub pos: Positions,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Operator {
     Plus,
     Minus,
