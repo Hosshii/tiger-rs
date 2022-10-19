@@ -3,34 +3,35 @@ use std::{fmt::Display, sync::atomic::AtomicU32};
 use crate::common::Symbol;
 use thiserror::Error;
 
-use super::env::Env;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TypeId(u32);
+
+impl TypeId {
+    pub const fn new(num: u32) -> Self {
+        Self(num)
+    }
+}
 
 /// `Type` represents tiger language's type.
 /// `Complete` can determine the type just by looking at it and it never changes.
 /// `InComplete` may be incomplete due to mutual recursion etc. And may be changed later.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
-    Complete(CompleteType),
-    InComplete(IncompleteType),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum CompleteType {
     Int,
     String,
     Record {
-        fields: Vec<(Symbol, Type)>,
+        fields: Vec<(Symbol, TypeId)>,
         unique: Unique,
     },
     Array {
-        ty: Box<Type>,
+        ty: TypeId,
         unique: Unique,
     },
     Nil,
     Unit,
 }
 
-impl CompleteType {
+impl Type {
     pub fn dummy_record() -> Self {
         Self::Record {
             fields: Vec::new(),
@@ -40,44 +41,16 @@ impl CompleteType {
 
     pub fn dummy_array() -> Self {
         Self::Array {
-            ty: Box::new(Type::InComplete(IncompleteType {
-                sym: Symbol::dummy(),
-                ty: None,
-            })),
+            ty: TypeId::dummy(),
             unique: Unique::dummy(),
         }
     }
 
     pub fn assignable(&self, other: &Self) -> bool {
-        use self::CompleteType::*;
+        use self::Type::*;
         match (self, other) {
             (Nil, Record { .. }) | (Record { .. }, Nil) => true,
             _ => self == other,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct IncompleteType {
-    pub sym: Symbol,
-    pub ty: Option<Box<Type>>,
-}
-
-impl Type {
-    // TODO: should use `Either` instead of result
-    pub fn actual<'a>(
-        &'a self,
-        env: &'a Env<Type>,
-    ) -> Result<&'a CompleteType, IncompleteTypeError> {
-        match self {
-            Type::Complete(c) => Ok(c),
-            Type::InComplete(i) => match &i.ty {
-                Some(ty) => ty.actual(env),
-                None => match env.look(i.sym) {
-                    None => Err(IncompleteTypeError(i.sym)),
-                    Some(ty) => ty.actual(env),
-                },
-            },
         }
     }
 }
@@ -94,7 +67,7 @@ impl Display for IncompleteTypeError {
 // 0 is dummy
 static UNIQUE_INDEX: AtomicU32 = AtomicU32::new(1);
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Unique(u32);
 
 impl Unique {

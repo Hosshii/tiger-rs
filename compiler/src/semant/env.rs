@@ -43,16 +43,6 @@ impl<T> EnvTable<T> {
         }
     }
 
-    fn replace(&mut self, sym: Symbol, mut binding: T) -> Option<T> {
-        if let Some(bucket) = self.inner.get_mut(&sym) {
-            let last = bucket.last_mut().expect("bucket may not be empty");
-            std::mem::swap(last, &mut binding);
-            Some(binding)
-        } else {
-            None
-        }
-    }
-
     fn enter(&mut self, sym: Symbol, binding: T) {
         let bucket = self.inner.entry(sym).or_default();
         bucket.push(binding);
@@ -95,12 +85,6 @@ impl<T> Env<T> {
     pub fn enter(&mut self, sym: Symbol, binding: T) {
         self.inner.enter(sym, binding);
         self.scope_stack.push(sym);
-    }
-
-    /// Replace the newest binding which is correspond to the given symbol to the given binding,
-    /// and return the old binding. If there is no binding correspond to the given symbol, return None.
-    pub fn replace(&mut self, sym: Symbol, binding: T) -> Option<T> {
-        self.inner.replace(sym, binding)
     }
 
     /// Find the binding correspond to the given symbol.

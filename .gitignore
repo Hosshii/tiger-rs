@@ -3,3 +3,4 @@ testcases
 *.s
 *.c
 *.out
+.vscode

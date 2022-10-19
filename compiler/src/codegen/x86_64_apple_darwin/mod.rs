@@ -381,7 +381,7 @@ mod tests {
                     Box::new(Expr::Temp(CommonTemp::new_with(1))),
                 ),
                 vec![],
-                vec![Temp::new_with(1), Temp::new_with(0)],
+                vec![Temp::new_with(0), Temp::new_with(1)],
             ),
         ];
 

@@ -69,10 +69,6 @@ impl Symbol {
     fn as_u32(&self) -> u32 {
         self.0.private
     }
-
-    pub fn dummy() -> Self {
-        Self(SymbolIndex::new_invalid())
-    }
 }
 
 impl Display for Symbol {
@@ -128,10 +124,6 @@ struct SymbolIndex {
 impl SymbolIndex {
     pub fn new(v: u32) -> Self {
         Self { private: v }
-    }
-
-    pub fn new_invalid() -> Self {
-        Self { private: u32::MAX }
     }
 
     pub fn is_invalid(&self) -> bool {

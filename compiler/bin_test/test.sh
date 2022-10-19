@@ -10,8 +10,8 @@ assert() {
     local bin="../target/release/tiger"
 
     $bin "$file" > tmp.s
-    cc -o tmp tmp.s ../target/release/libcdylib.dylib
-    ./tmp
+    cc -o tmp.out tmp.s ../target/release/libcdylib.dylib
+    ./tmp.out
     actual="$?"
 
     if [ "$actual" = "$expected" ]; then

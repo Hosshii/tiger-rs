@@ -1,6 +1,9 @@
+mod builtin;
+mod ctx;
 mod env;
 mod escape;
-mod translate;
+pub(crate) mod hir;
+pub mod translate;
 mod types;
 
 use std::{
@@ -9,21 +12,28 @@ use std::{
 };
 
 use crate::{
-    codegen::aarch64_apple_darwin::frame::ARM64,
     common::{Label, Positions, Symbol},
-    frame::{Fragment, Frame},
     parser::ast::{
-        Decl, Expr as AstExpr, Ident, LValue, Operator, RecordField, Type as AstType, VarDecl,
+        Decl as AstDecl, Expr as AstExpr, Ident, LValue as AstLValue, Operator, Program,
+        RecordField, Type as AstType, TypeField as AstTypeField, VarDecl as AstVarDecl,
     },
+    semant::{ctx::FnEntry, hir::FuncDecl},
 };
 use {
     env::Env,
     escape::EscapeFinder,
-    translate::{Access, Expr as TransExpr, Level, Translator},
-    types::{CompleteType, IncompleteType, IncompleteTypeError, Type, Unique},
+    hir::{Expr as HirExpr, ExprKind, Program as HirProgram},
+    types::{IncompleteTypeError, Type, Unique},
 };
 
 use thiserror::Error;
+
+use self::{
+    builtin::Builtin,
+    ctx::{FnId, TyCtx, VarEntry, VarId},
+    hir::{Decl, LValue, Param, TypeDecl, VarDecl},
+    types::TypeId,
+};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -34,21 +44,10 @@ pub struct Error {
 }
 
 impl Error {
-    fn new_unexpected_type(
-        pos: Positions,
-        expected: Vec<CompleteType>,
-        actual: CompleteType,
-    ) -> Self {
+    fn new_unexpected_type(pos: Positions, expected: Vec<Type>, actual: Type) -> Self {
         Self {
             pos,
             kind: ErrorKind::UnExpectedType(expected, actual),
-        }
-    }
-
-    fn new_incomplete_type(pos: Positions, e: IncompleteTypeError) -> Self {
-        Self {
-            pos,
-            kind: e.into(),
         }
     }
 
@@ -73,18 +72,14 @@ impl Error {
         }
     }
 
-    fn new_missing_field(pos: Positions, ty: CompleteType, field: Symbol) -> Self {
+    fn new_missing_field(pos: Positions, ty: Type, field: Symbol) -> Self {
         Self {
             pos,
             kind: ErrorKind::MissingFieldName(ty, field),
         }
     }
 
-    fn new_missing_field_on_record_creation(
-        pos: Positions,
-        ty: CompleteType,
-        field: Symbol,
-    ) -> Self {
+    fn new_missing_field_on_record_creation(pos: Positions, ty: Type, field: Symbol) -> Self {
         Self {
             pos,
             kind: ErrorKind::MissingFieldOnRecordCreation(ty, field),
@@ -137,7 +132,7 @@ impl Error {
 #[derive(Debug, Error, PartialEq, Eq)]
 enum ErrorKind {
     #[error("unexpected type: expected {0:?}, found: {1:?}")]
-    UnExpectedType(Vec<CompleteType>, CompleteType),
+    UnExpectedType(Vec<Type>, Type),
     #[error("incomplete type: {}", (.0).0.name())]
     InCompleteType(#[from] IncompleteTypeError),
     #[error("unexpected func item: {}, expected var item", .0.name())]
@@ -147,9 +142,9 @@ enum ErrorKind {
     #[error("undefined {0}: {}",.1.name())]
     UndefinedItem(Item, Symbol),
     #[error("no field `{:?}` on type `{}`",.0, .1.name())]
-    MissingFieldName(CompleteType, Symbol),
+    MissingFieldName(Type, Symbol),
     #[error("field `{}` on `{:?}` is not initialized",.1.name(),.0)]
-    MissingFieldOnRecordCreation(CompleteType, Symbol),
+    MissingFieldOnRecordCreation(Type, Symbol),
     #[error("function {}: expected {0} argument(s), found {1} argument(s)", .2.name())]
     MismatchArgCount(u8, u8, Symbol),
     #[error("initializing nil expressions must be constrained by record type")]
@@ -189,120 +184,67 @@ impl Display for Item {
     }
 }
 
-pub struct Semant<F: Frame> {
-    var_env: Env<EnvEntry<F>>, // var and func env
-    type_env: Env<Type>,       // type env
+pub struct Semant {
+    var_env: Env<EnvEntry>, // var and func env
+    type_env: Env<TypeId>,  // type env
+    ty_ctx: TyCtx,
     break_count: u32, // 0 means not inside break or while. greater than 1 means inside break or while
-    translator: Translator<F>,
 }
 
-impl Semant<ARM64> {}
-
-impl<F: Frame> Semant<F> {
-    pub fn new(var_base: Env<EnvEntry<F>>, type_base: Env<Type>) -> Self {
+impl Semant {
+    pub fn new(var_base: Env<EnvEntry>, type_base: Env<TypeId>, ty_ctx: TyCtx) -> Self {
         Self {
             var_env: var_base,
             type_env: type_base,
+            ty_ctx,
             break_count: 0,
-            translator: Translator::default(),
         }
     }
 
     pub fn new_with_base() -> Self {
-        let var_env = Env::new().with_base_var();
-        let type_env = Env::new().with_base_type();
+        let ty_ctx = TyCtx::new().with_builtin();
+        let type_env = Env::new().with_builtin();
+        let var_env = Env::new().with_builtin();
 
-        Self::new(var_env, type_env)
+        Self::new(var_env, type_env, ty_ctx)
     }
 
-    fn actual_ty<'a>(&'a self, ty: &'a Type, pos: Positions) -> Result<&'a CompleteType> {
-        ty.actual(&self.type_env)
-            .map_err(|e| Error::new_incomplete_type(pos, e))
+    /// whether rhs is assignable to lhs or not.
+    fn assignable(&self, lhs: TypeId, rhs: TypeId) -> bool {
+        let lhs = self.type_(lhs);
+        let rhs = self.type_(rhs);
+        lhs.assignable(rhs)
     }
 
-    pub fn trans_prog(mut self, mut expr: AstExpr, main_name: &str) -> Result<Vec<Fragment<F>>> {
-        EscapeFinder::find_escape(&mut expr);
+    fn type_(&self, type_id: TypeId) -> &Type {
+        self.ty_ctx.type_(type_id)
+    }
+
+    fn type_id(&self, sym: Symbol, pos: Positions) -> Result<&TypeId> {
+        self.type_env
+            .look(sym)
+            .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))
+    }
+
+    pub fn trans_prog(mut self, mut prog: Program) -> Result<(HirProgram, TyCtx)> {
+        EscapeFinder::find_escape(&mut prog);
 
         // if body returns int, then use that value as exit code.
         // otherwise use 0 as exit code.
-        let mut main_level =
-            Level::outermost_with_name(Label::with_named_fn(main_name.to_string()));
-        let body = self.trans_expr(expr, &mut main_level, None)?;
-        let body = if body.ty == CompleteType::Int {
-            body
-        } else {
-            let seq = vec![body.expr, translate::num(0)];
-            let expr = translate::sequence(seq);
-            ExprType {
-                expr,
-                ty: CompleteType::Int,
-            }
-        };
-
-        self.translator.proc_entry_exit(main_level, body.expr);
-
-        Ok(self.translator.get_result())
+        let prog = self.trans_prog_(prog)?;
+        Ok((prog, self.ty_ctx))
     }
 
-    fn check_type(
-        &self,
-        actual: &CompleteType,
-        expected: &[CompleteType],
-        pos: Positions,
-    ) -> Result<()> {
-        if expected.iter().any(|e| e == actual) {
+    fn check_type(&self, actual: TypeId, expected: &[TypeId], pos: Positions) -> Result<()> {
+        if expected.iter().any(|e| e == &actual) {
             Ok(())
         } else {
-            Err(Error {
+            Err(Error::new_unexpected_type(
                 pos,
-                kind: ErrorKind::UnExpectedType(expected.to_vec(), actual.clone()),
-            })
+                expected.iter().map(|v| self.type_(*v)).cloned().collect(),
+                self.type_(actual).clone(),
+            ))
         }
-    }
-
-    fn detect_invalid_recursion(&mut self, iter: &[(Symbol, Positions)]) -> Result<()> {
-        for &(sym, pos) in iter {
-            let mut seen = HashSet::new();
-            seen.insert(sym);
-            match self.type_env.look(sym) {
-                Some(ty) => match self.detect_invalid_recursion_inner(ty, pos, &mut seen) {
-                    Ok(_) => continue,
-                    e => return e.map(|_| ()),
-                },
-                None => return Err(Error::new_undefined_item(pos, Item::Type, sym)),
-            }
-        }
-        Ok(())
-    }
-
-    // caller must insert `ty` 's symbol into seen.
-    fn detect_invalid_recursion_inner(
-        &self,
-        ty: &Type,
-        pos: Positions,
-        seen: &mut HashSet<Symbol>,
-    ) -> Result<()> {
-        match ty {
-            Type::Complete(_) => Ok(()),
-            Type::InComplete(i) => {
-                if seen.contains(&i.sym) {
-                    return Err(Error::new_invalid_recursion(
-                        seen.iter().cloned().collect(),
-                        pos,
-                    ));
-                } else {
-                    seen.insert(i.sym);
-                    match &i.ty {
-                        Some(ty) => self.detect_invalid_recursion_inner(ty, pos, seen),
-                        None => match self.type_env.look(i.sym) {
-                            Some(ty) => self.detect_invalid_recursion_inner(ty, pos, seen),
-                            None => Err(Error::new_undefined_item(pos, Item::Type, i.sym)),
-                        },
-                    }
-                }
-            }
-        }
-        // Ok(())
     }
 
     fn is_brekable(&self) -> bool {
@@ -321,9 +263,9 @@ impl<F: Frame> Semant<F> {
         result
     }
 
-    fn new_break_scope<G>(&mut self, f: G) -> Result<ExprType>
+    fn new_break_scope<G>(&mut self, f: G) -> Result<HirExpr>
     where
-        G: FnOnce(&mut Self) -> Result<ExprType>,
+        G: FnOnce(&mut Self) -> Result<HirExpr>,
     {
         self.break_count += 1;
         let result = f(self);
@@ -331,57 +273,142 @@ impl<F: Frame> Semant<F> {
         result
     }
 
-    fn trans_decl(
-        &mut self,
-        decl: Decl,
-        parent_level: &mut Level<F>,
-        break_label: Option<Label>,
-    ) -> Result<Option<TransExpr>> {
+    fn new_var(&mut self, e: VarEntry) -> VarId {
+        let sym = e.sym();
+        let id = self.ty_ctx.new_var(e);
+        self.var_env.enter(sym, EnvEntry::new_var(id));
+        id
+    }
+
+    fn new_fn(&mut self, e: FnEntry) -> FnId {
+        let sym = e.sym();
+        let id = self.ty_ctx.new_fn(e);
+        self.var_env.enter(sym, EnvEntry::new_func(id));
+        id
+    }
+
+    fn trans_decl(&mut self, decl: AstDecl) -> Result<Decl> {
         match decl {
-            Decl::Type(type_decls) => {
+            AstDecl::Type(type_decls) => {
                 let mut seen = HashSet::new();
+
                 for decl in type_decls.iter() {
                     let sym = Symbol::from(&decl.id);
-                    let ty = Type::InComplete(IncompleteType { sym, ty: None });
-                    self.type_env.enter(sym, ty);
                     if !seen.insert(sym) {
                         return Err(Error::new_same_name(Item::Type, sym, decl.pos));
                     }
+
+                    // Reserve new type id.
+                    // Type id is only reserved if type is array or record.
+                    // Otherwise it means type alias, and not create new type.
+                    if matches!(decl.ty, AstType::Array(_, _) | AstType::Fields(_, _)) {
+                        let type_id = self.ty_ctx.reserve_type();
+                        self.type_env.enter(sym, type_id);
+                    }
                 }
 
-                let iter: Vec<_> = type_decls
+                // Resolve type alias,
+                let mut aliases = type_decls
                     .iter()
-                    .map(|v| (Symbol::from(&v.id), v.pos))
-                    .collect();
+                    .filter(|v| matches!(v.ty, AstType::Id(_, _)))
+                    .map(|v| {
+                        let AstType::Id(ref type_ident,_)= v.ty else{unreachable!()};
+                        (&v.id, type_ident, v.pos)
+                    })
+                    .collect::<Vec<_>>();
 
-                for decl in type_decls.into_iter() {
-                    let id = decl.id;
-                    let sym = Symbol::from(id);
-                    let _type = self.trans_type(decl.ty)?;
-                    self.type_env
-                        .replace(sym, _type)
-                        .expect("binding not found");
+                loop {
+                    let leaf = aliases.iter().position(|v| {
+                        let sym = Symbol::from(v.1);
+                        self.type_env.look(sym).is_some()
+                    });
+
+                    if let Some(idx) = leaf {
+                        let (lhs, rhs, pos) = aliases.swap_remove(idx);
+                        let lhs = Symbol::from(lhs);
+                        let rhs = Symbol::from(rhs);
+                        let type_id = self.type_id(rhs, pos)?;
+                        self.type_env.enter(lhs, *type_id);
+                    } else {
+                        break;
+                    }
                 }
 
-                self.detect_invalid_recursion(&iter)?;
+                if !aliases.is_empty() {
+                    let syms = aliases.iter().map(|v| Symbol::from(v.0)).collect();
+                    return Err(Error::new_invalid_recursion(syms, aliases[0].2));
+                }
 
-                Ok(None)
+                // Resolve record and array.
+                for decl in type_decls.iter() {
+                    let id = &decl.id;
+                    let sym = Symbol::from(id);
+                    let &type_id = self.type_id(sym, decl.pos)?;
+
+                    match &decl.ty {
+                        AstType::Fields(fields, _) => {
+                            let fields = fields
+                                .iter()
+                                .map(|f| {
+                                    let name = Symbol::from(&f.id);
+                                    let _type = Symbol::from(&f.type_id);
+                                    let _type = self.type_id(_type, f.pos).copied();
+                                    _type.map(|v| (name, v))
+                                })
+                                .collect::<Result<Vec<_>>>()?;
+
+                            let ty = Type::Record {
+                                fields,
+                                unique: Unique::new(),
+                            };
+
+                            self.ty_ctx.set_reserved_type(type_id, ty);
+                        }
+
+                        AstType::Array(type_ident, pos) => {
+                            let sym = Symbol::from(type_ident);
+                            let &elem_ty = self.type_id(sym, *pos)?;
+
+                            let ty = Type::Array {
+                                ty: elem_ty,
+                                unique: Unique::new(),
+                            };
+
+                            self.ty_ctx.set_reserved_type(type_id, ty);
+                        }
+                        AstType::Id(_, _) => (),
+                    }
+                }
+
+                let mut converted = Vec::new();
+                for decl in type_decls {
+                    let sym = Symbol::from(&decl.id);
+                    let &type_id = self.type_id(sym, decl.pos)?;
+                    converted.push(TypeDecl {
+                        id: decl.id.into(),
+                        type_id,
+                        pos: decl.pos,
+                    })
+                }
+
+                Ok(Decl::Type(converted))
             }
-            Decl::Var(VarDecl(id, is_escape, ty, expr, pos)) => {
-                let sym = Symbol::from(id);
-                let expr = self.trans_expr(expr, parent_level, break_label)?;
+            AstDecl::Var(AstVarDecl(id, is_escape, ty, expr, pos)) => {
+                let sym = Symbol::from(id.clone());
+                let expr = self.trans_expr(expr)?;
 
-                if let Some(type_id) = ty {
+                if let Some(ref type_id) = ty {
                     let ty_symbol = Symbol::from(type_id);
                     match self.type_env.look(ty_symbol) {
                         Some(expected_ty) => {
-                            let expected_ty = self.actual_ty(expected_ty, pos)?.clone();
+                            let expected_ty = self.type_(*expected_ty);
+                            let actual_ty = self.type_(expr.ty);
 
-                            if !expected_ty.assignable(&expr.ty) {
+                            if !expected_ty.assignable(actual_ty) {
                                 return Err(Error::new_unexpected_type(
                                     pos,
-                                    vec![expected_ty],
-                                    expr.ty,
+                                    vec![expected_ty.clone()],
+                                    actual_ty.clone(),
                                 ));
                             }
                         }
@@ -390,30 +417,33 @@ impl<F: Frame> Semant<F> {
                 } else {
                     // initializing nil expressions not constrained by record type is invalid
                     // see test45.tig
-                    if expr.ty == CompleteType::Nil {
+                    if expr.ty == TypeId::nil() {
                         return Err(Error::new_unconstrained_nil_initialize(pos));
                     }
 
                     // initializing with unit is invalid
                     // see test43.tig
-                    if expr.ty == CompleteType::Unit {
+                    if expr.ty == TypeId::unit() {
                         return Err(Error::new_unit_initialize(pos));
                     }
                 }
 
-                let access = translate::alloc_local(parent_level.clone(), is_escape);
-                self.var_env.enter(
-                    sym,
-                    EnvEntry::new_var(access.clone(), Type::Complete(expr.ty)),
-                );
-                let lhs = translate::var_decl(access, expr.expr);
+                let e = VarEntry::new(expr.ty, sym);
+                let var_id = self.new_var(e);
 
-                Ok(Some(lhs))
+                Ok(Decl::Var(VarDecl(
+                    id,
+                    var_id,
+                    is_escape,
+                    ty.map(Into::into),
+                    expr.ty,
+                    expr,
+                    pos,
+                )))
             }
-            Decl::Func(fn_decls) => {
+            AstDecl::Func(fn_decls) => {
                 let mut header = vec![];
                 let mut seen = HashSet::new();
-                let mut levels = vec![];
                 for func_decl in fn_decls.iter() {
                     // enter function defs
                     let func_name = Symbol::from(&func_decl.name);
@@ -422,45 +452,22 @@ impl<F: Frame> Semant<F> {
                         .iter()
                         .map(|f| {
                             let ty_sym = Symbol::from(&f.type_id);
-                            match self.type_env.look(ty_sym) {
-                                Some(ty) => Ok(ty.clone()),
-                                None => Err(Error::new_undefined_item(f.pos, Item::Type, ty_sym)),
-                            }
+                            self.type_id(ty_sym, f.pos).copied()
                         })
                         .collect::<Result<Vec<_>>>()?;
-
-                    let formals_is_escape: Vec<_> =
-                        func_decl.params.iter().map(|p| p.is_escape).collect();
 
                     let ret_type = match &func_decl.ret_type {
                         Some(type_id) => {
                             let ty_sym = Symbol::from(type_id);
-                            match self.type_env.look(ty_sym) {
-                                Some(t) => t.clone(),
-                                None => {
-                                    return Err(Error::new_undefined_item(
-                                        func_decl.pos,
-                                        Item::Type,
-                                        ty_sym,
-                                    ));
-                                }
-                            }
+                            self.type_id(ty_sym, func_decl.pos).copied()?
                         }
-                        None => Type::Complete(CompleteType::Unit),
+                        None => TypeId::unit(),
                     };
 
                     let label = Label::new_fn(func_name.name().as_ref());
-                    let level = translate::new_level(
-                        parent_level.clone(),
-                        label.clone(),
-                        formals_is_escape,
-                    );
-                    levels.push(level.clone());
-                    self.var_env.enter(
-                        func_name,
-                        EnvEntry::new_func(level, label, formals.clone(), ret_type.clone()),
-                    );
-                    header.push((formals, ret_type));
+                    let e = FnEntry::new(func_name, label, formals.clone(), ret_type);
+                    let fn_id = self.new_fn(e);
+                    header.push((formals, ret_type, fn_id));
                     if !seen.insert(func_name) {
                         return Err(Error::new_same_name(Item::Func, func_name, func_decl.pos));
                     }
@@ -468,150 +475,142 @@ impl<F: Frame> Semant<F> {
 
                 assert_eq!(header.len(), fn_decls.len());
 
-                for ((func_decl, (formals, ret_type)), mut level) in fn_decls
-                    .into_iter()
-                    .zip(header.into_iter())
-                    .zip(levels.into_iter())
+                let mut converted = Vec::new();
+                for (func_decl, (formals, ret_type, fn_id)) in
+                    fn_decls.into_iter().zip(header.into_iter())
                 {
                     // function body
-                    let ret_type = self.actual_ty(&ret_type, func_decl.pos)?.clone();
 
-                    self.new_scope(|_self| {
-                        for ((ty, f), access) in formals
-                            .into_iter()
-                            .zip(func_decl.params.into_iter())
-                            .zip(level.formals())
-                        {
-                            let sym = Symbol::from(f.id);
-                            _self.var_env.enter(sym, EnvEntry::new_var(access, ty))
+                    let (body, params) = self.new_scope(|_self| {
+                        let mut params = Vec::new();
+                        for (&ty, f) in formals.iter().zip(func_decl.params.iter()) {
+                            let e = VarEntry::new(ty, Symbol::from(&f.id));
+                            let id = _self.new_var(e);
+                            params.push(id);
                         }
 
-                        let ty =
-                            _self.trans_expr(func_decl.body, &mut level, break_label.clone())?;
+                        let ty = _self.trans_expr(func_decl.body)?;
 
-                        if ty.ty != ret_type {
-                            Err(Error::new_unexpected_type(
-                                func_decl.pos,
-                                vec![ret_type],
-                                ty.ty,
-                            ))
-                        } else {
-                            _self.translator.proc_entry_exit(level, ty.expr);
-                            Ok(())
-                        }
+                        _self.check_type(ty.ty, &[ret_type], func_decl.pos)?;
+                        Ok((ty, params))
                     })?;
+
+                    let mut formals = Vec::new();
+                    for (param, var_id) in func_decl.params.into_iter().zip(params.iter()) {
+                        formals.push(self.trans_param(param, *var_id)?);
+                    }
+                    converted.push(FuncDecl {
+                        name: func_decl.name,
+                        fn_id,
+                        params: formals,
+                        ret_type: func_decl.ret_type.map(Into::into),
+                        re_type_id: ret_type,
+                        body,
+                        pos: func_decl.pos,
+                    })
                 }
 
-                Ok(None)
+                Ok(Decl::Func(converted))
             }
         }
     }
 
-    fn trans_expr(
-        &mut self,
-        expr: AstExpr,
-        level: &mut Level<F>,
-        break_label: Option<Label>,
-    ) -> Result<ExprType> {
-        match expr {
-            AstExpr::LValue(lvalue, _) => self.trans_lvalue(lvalue, level, break_label),
+    fn trans_prog_(&mut self, prog: Program) -> Result<HirProgram> {
+        self.trans_expr(prog)
+    }
 
-            AstExpr::Nil(_) => Ok(ExprType {
-                expr: translate::num(0),
-                ty: CompleteType::Nil,
+    fn trans_expr(&mut self, expr: AstExpr) -> Result<HirExpr> {
+        match expr {
+            AstExpr::LValue(lvalue, pos) => {
+                let (lvalue, ty) = self.trans_lvalue(lvalue)?;
+                Ok(HirExpr {
+                    kind: ExprKind::LValue(lvalue, pos),
+                    ty,
+                })
+            }
+
+            AstExpr::Nil(pos) => Ok(HirExpr {
+                kind: ExprKind::Nil(pos),
+                ty: TypeId::nil(),
             }),
 
             // exprs.len() may be 0.
-            AstExpr::Sequence(exprs, _) => {
+            AstExpr::Sequence(exprs, pos) => {
                 // TODO: refactor
                 let mut transed = exprs
                     .into_iter()
-                    .map(|e| self.trans_expr(e, level, break_label.clone()))
+                    .map(|e| self.trans_expr(e))
                     .collect::<Result<Vec<_>>>()?;
 
                 let expr_type = match transed.len() {
-                    0 => ExprType {
-                        expr: translate::num(0),
-                        ty: CompleteType::Unit,
+                    0 => HirExpr {
+                        kind: ExprKind::Int(0, pos),
+                        ty: TypeId::unit(),
                     },
-                    1 => (transed.pop().unwrap()),
+                    1 => transed.pop().unwrap(),
                     _ => {
-                        let ty = transed.last().unwrap().ty.clone();
-                        let exprs = transed.into_iter().map(|e| e.expr).collect();
-                        let expr = translate::sequence(exprs);
-                        ExprType { expr, ty }
+                        let ty = transed.last().unwrap().ty;
+                        let pos = transed.last().unwrap().pos();
+                        HirExpr {
+                            kind: ExprKind::Sequence(transed, pos),
+                            ty,
+                        }
                     }
                 };
 
                 Ok(expr_type)
             }
 
-            AstExpr::Int(num, _) => Ok(ExprType {
-                expr: translate::num(num as i64),
-                ty: CompleteType::Int,
+            AstExpr::Int(num, pos) => Ok(HirExpr {
+                kind: ExprKind::Int(num, pos),
+                ty: TypeId::int(),
             }),
 
-            AstExpr::Str(lit, _) => Ok(ExprType {
-                expr: self.translator.string_literal(lit.to_string()),
-                ty: CompleteType::String,
+            AstExpr::Str(lit, pos) => Ok(HirExpr {
+                kind: ExprKind::Str(lit, pos),
+                ty: TypeId::string(),
             }),
 
             AstExpr::FuncCall(ident, args, pos) => {
-                let sym = Symbol::from(ident);
+                let sym = Symbol::from(ident.clone());
                 let args_len = args.len();
 
                 // proceed trans_expr first for ownership reason.
                 let arg_iter = args
                     .into_iter()
-                    .map(|e| self.trans_expr(e, level, break_label.clone()))
+                    .map(|e| self.trans_expr(e))
                     .collect::<Result<Vec<_>>>()?;
 
                 match self.var_env.look(sym) {
-                    Some(EnvEntry::Func {
-                        level: fn_level,
-                        label,
-                        formals,
-                        result,
-                    }) => {
-                        if args_len != formals.len() {
+                    Some(EnvEntry::Func { id }) => {
+                        let e = self.ty_ctx.fn_(*id);
+                        if args_len != e.formals().len() {
                             return Err(Error::new_mismatch_arg_count(
                                 pos,
-                                formals.len() as u8,
+                                e.formals().len() as u8,
                                 args_len as u8,
                                 sym,
                             ));
-                        }
-
-                        let formal_iter = formals
-                            .iter()
-                            .map(|v| self.actual_ty(v, pos))
-                            .collect::<Result<Vec<_>>>()?;
+                        };
 
                         let unmatched = arg_iter
                             .iter()
-                            .zip(formal_iter.iter())
+                            .zip(e.formals().iter())
                             .enumerate()
-                            .find(|(_, (ExprType { ty: lhs, .. }, rhs))| lhs != **rhs);
+                            .find(|(_, (HirExpr { ty: lhs, .. }, rhs))| lhs != *rhs);
 
                         match unmatched {
-                            Some((_, (ExprType { ty: actual, .. }, &expected))) => {
+                            Some((_, (HirExpr { ty: actual, .. }, &expected))) => {
                                 Err(Error::new_unexpected_type(
                                     pos,
-                                    vec![expected.clone()],
-                                    actual.clone(),
+                                    vec![self.type_(expected).clone()],
+                                    self.type_(*actual).clone(),
                                 ))
                             }
-                            None => {
-                                let result = self.actual_ty(result, pos)?;
-
-                                let args = arg_iter.into_iter().map(|v| v.expr).collect();
-                                let fn_exp =
-                                    translate::fn_call(label.clone(), fn_level, level, args);
-                                Ok(ExprType {
-                                    expr: fn_exp,
-                                    ty: result.clone(),
-                                })
-                            }
+                            None => Ok(HirExpr {
+                                kind: ExprKind::FuncCall(ident, *id, arg_iter, pos),
+                                ty: e.result(),
+                            }),
                         }
                     }
 
@@ -632,13 +631,13 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                let lhs = self.trans_expr(*lhs, level, break_label.clone())?;
-                let rhs = self.trans_expr(*rhs, level, break_label)?;
-                self.check_type(&lhs.ty, &[CompleteType::Int], pos)?;
-                self.check_type(&rhs.ty, &[CompleteType::Int], pos)?;
-                Ok(ExprType {
-                    expr: translate::bin_op(op.try_into().expect("convert op"), lhs.expr, rhs.expr),
-                    ty: CompleteType::Int,
+                let lhs = self.trans_expr(*lhs)?;
+                let rhs = self.trans_expr(*rhs)?;
+                self.check_type(lhs.ty, &[TypeId::int()], pos)?;
+                self.check_type(rhs.ty, &[TypeId::int()], pos)?;
+                Ok(HirExpr {
+                    kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
+                    ty: TypeId::int(),
                 })
             }
 
@@ -649,86 +648,69 @@ impl<F: Frame> Semant<F> {
                 rhs,
                 pos,
             ) => {
-                let lhs = self.trans_expr(*lhs, level, break_label.clone())?;
-                let rhs = self.trans_expr(*rhs, level, break_label)?;
-                match (lhs.ty, rhs.ty) {
-                    (CompleteType::Int, CompleteType::Int) => Ok(ExprType {
-                        expr: translate::rel_op(
-                            op.try_into().expect("convert op"),
-                            lhs.expr,
-                            rhs.expr,
-                        ),
-                        ty: CompleteType::Int,
+                let lhs = self.trans_expr(*lhs)?;
+                let rhs = self.trans_expr(*rhs)?;
+
+                match (self.type_(lhs.ty), self.type_(rhs.ty)) {
+                    (Type::Int, Type::Int) | (Type::String, Type::String) => Ok(HirExpr {
+                        kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
+                        ty: TypeId::int(),
                     }),
-                    (CompleteType::String, CompleteType::String) => Ok(ExprType {
-                        expr: translate::string_ord::<F>(
-                            op.try_into().expect("convert op"),
-                            lhs.expr,
-                            rhs.expr,
-                        ),
-                        ty: CompleteType::Int,
-                    }),
-                    other => Err(Error::new_unexpected_type(pos, vec![other.0], other.1)),
+                    other => Err(Error::new_unexpected_type(
+                        pos,
+                        vec![other.0.clone()],
+                        other.1.clone(),
+                    )),
                 }
             }
 
             // compare two type
             AstExpr::Op(op @ (Operator::Eq | Operator::Neq), lhs, rhs, pos) => {
-                let lhs = self.trans_expr(*lhs, level, break_label.clone())?;
-                let rhs = self.trans_expr(*rhs, level, break_label)?;
-                if lhs.ty.assignable(&rhs.ty) {
-                    let expr = if lhs.ty == CompleteType::String {
-                        translate::string_eq::<F>(
-                            op.try_into().expect("convert op"),
-                            lhs.expr,
-                            rhs.expr,
-                        )
-                    } else {
-                        translate::rel_op(op.try_into().expect("convert op"), lhs.expr, rhs.expr)
-                    };
-                    Ok(ExprType {
-                        expr,
-                        ty: CompleteType::Int,
+                let lhs = self.trans_expr(*lhs)?;
+                let rhs = self.trans_expr(*rhs)?;
+                if self.assignable(lhs.ty, rhs.ty) {
+                    Ok(HirExpr {
+                        kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
+                        ty: TypeId::int(),
                     })
                 } else {
-                    Err(Error::new_unexpected_type(pos, vec![lhs.ty], rhs.ty))
+                    Err(Error::new_unexpected_type(
+                        pos,
+                        vec![self.type_(lhs.ty).clone()],
+                        self.type_(rhs.ty).clone(),
+                    ))
                 }
             }
 
-            AstExpr::Neg(e, _) => {
-                let pos = e.pos();
-                let expr_ty = self.trans_expr(*e, level, break_label)?;
-                self.check_type(&expr_ty.ty, &[CompleteType::Int], pos)?;
+            AstExpr::Neg(e, pos) => {
+                let expr = self.trans_expr(*e)?;
+                self.check_type(expr.ty, &[TypeId::int()], pos)?;
 
-                Ok(ExprType {
-                    expr: translate::neg(expr_ty.expr),
-                    ty: expr_ty.ty,
+                let ty = expr.ty;
+                Ok(HirExpr {
+                    kind: ExprKind::Neg(Box::new(expr), pos),
+                    ty,
                 })
             }
 
-            AstExpr::RecordCreation(type_id, actual_fields, pos) => {
-                let sym = Symbol::from(type_id);
+            AstExpr::RecordCreation(type_ident, actual_fields, pos) => {
+                let sym = Symbol::from(&type_ident);
                 match self.type_env.look(sym) {
-                    Some(ty) => {
-                        let ty = self.actual_ty(ty, pos)?;
+                    Some(&type_id) => {
+                        let ty = self.type_(type_id);
 
                         match ty {
-                            CompleteType::Record {
+                            Type::Record {
                                 fields: expected_fields,
                                 ..
                             } => {
-                                let mut expected_map = expected_fields
-                                    .iter()
-                                    .map(|f| {
-                                        let ty = self.actual_ty(&f.1, pos)?;
-                                        Ok((f.0, ty.clone()))
-                                    })
-                                    .collect::<Result<HashMap<_, _>>>()?;
+                                let mut expected_map =
+                                    expected_fields.iter().copied().collect::<HashMap<_, _>>();
 
                                 let ty = ty.clone();
                                 let mut exprs = Vec::new();
                                 for RecordField { id, expr, pos } in actual_fields {
-                                    let actual_sym = Symbol::from(id);
+                                    let actual_sym = Symbol::from(id.clone());
                                     match expected_map.remove(&actual_sym) {
                                         None => {
                                             return Err(Error::new_missing_field(
@@ -737,28 +719,33 @@ impl<F: Frame> Semant<F> {
                                         }
 
                                         Some(expected_field_type) => {
-                                            let ExprType {
-                                                ty: actual_field_type,
-                                                expr,
-                                            } =
-                                                self.trans_expr(expr, level, break_label.clone())?;
+                                            let expr = self.trans_expr(expr)?;
 
-                                            if !expected_field_type.assignable(&actual_field_type) {
+                                            if !self.assignable(expected_field_type, expr.ty) {
                                                 return Err(Error::new_unexpected_type(
                                                     pos,
-                                                    vec![expected_field_type],
-                                                    actual_field_type,
+                                                    vec![self.type_(expected_field_type).clone()],
+                                                    self.type_(expr.ty).clone(),
                                                 ));
                                             }
-                                            exprs.push(expr);
+                                            exprs.push(hir::RecordField {
+                                                ident: id,
+                                                expr,
+                                                field_type: expected_field_type,
+                                                pos,
+                                            });
                                         }
                                     }
                                 }
 
                                 if expected_map.is_empty() {
-                                    Ok(ExprType {
-                                        expr: translate::record_creation::<F>(exprs),
-                                        ty,
+                                    Ok(HirExpr {
+                                        kind: ExprKind::RecordCreation(
+                                            type_ident.into(),
+                                            exprs,
+                                            pos,
+                                        ),
+                                        ty: type_id,
                                     })
                                 } else {
                                     let sym = expected_map.iter().next().unwrap();
@@ -769,7 +756,7 @@ impl<F: Frame> Semant<F> {
                             }
                             other => Err(Error::new_unexpected_type(
                                 pos,
-                                vec![CompleteType::dummy_record()],
+                                vec![Type::dummy_record()],
                                 other.clone(),
                             )),
                         }
@@ -779,40 +766,40 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::ArrayCreation {
-                type_id,
+                type_id: type_ident,
                 size,
                 init,
                 pos,
             } => {
-                let sym = Symbol::from(type_id);
+                let sym = Symbol::from(&type_ident);
                 match self.type_env.look(sym) {
-                    Some(ty) => {
-                        let ty = self.actual_ty(ty, pos)?;
+                    Some(&type_id) => {
+                        let ty = self.type_(type_id).clone();
 
                         match ty {
-                            CompleteType::Array { ty, unique } => {
-                                let unique = *unique;
-                                let ty = ty.clone();
-
-                                let arr_ty = self.actual_ty(&ty, pos)?.clone();
-
+                            Type::Array { ty: elem_ty, .. } => {
                                 let size_pos = size.pos();
-                                let size = self.trans_expr(*size, level, break_label.clone())?;
-                                self.check_type(&size.ty, &[CompleteType::Int], size_pos)?;
+                                let size = self.trans_expr(*size)?;
+                                self.check_type(size.ty, &[TypeId::int()], size_pos)?;
 
                                 let init_pos = init.pos();
-                                let init = self.trans_expr(*init, level, break_label)?;
-                                self.check_type(&init.ty, &[arr_ty], init_pos)?;
+                                let init = self.trans_expr(*init)?;
+                                self.check_type(init.ty, &[elem_ty], init_pos)?;
 
-                                Ok(ExprType {
-                                    expr: translate::array_creation::<F>(size.expr, init.expr),
-                                    ty: CompleteType::Array { ty, unique },
+                                Ok(HirExpr {
+                                    kind: ExprKind::ArrayCreation {
+                                        type_ident: type_ident.into(),
+                                        size: Box::new(size),
+                                        init: Box::new(init),
+                                        pos,
+                                    },
+                                    ty: type_id,
                                 })
                             }
                             other => Err(Error::new_unexpected_type(
                                 pos,
-                                vec![CompleteType::dummy_record()],
-                                other.clone(),
+                                vec![Type::dummy_record()],
+                                other,
                             )),
                         }
                     }
@@ -821,79 +808,77 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Assign(lvalue, expr, pos) => {
-                let lhs = self.trans_lvalue(lvalue, level, break_label.clone())?;
-                let rhs = self.trans_expr(*expr, level, break_label)?;
-                if lhs.ty == rhs.ty {
-                    Ok(ExprType {
-                        expr: translate::assign(lhs.expr, rhs.expr),
-                        ty: CompleteType::Unit,
-                    })
-                } else {
-                    Err(Error::new_unexpected_type(pos, vec![lhs.ty], rhs.ty))
-                }
+                let (lvalue, type_id) = self.trans_lvalue(lvalue)?;
+
+                let rhs = self.trans_expr(*expr)?;
+                self.check_type(rhs.ty, &[type_id], pos)?;
+                Ok(HirExpr {
+                    kind: ExprKind::Assign(lvalue, Box::new(rhs), pos),
+                    ty: TypeId::unit(),
+                })
             }
 
             AstExpr::If {
                 cond,
                 then,
                 els,
-                pos: _,
+                pos,
             } => {
                 let cond_pos = cond.pos();
-                let cond = self.trans_expr(*cond, level, break_label.clone())?;
-                self.check_type(&cond.ty, &[CompleteType::Int], cond_pos)?;
+                let cond = self.trans_expr(*cond)?;
+                self.check_type(cond.ty, &[TypeId::int()], cond_pos)?;
 
-                let then_pos = then.pos();
-                let then = self.trans_expr(*then, level, break_label.clone())?;
+                let then = self.trans_expr(*then)?;
                 match els {
                     Some(els) => {
                         let els_pos = els.pos();
-                        let els = self.trans_expr(*els, level, break_label)?;
+                        let els = self.trans_expr(*els)?;
 
-                        if !then.ty.assignable(&els.ty) {
-                            Err(Error::new_unexpected_type(els_pos, vec![then.ty], els.ty))
+                        if !self.assignable(then.ty, els.ty) {
+                            Err(Error::new_unexpected_type(
+                                els_pos,
+                                vec![self.type_(then.ty).clone()],
+                                self.type_(els.ty).clone(),
+                            ))
                         } else {
-                            Ok(ExprType {
-                                expr: translate::if_expr(
-                                    level,
-                                    cond.expr,
-                                    then.expr,
-                                    Some(els.expr),
-                                ),
+                            Ok(HirExpr {
                                 ty: then.ty,
+                                kind: ExprKind::If {
+                                    cond: Box::new(cond),
+                                    then: Box::new(then),
+                                    els: Some(Box::new(els)),
+                                    pos,
+                                },
                             })
                         }
                     }
                     None => {
-                        if then.ty == CompleteType::Unit {
-                            Ok(ExprType {
-                                expr: translate::if_expr(level, cond.expr, then.expr, None),
-                                ty: CompleteType::Unit,
-                            })
-                        } else {
-                            Err(Error::new_unexpected_type(
-                                then_pos,
-                                vec![CompleteType::Unit],
-                                then.ty,
-                            ))
-                        }
+                        self.check_type(then.ty, &[TypeId::unit()], pos)?;
+                        Ok(HirExpr {
+                            kind: ExprKind::If {
+                                cond: Box::new(cond),
+                                then: Box::new(then),
+                                els: None,
+                                pos,
+                            },
+                            ty: TypeId::unit(),
+                        })
                     }
                 }
             }
 
-            AstExpr::While(cond, then, _) => self.new_break_scope(|_self| {
+            AstExpr::While(cond, then, pos) => self.new_break_scope(|_self| {
                 let cond_pos = cond.pos();
-                let cond = _self.trans_expr(*cond, level, break_label)?;
-                _self.check_type(&cond.ty, &[CompleteType::Int], cond_pos)?;
+                let cond = _self.trans_expr(*cond)?;
+                _self.check_type(cond.ty, &[TypeId::int()], cond_pos)?;
 
-                let inner_break_label = Label::new();
                 let then_pos = then.pos();
-                let then = _self.trans_expr(*then, level, Some(inner_break_label.clone()))?;
-                _self.check_type(&then.ty, &[CompleteType::Unit], then_pos)?;
+                let then = _self.trans_expr(*then)?;
+                _self.check_type(then.ty, &[TypeId::unit()], then_pos)?;
 
-                Ok(ExprType {
-                    expr: translate::while_expr(cond.expr, then.expr, inner_break_label),
-                    ty: CompleteType::Unit,
+                Ok(HirExpr {
+                    kind: ExprKind::While(Box::new(cond), Box::new(then), pos),
+                    ty: TypeId::unit(),
                 })
             }),
 
@@ -923,24 +908,24 @@ impl<F: Frame> Semant<F> {
                 let limit_id = Ident::new(format!("__{}__limit", id));
                 let new_ast = AstExpr::Let(
                     vec![
-                        Decl::Var(VarDecl(id.clone(), is_escape, None, *from, pos)),
-                        Decl::Var(VarDecl(limit_id.clone(), false, None, *to, pos)),
+                        AstDecl::Var(AstVarDecl(id.clone(), is_escape, None, *from, pos)),
+                        AstDecl::Var(AstVarDecl(limit_id.clone(), false, None, *to, pos)),
                     ],
                     vec![AstExpr::While(
                         Box::new(AstExpr::Op(
                             Operator::Le,
-                            Box::new(AstExpr::LValue(LValue::Var(id.clone(), pos), pos)),
-                            Box::new(AstExpr::LValue(LValue::Var(limit_id, pos), pos)),
+                            Box::new(AstExpr::LValue(AstLValue::Var(id.clone(), pos), pos)),
+                            Box::new(AstExpr::LValue(AstLValue::Var(limit_id, pos), pos)),
                             pos,
                         )),
                         Box::new(AstExpr::Sequence(
                             vec![
                                 *then,
                                 AstExpr::Assign(
-                                    LValue::Var(id.clone(), pos),
+                                    AstLValue::Var(id.clone(), pos),
                                     Box::new(AstExpr::Op(
                                         Operator::Plus,
-                                        Box::new(AstExpr::LValue(LValue::Var(id, pos), pos)),
+                                        Box::new(AstExpr::LValue(AstLValue::Var(id, pos), pos)),
                                         Box::new(AstExpr::Int(1, pos)),
                                         pos,
                                     )),
@@ -954,14 +939,14 @@ impl<F: Frame> Semant<F> {
                     pos,
                 );
 
-                self.trans_expr(new_ast, level, break_label)
+                self.trans_expr(new_ast)
             }
 
             AstExpr::Break(pos) => {
                 if self.is_brekable() {
-                    Ok(ExprType {
-                        expr: translate::break_expr(break_label.expect("break label")),
-                        ty: CompleteType::Unit,
+                    Ok(HirExpr {
+                        kind: ExprKind::Break(pos),
+                        ty: TypeId::unit(),
                     })
                 } else {
                     Err(Error::new_invalid_break(pos))
@@ -969,48 +954,48 @@ impl<F: Frame> Semant<F> {
             }
 
             AstExpr::Let(decls, exprs, pos) => self.new_scope(|_self| {
-                let mut decls_expr = Vec::new();
+                let mut converted_decls = Vec::new();
                 for decl in decls {
-                    let decl = _self.trans_decl(decl, level, break_label.clone())?;
-                    if let Some(stmt) = decl {
-                        decls_expr.push(stmt);
-                    }
+                    let decl = _self.trans_decl(decl)?;
+                    converted_decls.push(decl);
                 }
-                let body = _self.trans_expr(AstExpr::Sequence(exprs, pos), level, break_label)?;
-                Ok(ExprType {
-                    expr: translate::let_expr(decls_expr, body.expr),
-                    ty: body.ty,
+
+                let mut converted_exprs = Vec::new();
+                for expr in exprs {
+                    converted_exprs.push(_self.trans_expr(expr)?);
+                }
+                let ty = if let Some(e) = converted_exprs.last() {
+                    e.ty
+                } else {
+                    TypeId::unit()
+                };
+                Ok(HirExpr {
+                    kind: ExprKind::Let(converted_decls, converted_exprs, pos),
+                    ty,
                 })
             }),
         }
     }
 
-    fn trans_lvalue(
-        &mut self,
-        var: LValue,
-        level: &mut Level<F>,
-        break_label: Option<Label>,
-    ) -> Result<ExprType> {
+    fn trans_lvalue(&mut self, var: AstLValue) -> Result<(LValue, TypeId)> {
         match var {
-            LValue::Var(id, pos) => {
-                let sym = Symbol::from(id);
+            AstLValue::Var(ident, pos) => {
+                let sym = Symbol::from(ident.clone());
                 match self.var_env.look(sym) {
-                    Some(EnvEntry::Var { access, ty }) => {
-                        let ty = self.actual_ty(ty, pos)?;
-                        Ok(ExprType {
-                            expr: translate::simple_var(access.clone(), level),
-                            ty: ty.clone(),
-                        })
+                    Some(EnvEntry::Var { id }) => {
+                        let e = self.ty_ctx.var(*id);
+                        let ty = e.type_id();
+                        Ok((LValue::Var(ident, *id, ty, pos), ty))
                     }
                     Some(_) => Err(Error::new_unexpected_func(pos, sym)),
                     None => Err(Error::new_undefined_item(pos, Item::Var, sym)),
                 }
             }
-            LValue::RecordField(lvar, id, pos) => {
-                let ExprType { ty, expr } = self.trans_lvalue(*lvar, level, break_label)?;
-                let sym = Symbol::from(id);
-                match ty {
-                    CompleteType::Record { fields, unique } => {
+            AstLValue::RecordField(lvar, id, pos) => {
+                let (lvar, ty) = self.trans_lvalue(*lvar)?;
+                let sym = Symbol::from(&id);
+                match self.type_(ty) {
+                    Type::Record { fields, unique } => {
                         let field = fields
                             .iter()
                             .enumerate()
@@ -1018,185 +1003,93 @@ impl<F: Frame> Semant<F> {
                         match field {
                             None => Err(Error::new_missing_field(
                                 pos,
-                                CompleteType::Record { fields, unique },
+                                Type::Record {
+                                    fields: fields.clone(),
+                                    unique: *unique,
+                                },
                                 sym,
                             )),
-                            Some((field_index, (_, ty))) => {
-                                let ty = self.actual_ty(ty, pos)?;
-                                Ok(ExprType {
-                                    expr: translate::record_field::<F>(expr, field_index),
-                                    ty: ty.clone(),
-                                })
-                            }
+                            Some((field_index, (_, field_type))) => Ok((
+                                LValue::RecordField {
+                                    record: Box::new(lvar),
+                                    record_type: ty,
+                                    field_ident: id,
+                                    field_index,
+                                    field_type: *field_type,
+                                    pos,
+                                },
+                                *field_type,
+                            )),
                         }
                     }
                     other => Err(Error::new_unexpected_type(
                         pos,
-                        vec![CompleteType::dummy_record()],
-                        other,
+                        vec![Type::dummy_record()],
+                        other.clone(),
                     )),
                 }
             }
-            LValue::Array(lvar, expr, pos) => {
-                let ExprType {
-                    ty,
-                    expr: subscript,
-                } = self.trans_expr(*expr, level, break_label.clone())?;
-                if ty != CompleteType::Int {
-                    return Err(Error::new_unexpected_type(pos, vec![CompleteType::Int], ty));
+            AstLValue::Array(lvar, expr, pos) => {
+                let index_expr = self.trans_expr(*expr)?;
+                if index_expr.ty != TypeId::int() {
+                    return Err(Error::new_unexpected_type(
+                        pos,
+                        vec![Type::Int],
+                        self.type_(index_expr.ty).clone(),
+                    ));
                 }
 
-                let ExprType { ty, expr: var } = self.trans_lvalue(*lvar, level, break_label)?;
-                match ty {
-                    CompleteType::Array { ty, unique: _ } => {
-                        let ty = self.actual_ty(&ty, pos)?;
-                        Ok(ExprType {
-                            expr: translate::array_subscript::<F>(var, subscript),
-                            ty: ty.clone(),
-                        })
-                    }
+                let (lvar, arr_ty) = self.trans_lvalue(*lvar)?;
+                match self.type_(arr_ty) {
+                    Type::Array { ty, unique: _ } => Ok((
+                        LValue::Array {
+                            array: Box::new(lvar),
+                            array_type: arr_ty,
+                            index_type: index_expr.ty,
+                            index: Box::new(index_expr),
+                            pos,
+                        },
+                        *ty,
+                    )),
                     other => Err(Error::new_unexpected_type(
                         pos,
-                        vec![CompleteType::dummy_array()],
-                        other,
+                        vec![Type::dummy_array()],
+                        other.clone(),
                     )),
                 }
             }
         }
     }
 
-    fn trans_type(&mut self, ast_type: AstType) -> Result<Type> {
-        match ast_type {
-            AstType::Id(type_id, pos) => {
-                let sym = Symbol::from(type_id);
-                self.type_env
-                    .look(sym)
-                    .cloned()
-                    .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))
-            }
+    fn trans_param(&self, param: AstTypeField, var_id: VarId) -> Result<Param> {
+        let ty_sym = Symbol::from(&param.type_id);
+        let type_id = self.type_id(ty_sym, param.pos)?;
 
-            AstType::Fields(fields, _) => {
-                let fields = fields
-                    .into_iter()
-                    .map(|f| {
-                        let name = Symbol::from(f.id);
-                        let _type = Symbol::from(f.type_id);
-                        let _type = self
-                            .type_env
-                            .look(_type)
-                            .cloned()
-                            .ok_or_else(|| Error::new_undefined_item(f.pos, Item::Type, _type));
-                        _type.map(|v| (name, v))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                let ty = CompleteType::Record {
-                    fields,
-                    unique: Unique::new(),
-                };
-
-                Ok(Type::Complete(ty))
-            }
-
-            AstType::Array(type_id, pos) => {
-                let sym = Symbol::from(type_id);
-                let elem_ty = self
-                    .type_env
-                    .look(sym)
-                    .cloned()
-                    .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))?;
-
-                Ok(Type::Complete(CompleteType::Array {
-                    ty: Box::new(elem_ty),
-                    unique: Unique::new(),
-                }))
-            }
-        }
+        Ok(Param {
+            ident: param.id,
+            var_id,
+            is_escape: param.is_escape,
+            type_ident: param.type_id.into(),
+            type_id: *type_id,
+            pos: param.pos,
+        })
     }
 }
 
 /// Variable and function entry
-pub enum EnvEntry<F: Frame> {
-    Var {
-        access: Access<F>,
-        ty: Type,
-    },
-    Func {
-        level: Level<F>,
-        label: Label,
-        formals: Vec<Type>,
-        result: Type,
-    },
+pub enum EnvEntry {
+    Var { id: VarId },
+    Func { id: FnId },
 }
 
-impl<F: Frame> EnvEntry<F> {
-    pub fn new_var(access: Access<F>, ty: Type) -> Self {
-        Self::Var { access, ty }
+impl EnvEntry {
+    pub fn new_var(id: VarId) -> Self {
+        Self::Var { id }
     }
 
-    pub fn new_func(level: Level<F>, label: Label, formals: Vec<Type>, result: Type) -> Self {
-        Self::Func {
-            level,
-            label,
-            formals,
-            result,
-        }
+    pub fn new_func(id: FnId) -> Self {
+        Self::Func { id }
     }
-}
-
-impl Env<Type> {
-    pub fn with_base_type(mut self) -> Self {
-        let base_types = vec![("int", CompleteType::Int), ("string", CompleteType::String)];
-
-        for (sym, ty) in base_types {
-            let sym = Symbol::new(sym);
-            let ty = Type::Complete(ty);
-            self.enter(sym, ty);
-        }
-        self.begin_scope();
-        self
-    }
-}
-
-impl<F: Frame> Env<EnvEntry<F>> {
-    pub fn with_base_var(mut self) -> Self {
-        use self::CompleteType::*;
-
-        // TODO: use external call for these functions.
-        let base_func = vec![
-            ("print", vec![String], Unit),
-            ("flush", vec![], Unit),
-            ("getchar", vec![], String),
-            ("ord", vec![String], Int),
-            ("chr", vec![Int], String),
-            ("size", vec![String], Int),
-            ("substring", vec![String, Int, Int], String),
-            ("concat", vec![String, String], String),
-            ("not", vec![Int], Int),
-            ("exit", vec![Int], Unit),
-        ];
-
-        for (sym, formals, ret_type) in base_func {
-            let sym = Symbol::from(sym);
-            let label = Label::with_named_fn(sym.to_string());
-            let formals = formals.into_iter().map(Type::Complete).collect();
-            let result = Type::Complete(ret_type);
-            self.enter(
-                sym,
-                EnvEntry::new_func(Level::outermost(), label, formals, result),
-            );
-        }
-
-        self.begin_scope();
-        self
-    }
-}
-
-#[derive(Debug)]
-pub struct ExprType {
-    #[allow(dead_code)]
-    expr: TransExpr,
-    ty: CompleteType,
 }
 
 #[cfg(test)]
@@ -1205,17 +1098,14 @@ mod tests {
 
     macro_rules! test_file_inner {
         ($name:ident, $path:expr) => {
-            use crate::{
-                codegen::aarch64_apple_darwin::frame::ARM64,
-                parser::{self},
-            };
+            use crate::parser;
             use std::fs::File;
             let file = File::open($path).unwrap();
             let e = parser::parse($path, file).unwrap();
 
-            let semantic_analyzer = Semant::<ARM64>::new_with_base();
+            let semantic_analyzer = Semant::new_with_base();
 
-            match semantic_analyzer.trans_prog(e, "main") {
+            match semantic_analyzer.trans_prog(e) {
                 Ok(_) => println!("success!"),
                 Err(e) => panic!("fail! {}", e),
             }
