@@ -1,3 +1,4 @@
+mod builtin;
 mod ctx;
 mod env;
 mod escape;
@@ -16,7 +17,7 @@ use crate::{
         Decl as AstDecl, Expr as AstExpr, LValue as AstLValue, Operator, RecordField,
         Type as AstType, TypeField as AstTypeField, VarDecl as AstVarDecl,
     },
-    semant::hir::FuncDecl,
+    semant::{ctx::FnEntry, hir::FuncDecl},
 };
 use {
     env::Env,
@@ -28,7 +29,7 @@ use {
 use thiserror::Error;
 
 use self::{
-    ctx::TyCtx,
+    ctx::{FnId, TyCtx, VarEntry, VarId},
     hir::{Decl, LValue, TypeDecl, TypeField, VarDecl},
     types::TypeId,
 };
@@ -200,9 +201,9 @@ impl Semant {
     }
 
     pub fn new_with_base() -> Self {
-        let mut ty_ctx = TyCtx::new();
-        let type_env = ty_ctx.new_ty_env();
-        let var_env = Env::new().with_base_var();
+        let ty_ctx = TyCtx::new().with_builtin();
+        let type_env = Env::new().with_builtin_type();
+        let var_env = Env::new().with_builtin_fn();
 
         Self::new(var_env, type_env, ty_ctx)
     }
@@ -271,6 +272,20 @@ impl Semant {
         result
     }
 
+    fn new_var(&mut self, e: VarEntry) -> VarId {
+        let sym = e.sym();
+        let id = self.ty_ctx.new_var(e);
+        self.var_env.enter(sym, EnvEntry::new_var(id));
+        id
+    }
+
+    fn new_fn(&mut self, e: FnEntry) -> FnId {
+        let sym = e.sym();
+        let id = self.ty_ctx.new_fn(e);
+        self.var_env.enter(sym, EnvEntry::new_func(id));
+        id
+    }
+
     fn trans_decl(&mut self, decl: AstDecl) -> Result<Decl> {
         match decl {
             AstDecl::Type(type_decls) => {
@@ -286,7 +301,7 @@ impl Semant {
                     // Type id is only reserved if type is array or record.
                     // Otherwise it means type alias, and not create new type.
                     if matches!(decl.ty, AstType::Array(_, _) | AstType::Fields(_, _)) {
-                        let type_id = self.ty_ctx.reserve();
+                        let type_id = self.ty_ctx.reserve_type();
                         self.type_env.enter(sym, type_id);
                     }
                 }
@@ -346,7 +361,7 @@ impl Semant {
                                 unique: Unique::new(),
                             };
 
-                            self.ty_ctx.set_reserved(type_id, ty);
+                            self.ty_ctx.set_reserved_type(type_id, ty);
                         }
 
                         AstType::Array(type_ident, pos) => {
@@ -358,7 +373,7 @@ impl Semant {
                                 unique: Unique::new(),
                             };
 
-                            self.ty_ctx.set_reserved(type_id, ty);
+                            self.ty_ctx.set_reserved_type(type_id, ty);
                         }
                         AstType::Id(_, _) => (),
                     }
@@ -412,10 +427,12 @@ impl Semant {
                     }
                 }
 
-                self.var_env.enter(sym, EnvEntry::new_var(expr.ty));
+                let e = VarEntry::new(expr.ty, sym);
+                let var_id = self.new_var(e);
 
                 Ok(Decl::Var(VarDecl(
                     id,
+                    var_id,
                     is_escape,
                     ty.map(Into::into),
                     expr.ty,
@@ -447,11 +464,9 @@ impl Semant {
                     };
 
                     let label = Label::new_fn(func_name.name().as_ref());
-                    self.var_env.enter(
-                        func_name,
-                        EnvEntry::new_func(label, formals.clone(), ret_type),
-                    );
-                    header.push((formals, ret_type));
+                    let e = FnEntry::new(func_name, label, formals.clone(), ret_type);
+                    let fn_id = self.new_fn(e);
+                    header.push((formals, ret_type, fn_id));
                     if !seen.insert(func_name) {
                         return Err(Error::new_same_name(Item::Func, func_name, func_decl.pos));
                     }
@@ -460,14 +475,15 @@ impl Semant {
                 assert_eq!(header.len(), fn_decls.len());
 
                 let mut converted = Vec::new();
-                for (func_decl, (formals, ret_type)) in fn_decls.into_iter().zip(header.into_iter())
+                for (func_decl, (formals, ret_type, fn_id)) in
+                    fn_decls.into_iter().zip(header.into_iter())
                 {
                     // function body
 
                     let body = self.new_scope(|_self| {
                         for (&ty, f) in formals.iter().zip(func_decl.params.iter()) {
-                            let sym = Symbol::from(&f.id);
-                            _self.var_env.enter(sym, EnvEntry::new_var(ty))
+                            let e = VarEntry::new(ty, Symbol::from(&f.id));
+                            _self.new_var(e);
                         }
 
                         let ty = _self.trans_expr(func_decl.body)?;
@@ -482,6 +498,7 @@ impl Semant {
                     }
                     converted.push(FuncDecl {
                         name: func_decl.name,
+                        fn_id,
                         params: formals,
                         ret_type: func_decl.ret_type.map(Into::into),
                         re_type_id: ret_type,
@@ -558,13 +575,12 @@ impl Semant {
                     .collect::<Result<Vec<_>>>()?;
 
                 match self.var_env.look(sym) {
-                    Some(EnvEntry::Func {
-                        formals, result, ..
-                    }) => {
-                        if args_len != formals.len() {
+                    Some(EnvEntry::Func { id }) => {
+                        let e = self.ty_ctx.fn_(*id);
+                        if args_len != e.formals().len() {
                             return Err(Error::new_mismatch_arg_count(
                                 pos,
-                                formals.len() as u8,
+                                e.formals().len() as u8,
                                 args_len as u8,
                                 sym,
                             ));
@@ -572,7 +588,7 @@ impl Semant {
 
                         let unmatched = arg_iter
                             .iter()
-                            .zip(formals.iter())
+                            .zip(e.formals().iter())
                             .enumerate()
                             .find(|(_, (ExprType { ty: lhs, .. }, rhs))| lhs != *rhs);
 
@@ -585,8 +601,8 @@ impl Semant {
                                 ))
                             }
                             None => Ok(ExprType {
-                                expr: ExprKind::FuncCall(ident, arg_iter, pos),
-                                ty: *result,
+                                expr: ExprKind::FuncCall(ident, *id, arg_iter, pos),
+                                ty: e.result(),
                             }),
                         }
                     }
@@ -875,7 +891,7 @@ impl Semant {
 
                 let then = self.new_break_scope(|_self| {
                     let sym = Symbol::from(&id);
-                    _self.var_env.enter(sym, EnvEntry::new_var(TypeId::int()));
+                    _self.new_var(VarEntry::new(TypeId::int(), sym));
 
                     let then = _self.trans_expr(*then)?;
                     _self.check_type(then.ty, &[TypeId::unit()], then.pos())?;
@@ -932,10 +948,14 @@ impl Semant {
 
     fn trans_lvalue(&mut self, var: AstLValue) -> Result<(LValue, TypeId)> {
         match var {
-            AstLValue::Var(id, pos) => {
-                let sym = Symbol::from(id.clone());
+            AstLValue::Var(ident, pos) => {
+                let sym = Symbol::from(ident.clone());
                 match self.var_env.look(sym) {
-                    Some(EnvEntry::Var { ty }) => Ok((LValue::Var(id, *ty, pos), *ty)),
+                    Some(EnvEntry::Var { id }) => {
+                        let e = self.ty_ctx.var(*id);
+                        let ty = e.type_id();
+                        Ok((LValue::Var(ident, *id, ty, pos), ty))
+                    }
                     Some(_) => Err(Error::new_unexpected_func(pos, sym)),
                     None => Err(Error::new_undefined_item(pos, Item::Var, sym)),
                 }
@@ -1023,62 +1043,17 @@ impl Semant {
 
 /// Variable and function entry
 pub enum EnvEntry {
-    Var {
-        ty: TypeId,
-    },
-    Func {
-        label: Label,
-        formals: Vec<TypeId>,
-        result: TypeId,
-    },
+    Var { id: VarId },
+    Func { id: FnId },
 }
 
 impl EnvEntry {
-    pub fn new_var(ty: TypeId) -> Self {
-        Self::Var { ty }
+    pub fn new_var(id: VarId) -> Self {
+        Self::Var { id }
     }
 
-    pub fn new_func(label: Label, formals: Vec<TypeId>, result: TypeId) -> Self {
-        Self::Func {
-            label,
-            formals,
-            result,
-        }
-    }
-}
-
-impl Env<EnvEntry> {
-    pub fn with_base_var(mut self) -> Self {
-        // TODO: use external call for these functions.
-        let base_func = vec![
-            ("print", vec![TypeId::string()], TypeId::unit()),
-            ("flush", vec![], TypeId::unit()),
-            ("getchar", vec![], TypeId::string()),
-            ("ord", vec![TypeId::string()], TypeId::int()),
-            ("chr", vec![TypeId::int()], TypeId::string()),
-            ("size", vec![TypeId::string()], TypeId::int()),
-            (
-                "substring",
-                vec![TypeId::string(), TypeId::int(), TypeId::int()],
-                TypeId::string(),
-            ),
-            (
-                "concat",
-                vec![TypeId::string(), TypeId::string()],
-                TypeId::string(),
-            ),
-            ("not", vec![TypeId::int()], TypeId::int()),
-            ("exit", vec![TypeId::int()], TypeId::unit()),
-        ];
-
-        for (sym, formals, ret_type) in base_func {
-            let sym = Symbol::from(sym);
-            let label = Label::with_named_fn(sym.to_string());
-            self.enter(sym, EnvEntry::new_func(label, formals, ret_type));
-        }
-
-        self.begin_scope();
-        self
+    pub fn new_func(id: FnId) -> Self {
+        Self::Func { id }
     }
 }
 

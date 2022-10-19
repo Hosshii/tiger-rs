@@ -3,34 +3,12 @@ use std::{fmt::Display, sync::atomic::AtomicU32};
 use crate::common::Symbol;
 use thiserror::Error;
 
-static TYPEID_GLOBAL: AtomicU32 = AtomicU32::new(10);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(u32);
 
 impl TypeId {
-    pub fn new_uniq() -> Self {
-        Self(TYPEID_GLOBAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
-    }
-
-    pub fn dummy() -> Self {
-        Self(0)
-    }
-
-    pub(super) fn unit() -> Self {
-        Self(1)
-    }
-
-    pub(super) fn nil() -> Self {
-        Self(2)
-    }
-
-    pub(super) fn int() -> Self {
-        Self(3)
-    }
-
-    pub(super) fn string() -> Self {
-        Self(4)
+    pub const fn new(num: u32) -> Self {
+        Self(num)
     }
 }
 

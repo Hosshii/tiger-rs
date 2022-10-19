@@ -4,7 +4,10 @@ use crate::{
     parser::ast::{Operator as AstOp, TypeIdent as AstTypeIdent},
 };
 
-use super::types::TypeId;
+use super::{
+    ctx::{FnId, VarId},
+    types::TypeId,
+};
 
 pub type Decls = Vec<Decl>;
 pub type Ident = lexer::Ident;
@@ -47,6 +50,7 @@ pub struct TypeField {
 #[derive(Debug, PartialEq, Eq)]
 pub struct VarDecl(
     pub Ident,
+    pub VarId,
     pub bool,
     pub Option<TypeIdent>,
     pub TypeId,
@@ -57,6 +61,7 @@ pub struct VarDecl(
 #[derive(Debug, PartialEq, Eq)]
 pub struct FuncDecl {
     pub name: Ident,
+    pub fn_id: FnId,
     pub params: TypeFields,
     pub ret_type: Option<TypeIdent>,
     pub re_type_id: TypeId,
@@ -74,7 +79,7 @@ impl From<AstTypeIdent> for TypeIdent {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LValue {
-    Var(Ident, TypeId, Positions),
+    Var(Ident, VarId, TypeId, Positions),
     RecordField {
         record: Box<LValue>,
         record_type: TypeId,
@@ -104,7 +109,7 @@ pub enum ExprKind {
     Sequence(Vec<Expr>, Positions),
     Int(u64, Positions),
     Str(StringLiteral, Positions),
-    FuncCall(Ident, Vec<Expr>, Positions),
+    FuncCall(Ident, FnId, Vec<Expr>, Positions),
     Op(Operator, Box<Expr>, Box<Expr>, Positions),
     Neg(Box<Expr>, Positions),
     RecordCreation(TypeIdent, RecordFields, Positions),
@@ -142,7 +147,7 @@ impl Expr {
             ExprKind::Sequence(_, pos) => *pos,
             ExprKind::Int(_, pos) => *pos,
             ExprKind::Str(_, pos) => *pos,
-            ExprKind::FuncCall(_, _, pos) => *pos,
+            ExprKind::FuncCall(_, _, _, pos) => *pos,
             ExprKind::Op(_, _, _, pos) => *pos,
             ExprKind::Neg(_, pos) => *pos,
             ExprKind::RecordCreation(_, _, pos) => *pos,
