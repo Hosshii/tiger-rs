@@ -9,19 +9,17 @@ use frame::X86 as X86_64Frame;
 
 use super::{Codegen, Frame as _};
 
-pub struct X86_64<'a> {
-    _frame: &'a X86_64Frame,
+pub struct X86_64 {
     instructions: Vec<Instruction>,
 }
 
-impl<'a> X86_64<'a> {
+impl X86_64 {
     pub fn debug() {
         X86_64Frame::debug_registers()
     }
 
-    fn new(frame: &'a X86_64Frame) -> Self {
+    fn new() -> Self {
         Self {
-            _frame: frame,
             instructions: Vec::new(),
         }
     }
@@ -274,12 +272,12 @@ impl<'a> X86_64<'a> {
     }
 }
 
-impl<'a> Codegen for X86_64<'a> {
+impl Codegen for X86_64 {
     type Frame = X86_64Frame;
     const MAIN_SYMBOL: &'static str = "main";
 
-    fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
-        let mut codegen = X86_64::new(frame);
+    fn codegen(_: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
+        let mut codegen = X86_64::new();
         codegen.munch_stmt(&stmt);
         codegen.instructions
     }
@@ -386,8 +384,7 @@ mod tests {
         ];
 
         for (stmt, expected_dst, expected_src) in cases {
-            let frame = X86_64Frame::new(Label::Num(0), vec![]);
-            let mut codegen = X86_64::new(&frame);
+            let mut codegen = X86_64::new();
             codegen.munch_stmt(&stmt);
             let instructions = codegen.instructions;
             for instruction in instructions {

@@ -9,19 +9,17 @@ use frame::ARM64 as ARM64Frame;
 
 use super::{Codegen, Frame as _};
 
-pub struct ARM64<'a> {
-    _frame: &'a ARM64Frame,
+pub struct ARM64 {
     instructions: Vec<Instruction>,
 }
 
-impl<'a> ARM64<'a> {
+impl ARM64 {
     pub fn debug() {
         ARM64Frame::debug_registers()
     }
 
-    fn new(frame: &'a ARM64Frame) -> Self {
+    fn new() -> Self {
         Self {
-            _frame: frame,
             instructions: Vec::new(),
         }
     }
@@ -300,12 +298,12 @@ impl<'a> ARM64<'a> {
     }
 }
 
-impl<'a> Codegen for ARM64<'a> {
+impl Codegen for ARM64 {
     type Frame = ARM64Frame;
     const MAIN_SYMBOL: &'static str = "main";
 
-    fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
-        let mut codegen = ARM64::new(frame);
+    fn codegen(_: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
+        let mut codegen = ARM64::new();
         codegen.munch_stmt(&stmt);
         codegen.instructions
     }
@@ -405,8 +403,7 @@ mod tests {
         ];
 
         for (stmt, expected_dst, expected_src) in cases {
-            let frame = ARM64Frame::new(Label::Num(0), vec![]);
-            let mut codegen = ARM64::new(&frame);
+            let mut codegen = ARM64::new();
             codegen.munch_stmt(&stmt);
             let instructions = codegen.instructions;
             for instruction in instructions {
