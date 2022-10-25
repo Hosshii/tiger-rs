@@ -1,12 +1,16 @@
 mod ast;
 mod encode;
+pub mod rewrite;
 pub use encode::Encoder;
 
 use std::{collections::HashMap, rc::Rc};
 
-use crate::semant::{
-    ctx::{TyCtx, VarId},
-    hir::{Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram},
+use crate::{
+    semant::{
+        ctx::{TyCtx, VarId},
+        hir::{Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram},
+    },
+    wasm::ast::TypeUse,
 };
 
 use self::ast::{
@@ -23,19 +27,17 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let instr = Instruction::Expr(expr);
     let func = Func::new(
         Some(Name::new(MAIN_SYMBOL.to_string())),
-        Index::Index(0),
+        TypeUse::Inline(FuncType::new(
+            vec![],
+            vec![WasmResult::new(ValType::Num(NumType::I64))],
+        )),
         vec![],
         vec![instr],
     );
-    let type_ = FuncTypeDef {
-        name: None,
-        params: vec![],
-        result: vec![WasmResult::new(ValType::Num(NumType::I64))],
-    };
 
     let builder = ModuleBuilder::new();
 
-    builder.add_func(func).add_type(type_).build()
+    builder.add_func(func).build()
 }
 
 const STACK_PTR: &str = "stack_ptr";
@@ -173,9 +175,7 @@ impl Wasm {
 }
 
 fn sp() -> Expr {
-    Expr::Op(Operator::GlobalGet(Index::Name(Name::new(
-        STACK_PTR.to_string(),
-    ))))
+    Expr::Op(Operator::GlobalGet(Index::Name(STACK_PTR.to_string())))
 }
 
 fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> Expr {

@@ -105,9 +105,10 @@ where
     let semantic_analyzer = Semant::new_with_base();
 
     let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
-    let module = wasm::translate(&tcx, &hir);
+    let mut module = wasm::translate(&tcx, &hir);
 
-    let encoder = Encoder::new();
+    let mut encoder = Encoder::new();
+    encoder.rewrite_module(&mut module);
 
     o.write_all(&encoder.encode_module(&module))?;
 

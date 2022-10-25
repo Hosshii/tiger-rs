@@ -1,6 +1,11 @@
-use super::ast::{
-    BinOp, Expr, Func, FuncType, FuncTypeDef, Index, Instruction, Local, Module, NumType, Operator,
-    Param, ValType, WasmResult,
+use std::fmt::Debug;
+
+use super::{
+    ast::{
+        BinOp, Expr, Func, FuncType, FuncTypeDef, Index, Instruction, Local, Module, NumType,
+        Operator, Param, TypeUse, ValType, WasmResult,
+    },
+    rewrite::Rewriter,
 };
 
 pub struct Encoder {
@@ -20,6 +25,12 @@ impl Encoder {
     pub fn encode_module(mut self, module: &Module) -> Vec<u8> {
         module.encode(&mut self.bytes);
         self.bytes
+    }
+
+    /// Remove syntax sugar.
+    pub fn rewrite_module(&mut self, module: &mut Module) {
+        let mut rewriter = Rewriter::new();
+        rewriter.rewrite(module);
     }
 }
 
@@ -173,7 +184,18 @@ impl Encode for Index {
     fn encode(&self, sink: &mut Vec<u8>) {
         match self {
             Index::Index(index) => index.encode(sink),
-            Index::Name(name) => panic!("unresolved name {}", name.0),
+            Index::Name(name) => panic!("unresolved name {}", name),
+        }
+    }
+}
+
+impl<T: Debug> Encode for TypeUse<T> {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        match self {
+            TypeUse::Index(index) => index.encode(sink),
+            TypeUse::Inline(type_) => {
+                panic!("unresolved type {:?}", type_)
+            }
         }
     }
 }
@@ -259,7 +281,7 @@ impl Encode for Module {
     fn encode(&self, sink: &mut Vec<u8>) {
         Module::section(SectionId::Type, self.types.as_slice(), sink);
 
-        let func_tys = self.func.iter().map(|f| &f.type_idx).collect::<Vec<_>>();
+        let func_tys = self.func.iter().map(|f| &f.ty).collect::<Vec<_>>();
         Module::section(SectionId::Function, func_tys, sink);
 
         Module::section(SectionId::Code, self.func.as_slice(), sink);

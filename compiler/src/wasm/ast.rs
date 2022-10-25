@@ -9,6 +9,7 @@ impl Name {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NumType {
     I32,
     I64,
@@ -16,10 +17,12 @@ pub enum NumType {
     F64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValType {
     Num(NumType),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncType {
     pub params: Vec<Param>,
     pub result: Vec<WasmResult>,
@@ -31,35 +34,48 @@ impl FuncType {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinOp {
     Add,
     Sub,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Op(Operator),
     OpExpr(Operator, Vec<Expr>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     Expr(Expr),
     Op(Operator),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operator {
     GlobalGet(Index),
     Bin(NumType, BinOp),
     Const(NumType, i64),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Index {
     Index(u32),
-    Name(Name),
+    Name(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+
+pub enum TypeUse<T> {
+    Index(Index),
+    Inline(T),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Func {
     pub name: Option<Name>,
-    pub type_idx: Index,
+    pub ty: TypeUse<FuncType>,
     pub locals: Vec<Local>,
     pub instr: Vec<Instruction>,
 }
@@ -67,24 +83,26 @@ pub struct Func {
 impl Func {
     pub fn new(
         name: Option<Name>,
-        type_idx: Index,
+        ty: TypeUse<FuncType>,
         locals: Vec<Local>,
         instr: Vec<Instruction>,
     ) -> Self {
         Self {
             name,
-            type_idx,
+            ty,
             locals,
             instr,
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub type_: ValType,
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WasmResult(pub ValType);
 
 impl WasmResult {
@@ -93,36 +111,43 @@ impl WasmResult {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Local {
     pub type_: ValType,
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncTypeDef {
     pub name: Option<Name>,
     pub params: Vec<Param>,
     pub result: Vec<WasmResult>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import {
     pub str1: String,
     pub str2: String,
     pub kind: ImportKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportKind {
     Func(Option<Name>, FuncType),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Export {
     name: Name,
     kind: ExportKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportKind {
     Func(Index),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub types: Vec<FuncTypeDef>,
     pub func: Vec<Func>,
