@@ -2,7 +2,7 @@
 
 use std::io::{Read, Write};
 
-type TigerInt = i64;
+type TigerInt = isize;
 
 #[repr(C)]
 pub struct TigerArray {

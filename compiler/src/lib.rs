@@ -7,6 +7,7 @@ mod semant;
 mod asm;
 mod common;
 mod frame;
+mod wasm;
 
 use std::{
     io::{self, Read, Write},
@@ -15,6 +16,7 @@ use std::{
 
 use semant::translate;
 use thiserror::Error;
+use wasm::Encoder;
 
 use crate::{
     codegen::{
@@ -88,6 +90,26 @@ where
             }
         }
     }
+
+    Ok(())
+}
+
+pub fn compile_wasm<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
+where
+    N: Into<String>,
+    R: Read,
+    O: Write,
+{
+    let ast = parser::parse(filename, r)?;
+
+    let semantic_analyzer = Semant::new_with_base();
+
+    let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
+    let module = wasm::translate(&tcx, &hir);
+
+    let encoder = Encoder::new();
+
+    o.write_all(&encoder.encode_module(&module))?;
 
     Ok(())
 }
