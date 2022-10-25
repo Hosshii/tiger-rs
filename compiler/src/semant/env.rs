@@ -30,6 +30,14 @@ impl<T> Stack<T> {
             f(t);
         }
     }
+
+    fn scope_item(&self) -> impl Iterator<Item = &T> {
+        self.inner
+            .iter()
+            .rev()
+            .take_while(|v| v.is_some())
+            .map(|v| v.as_ref().unwrap())
+    }
 }
 
 struct EnvTable<T> {
@@ -106,6 +114,13 @@ impl<T> Env<T> {
     /// Delete current scope. Bindings added in the current scope are also deleted.
     pub fn end_scope(&mut self) {
         self.scope_stack.end_scope(|sym| self.inner.remove(sym));
+    }
+
+    pub fn scope_items(&self) -> impl Iterator<Item = (Symbol, &T)> {
+        self.scope_stack.scope_item().map(|v| {
+            let binding = self.look(*v).expect("binding not found");
+            (*v, binding)
+        })
     }
 }
 

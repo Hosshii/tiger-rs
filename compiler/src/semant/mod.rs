@@ -1,5 +1,5 @@
 mod builtin;
-mod ctx;
+pub mod ctx;
 mod env;
 mod escape;
 pub(crate) mod hir;
@@ -229,8 +229,6 @@ impl Semant {
     pub fn trans_prog(mut self, mut prog: Program) -> Result<(HirProgram, TyCtx)> {
         EscapeFinder::find_escape(&mut prog);
 
-        // if body returns int, then use that value as exit code.
-        // otherwise use 0 as exit code.
         let prog = self.trans_prog_(prog)?;
         Ok((prog, self.ty_ctx))
     }
@@ -312,7 +310,7 @@ impl Semant {
                     .iter()
                     .filter(|v| matches!(v.ty, AstType::Id(_, _)))
                     .map(|v| {
-                        let AstType::Id(ref type_ident,_)= v.ty else{unreachable!()};
+                        let AstType::Id(ref type_ident,_) = v.ty else{unreachable!()};
                         (&v.id, type_ident, v.pos)
                     })
                     .collect::<Vec<_>>();
@@ -481,7 +479,7 @@ impl Semant {
                 {
                     // function body
 
-                    let (body, params) = self.new_scope(|_self| {
+                    let (body, params, locals) = self.new_scope(|_self| {
                         let mut params = Vec::new();
                         for (&ty, f) in formals.iter().zip(func_decl.params.iter()) {
                             let e = VarEntry::new(ty, Symbol::from(&f.id));
@@ -492,19 +490,29 @@ impl Semant {
                         let ty = _self.trans_expr(func_decl.body)?;
 
                         _self.check_type(ty.ty, &[ret_type], func_decl.pos)?;
-                        Ok((ty, params))
+                        let locals = _self
+                            .var_env
+                            .scope_items()
+                            .filter_map(|(_, e)| match e {
+                                EnvEntry::Var { id } => Some(*id),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        Ok((ty, params, locals))
                     })?;
 
                     let mut formals = Vec::new();
                     for (param, var_id) in func_decl.params.into_iter().zip(params.iter()) {
                         formals.push(self.trans_param(param, *var_id)?);
                     }
+
                     converted.push(FuncDecl {
                         name: func_decl.name,
                         fn_id,
                         params: formals,
                         ret_type: func_decl.ret_type.map(Into::into),
                         re_type_id: ret_type,
+                        locals,
                         body,
                         pos: func_decl.pos,
                     })
