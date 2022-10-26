@@ -10,15 +10,15 @@ use crate::{
         ctx::{TyCtx, VarId},
         hir::{Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram},
     },
-    wasm::ast::TypeUse,
+    wasm::ast::{InlineFuncExport, TypeUse},
 };
 
 use self::ast::{
-    BinOp, Expr, Func, FuncType, FuncTypeDef, Index, Instruction, Module, ModuleBuilder, Name,
-    NumType, Operator, ValType, WasmResult,
+    BinOp, Expr, Func, FuncType, Index, Instruction, Module, ModuleBuilder, Name, NumType,
+    Operator, ValType, WasmResult,
 };
 
-const MAIN_SYMBOL: &str = "__start";
+const MAIN_SYMBOL: &str = "_start";
 
 pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new();
@@ -31,6 +31,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
             vec![],
             vec![WasmResult::new(ValType::Num(NumType::I64))],
         )),
+        Some(InlineFuncExport::new(Name::new(MAIN_SYMBOL.to_string()))),
         vec![],
         vec![instr],
     );

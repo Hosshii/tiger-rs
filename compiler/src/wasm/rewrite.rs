@@ -1,8 +1,9 @@
-use super::ast::{Func, FuncTypeDef, Index, Module, TypeUse};
+use super::ast::{Export, ExportKind, Func, FuncTypeDef, Index, Module, TypeUse};
 
 pub(super) struct Rewriter {
     fn_type_idx: u32,
     types: Vec<FuncTypeDef>,
+    export: Vec<Export>,
 }
 
 impl Rewriter {
@@ -10,20 +11,22 @@ impl Rewriter {
         Self {
             fn_type_idx: 0, // initialize in rewrite.
             types: Vec::new(),
+            export: Vec::new(),
         }
     }
 
     pub fn rewrite(&mut self, module: &mut Module) {
         self.fn_type_idx = module.types.len() as u32;
 
-        for func in module.func.iter_mut() {
-            self.rewrite_func(func);
+        for (idx, func) in module.func.iter_mut().enumerate() {
+            self.rewrite_func(func, idx);
         }
 
         module.types.append(&mut self.types);
+        module.export.append(&mut self.export);
     }
 
-    fn rewrite_func(&mut self, func: &mut Func) {
+    fn rewrite_func(&mut self, func: &mut Func, idx: usize) {
         match func.ty {
             TypeUse::Index(_) => (),
             TypeUse::Inline(ref ty) => {
@@ -36,6 +39,13 @@ impl Rewriter {
                 });
                 func.ty = TypeUse::Index(Index::Index(idx));
             }
+        }
+
+        if let Some(ref export) = func.export {
+            self.export.push(Export {
+                name: export.name.clone(),
+                kind: ExportKind::Func(Index::Index(idx as u32)),
+            });
         }
     }
 }

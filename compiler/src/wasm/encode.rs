@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, Expr, Func, FuncType, FuncTypeDef, Index, Instruction, Local, Module, NumType,
-        Operator, Param, TypeUse, ValType, WasmResult,
+        BinOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Index, Instruction, Local,
+        Module, Name, NumType, Operator, Param, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -98,6 +98,12 @@ impl Encode for i64 {
     }
 }
 
+impl Encode for str {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.as_bytes().encode(sink);
+    }
+}
+
 impl<T, U> Encode for (T, U)
 where
     T: Encode,
@@ -106,6 +112,12 @@ where
     fn encode(&self, sink: &mut Vec<u8>) {
         self.0.encode(sink);
         self.1.encode(sink);
+    }
+}
+
+impl Encode for Name {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.0.encode(sink);
     }
 }
 
@@ -245,6 +257,24 @@ impl Encode for FuncTypeDef {
     }
 }
 
+impl Encode for Export {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.name.encode(sink);
+        self.kind.encode(sink);
+    }
+}
+
+impl Encode for ExportKind {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        match self {
+            ExportKind::Func(index) => {
+                sink.push(0x00);
+                index.encode(sink);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum SectionId {
     Type = 1,
@@ -275,20 +305,98 @@ impl Module {
         tmp.len().encode(sink);
         sink.extend_from_slice(&tmp);
     }
+
+    fn section_list<T: Encode>(id: SectionId, cont: &[T], sink: &mut Vec<u8>) {
+        if cont.is_empty() {
+            return;
+        }
+
+        Self::section(id, cont, sink);
+    }
 }
 
 impl Encode for Module {
     fn encode(&self, sink: &mut Vec<u8>) {
-        Module::section(SectionId::Type, self.types.as_slice(), sink);
+        Module::section_list(SectionId::Type, self.types.as_slice(), sink);
 
         let func_tys = self.func.iter().map(|f| &f.ty).collect::<Vec<_>>();
-        Module::section(SectionId::Function, func_tys, sink);
+        Module::section_list(SectionId::Function, func_tys.as_slice(), sink);
+        Module::section_list(SectionId::Export, self.export.as_slice(), sink);
 
-        Module::section(SectionId::Code, self.func.as_slice(), sink);
+        Module::section_list(SectionId::Code, self.func.as_slice(), sink);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::wasm::{
+        ast::{InlineFuncExport, ModuleBuilder},
+        MAIN_SYMBOL,
+    };
+
     use super::*;
+
+    fn assert_module(mut module: Module, expected: &[u8]) {
+        let mut encoder = Encoder::new();
+
+        encoder.rewrite_module(&mut module);
+        let encoded = encoder.encode_module(&module);
+
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn test_fn() {
+        let func = Func::new(
+            Some(Name::new(MAIN_SYMBOL.to_string())),
+            TypeUse::Inline(FuncType::new(
+                vec![],
+                vec![WasmResult::new(ValType::Num(NumType::I64))],
+            )),
+            None,
+            vec![],
+            vec![Instruction::Op(Operator::Const(NumType::I64, 10))],
+        );
+
+        let builder = ModuleBuilder::new();
+
+        let module = builder.add_func(func).build();
+
+        // (module
+        //     (func (result i64) i64.const 10))
+        let expected = vec![
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01,
+            0x7e, 0x03, 0x02, 0x01, 0x00, 0x0a, 0x06, 0x01, 0x04, 0x00, 0x42, 0x0a, 0x0b,
+        ];
+
+        assert_module(module, &expected);
+    }
+
+    #[test]
+    fn test_fn_export() {
+        let func = Func::new(
+            Some(Name::new(MAIN_SYMBOL.to_string())),
+            TypeUse::Inline(FuncType::new(
+                vec![],
+                vec![WasmResult::new(ValType::Num(NumType::I64))],
+            )),
+            Some(InlineFuncExport::new(Name::new(MAIN_SYMBOL.to_string()))),
+            vec![],
+            vec![Instruction::Op(Operator::Const(NumType::I64, 10))],
+        );
+
+        let builder = ModuleBuilder::new();
+
+        let module = builder.add_func(func).build();
+
+        // (module
+        //     (func (export "__start")(result i64) i64.const 10))
+        let expected = vec![
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01,
+            0x7e, 0x03, 0x02, 0x01, 0x00, 0x07, 0x0b, 0x01, 0x07, 0x5f, 0x5f, 0x73, 0x74, 0x61,
+            0x72, 0x74, 0x00, 0x00, 0x0a, 0x06, 0x01, 0x04, 0x00, 0x42, 0x0a, 0x0b,
+        ];
+
+        assert_module(module, &expected);
+    }
 }

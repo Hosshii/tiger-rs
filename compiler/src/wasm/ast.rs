@@ -73,9 +73,21 @@ pub enum TypeUse<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineFuncExport {
+    pub name: Name,
+}
+
+impl InlineFuncExport {
+    pub fn new(name: Name) -> Self {
+        Self { name }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Func {
     pub name: Option<Name>,
     pub ty: TypeUse<FuncType>,
+    pub export: Option<InlineFuncExport>,
     pub locals: Vec<Local>,
     pub instr: Vec<Instruction>,
 }
@@ -84,12 +96,14 @@ impl Func {
     pub fn new(
         name: Option<Name>,
         ty: TypeUse<FuncType>,
+        export: Option<InlineFuncExport>,
         locals: Vec<Local>,
         instr: Vec<Instruction>,
     ) -> Self {
         Self {
             name,
             ty,
+            export,
             locals,
             instr,
         }
@@ -99,7 +113,7 @@ impl Func {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub type_: ValType,
-    pub name: String,
+    pub name: Name,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,7 +128,7 @@ impl WasmResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Local {
     pub type_: ValType,
-    pub name: String,
+    pub name: Name,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,8 +152,8 @@ pub enum ImportKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Export {
-    name: Name,
-    kind: ExportKind,
+    pub name: Name,
+    pub kind: ExportKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
