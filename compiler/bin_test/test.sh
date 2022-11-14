@@ -66,4 +66,5 @@ assert 1 test40.tig
 assert 0 test41.tig
 assert 1 test42.tig
 assert 1 test43.tig
+assert 3 test44.tig
 
