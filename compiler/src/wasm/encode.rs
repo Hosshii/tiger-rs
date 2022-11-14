@@ -146,9 +146,12 @@ impl Encode for Expr {
         match self {
             Expr::Op(op) => op.encode(sink),
             Expr::OpExpr(op, exprs) => {
-                exprs.encode(sink);
+                for expr in exprs {
+                    expr.encode(sink);
+                }
                 op.encode(sink);
             }
+            Expr::Block(name, ty, instr) => {}
         }
     }
 }
@@ -169,6 +172,32 @@ impl Encode for Operator {
                 sink.push(0x23);
                 var.encode(sink);
             }
+            Operator::LocalGet(var) => {
+                sink.push(0x20);
+                var.encode(sink);
+            }
+            Operator::Store(num_type) => {
+                match num_type {
+                    NumType::I32 => sink.push(0x36),
+                    NumType::I64 => sink.push(0x37),
+                    NumType::F32 => sink.push(0x38),
+                    NumType::F64 => sink.push(0x39),
+                }
+                // TODO
+                32u32.encode(sink);
+                0u32.encode(sink);
+            }
+            Operator::Load(num_type) => {
+                match num_type {
+                    NumType::I32 => sink.push(0x28),
+                    NumType::I64 => sink.push(0x29),
+                    NumType::F32 => sink.push(0x2A),
+                    NumType::F64 => sink.push(0x2B),
+                }
+                // TODO
+                32u32.encode(sink);
+                0u32.encode(sink);
+            }
             Operator::Bin(num_type, bin_op) => match (num_type, bin_op) {
                 (NumType::I32, BinOp::Add) => sink.push(0x6A),
                 (NumType::I32, BinOp::Sub) => sink.push(0x6B),
@@ -187,6 +216,12 @@ impl Encode for Operator {
                     NumType::F64 => sink.push(0x44),
                 }
                 value.encode(sink);
+            }
+            Operator::Nop => {
+                sink.push(0x01);
+            }
+            Operator::Drop => {
+                sink.push(0x1A);
             }
         }
     }

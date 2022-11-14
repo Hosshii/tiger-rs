@@ -1,3 +1,5 @@
+use crate::semant::hir::Operator as HirOperator;
+
 /// https://github.com/WebAssembly/spec/tree/master/interpreter/#s-expression-syntax
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +25,9 @@ pub enum ValType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockType(pub TypeUse<FuncType>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncType {
     pub params: Vec<Param>,
     pub result: Vec<WasmResult>,
@@ -40,10 +45,23 @@ pub enum BinOp {
     Sub,
 }
 
+impl TryFrom<HirOperator> for BinOp {
+    type Error = ();
+
+    fn try_from(op: HirOperator) -> Result<Self, Self::Error> {
+        match op {
+            HirOperator::Plus => Ok(Self::Add),
+            HirOperator::Minus => Ok(Self::Sub),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Op(Operator),
     OpExpr(Operator, Vec<Expr>),
+    Block(Option<Name>, BlockType, Vec<Instruction>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,8 +73,13 @@ pub enum Instruction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operator {
     GlobalGet(Index),
+    LocalGet(Index),
+    Store(NumType),
+    Load(NumType),
     Bin(NumType, BinOp),
     Const(NumType, i64),
+    Nop,
+    Drop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
