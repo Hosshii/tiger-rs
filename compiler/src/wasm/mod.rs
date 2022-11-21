@@ -19,8 +19,118 @@ use crate::{
 
 use self::ast::{
     BinOp, BlockType, Expr, Func, FuncType, Index, Instruction, Module, ModuleBuilder, Name,
-    NumType, Operator, ValType, WasmResult,
+    NumType, Operator, Param, ValType, WasmResult,
 };
+
+type ExprType = WithType<Expr>;
+
+#[derive(Debug, Clone)]
+struct WithType<T> {
+    ty: StackType,
+    val: T,
+}
+
+impl ExprType {
+    pub fn new(expr: Expr, ty: StackType) -> Self {
+        Self { val: expr, ty }
+    }
+
+    pub fn new_const_(expr: Expr, result: Vec<ValType>) -> Self {
+        Self {
+            val: expr,
+            ty: StackType::const_(result),
+        }
+    }
+
+    pub fn new_const_1_i32(expr: Expr) -> Self {
+        Self::new_const_(expr, vec![ValType::Num(NumType::I32)])
+    }
+
+    pub fn new_const_1_i64(expr: Expr) -> Self {
+        Self::new_const_(expr, vec![ValType::Num(NumType::I64)])
+    }
+
+    pub fn assert<F>(&self, f: F)
+    where
+        F: FnOnce(&Self) -> bool,
+    {
+        if !f(self) {
+            panic!("assertion failed {:?}", self)
+        }
+    }
+
+    pub fn is_const_1(ret_ty: ValType) -> impl FnOnce(&Self) -> bool {
+        move |expr_type: &Self| {
+            let arg = &expr_type.ty.arg;
+            let result = &expr_type.ty.result;
+            arg.is_empty() && result.len() == 1 && result[0] == ret_ty
+        }
+    }
+
+    pub fn is_const_1_i32() -> impl FnOnce(&Self) -> bool {
+        Self::is_const_1(ValType::Num(NumType::I32))
+    }
+
+    pub fn is_const_1_i64() -> impl FnOnce(&Self) -> bool {
+        Self::is_const_1(ValType::Num(NumType::I64))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StackType {
+    arg: Vec<ValType>,
+    result: Vec<ValType>,
+}
+
+impl StackType {
+    pub fn new(arg: Vec<ValType>, result: Vec<ValType>) -> Self {
+        Self { arg, result }
+    }
+
+    pub fn const_(result: Vec<ValType>) -> Self {
+        Self {
+            arg: Vec::new(),
+            result,
+        }
+    }
+
+    pub fn nop() -> Self {
+        Self {
+            arg: Vec::new(),
+            result: Vec::new(),
+        }
+    }
+
+    pub fn composition(&self, other: &Self) -> Result<Self, ()> {
+        // type check
+        let is_same_type = self
+            .result
+            .iter()
+            .rev()
+            .zip(other.arg.iter().rev())
+            .all(|(a, b)| a == b);
+
+        if !is_same_type {
+            return Err(());
+        }
+
+        let arg_stick_out = other.arg.len().saturating_sub(self.result.len());
+        let arg: Vec<ValType> = other.arg[..arg_stick_out]
+            .iter()
+            .chain(self.arg.iter())
+            .cloned()
+            .collect();
+
+        let result_stick_out = self.result.len().saturating_sub(other.arg.len());
+        let result: Vec<ValType> = self.result[..result_stick_out]
+            .iter()
+            .chain(other.result.iter())
+            .cloned()
+            .collect();
+
+        Ok(Self { arg, result })
+    }
+}
 
 const MAIN_SYMBOL: &str = "_start";
 
@@ -28,7 +138,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new();
     let expr = wasm.trans_expr(hir, Rc::new(Level::outermost_with_name(MAIN_SYMBOL)));
 
-    let instr = Instruction::Expr(expr);
+    let instr = Instruction::Expr(expr.val);
     let func = Func::new(
         Some(Name::new(MAIN_SYMBOL.to_string())),
         TypeUse::Inline(FuncType::new(
@@ -94,18 +204,22 @@ impl Frame {
         &self.env
     }
 
+    // i32
     fn fp(&self) -> Local {
         Local(0)
     }
 
-    fn exp(access: &Stack, base_addr: Expr) -> Expr {
-        Expr::OpExpr(
-            Operator::Bin(NumType::I64, BinOp::Sub),
+    fn exp(access: &Stack, base_addr: ExprType) -> ExprType {
+        base_addr.assert(ExprType::is_const_1_i32());
+
+        let expr = Expr::OpExpr(
+            Operator::Bin(NumType::I32, BinOp::Sub),
             vec![
-                base_addr,
-                Expr::Op(Operator::Const(NumType::I64, access.0 as i64)),
+                base_addr.val,
+                Expr::Op(Operator::Const(NumType::I32, access.0 as i64)),
             ],
-        )
+        );
+        ExprType::new_const_1_i32(expr)
     }
 }
 
@@ -135,15 +249,16 @@ impl Wasm {
         }
     }
 
-    fn trans_expr(&mut self, expr: &HirExpr, level: Rc<Level>) -> Expr {
+    fn trans_expr(&mut self, expr: &HirExpr, level: Rc<Level>) -> ExprType {
         match &expr.kind {
             ExprKind::LValue(lvalue, _) => {
                 let lvalue = self.trans_lvalue(lvalue, level);
-                load(lvalue)
+                lvalue.assert(ExprType::is_const_1(ValType::Num(NumType::I32)));
+                load_i64(lvalue)
             }
             ExprKind::Nil(_) => todo!(),
             ExprKind::Sequence(_, _) => todo!(),
-            ExprKind::Int(v, _) => num(*v as i64),
+            ExprKind::Int(v, _) => num_i64(*v as i64),
             ExprKind::Str(_, _) => todo!(),
             ExprKind::FuncCall(_, _, _, _) => todo!(),
             ExprKind::Op(
@@ -159,7 +274,7 @@ impl Wasm {
             ) => {
                 let lhs = self.trans_expr(lhs, level.clone());
                 let rhs = self.trans_expr(rhs, level);
-                bin_op((*op).try_into().unwrap(), lhs, rhs)
+                bin_op_i64((*op).try_into().unwrap(), lhs, rhs)
             }
             ExprKind::Op(_, _, _, _) => todo!(),
             ExprKind::Neg(_, _) => todo!(),
@@ -173,7 +288,7 @@ impl Wasm {
             ExprKind::Assign(lvalue, expr, _) => {
                 let lvalue = self.trans_lvalue(lvalue, level.clone());
                 let expr = self.trans_expr(expr, level);
-                Expr::OpExpr(Operator::Store(NumType::I64), vec![lvalue, expr])
+                store_i64(lvalue, expr)
             }
             ExprKind::If {
                 cond,
@@ -184,7 +299,7 @@ impl Wasm {
             ExprKind::While(_, _, _) => todo!(),
             ExprKind::Break(_) => todo!(),
             ExprKind::Let(decls, exprs, _) => {
-                let decls = decls
+                let mut decls = decls
                     .iter()
                     .flat_map(|v| self.trans_decl(v, level.clone()))
                     .collect::<Vec<_>>();
@@ -194,14 +309,15 @@ impl Wasm {
                     .map(|v| self.trans_expr(v, level.clone()))
                     .collect::<Vec<_>>();
 
-                let last = exprs.pop().unwrap_or_else(nop);
-                todo!()
+                decls.append(&mut exprs);
+
+                expr_seq(decls)
             }
         }
     }
 
     // Put the address of lvalue on the stack top.
-    fn trans_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>) -> Expr {
+    fn trans_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>) -> ExprType {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
@@ -226,33 +342,42 @@ impl Wasm {
         }
     }
 
-    fn trans_decl(&mut self, decl: &Decl, level: Rc<Level>) -> Option<Expr> {
+    fn trans_decl(&mut self, decl: &Decl, level: Rc<Level>) -> Option<ExprType> {
         match decl {
             Decl::Type(_) => todo!(),
             Decl::Var(VarDecl(_, var_id, _, _, _, expr, _)) => {
                 let expr = self.trans_expr(expr, level.clone());
                 let stack = level.frame.borrow_mut().alloc_stack(8);
-                let base_addr = local_to_expr(&level.frame.borrow().fp());
+                let base_addr = local_to_i32expr(&level.frame.borrow().fp());
                 let addr = Frame::exp(&stack, base_addr);
 
-                self.var_env.insert(*var_id, (stack, level.clone()));
+                self.var_env.insert(*var_id, (stack, level));
 
-                Some(store(addr, expr))
+                Some(store_i64(addr, expr))
             }
             Decl::Func(_) => todo!(),
         }
     }
 }
 
-fn load(addr: Expr) -> Expr {
-    Expr::OpExpr(Operator::Load(NumType::I64), vec![addr])
+fn load_i64(addr: ExprType) -> ExprType {
+    addr.assert(ExprType::is_const_1_i32());
+    let expr = Expr::OpExpr(Operator::Load(NumType::I64), vec![addr.val]);
+
+    let ty = StackType::new(
+        vec![ValType::Num(NumType::I32)],
+        vec![ValType::Num(NumType::I64)],
+    );
+    ExprType::new(expr, ty)
 }
 
-fn sp() -> Expr {
-    Expr::Op(Operator::GlobalGet(Index::Name(STACK_PTR.to_string())))
+fn sp() -> ExprType {
+    ExprType::new_const_1_i32(Expr::Op(Operator::GlobalGet(Index::Name(
+        STACK_PTR.to_string(),
+    ))))
 }
 
-fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> Expr {
+fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> ExprType {
     let mut link = sp();
     if cur_level == ancestor_level {
         return link;
@@ -269,27 +394,149 @@ fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> 
     link
 }
 
-fn num(v: i64) -> Expr {
-    Expr::Op(Operator::Const(NumType::I64, v))
+fn num_i64(v: i64) -> ExprType {
+    ExprType::new_const_1_i64(Expr::Op(Operator::Const(NumType::I64, v)))
 }
 
-fn bin_op(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
-    Expr::OpExpr(Operator::Bin(NumType::I64, op), vec![lhs, rhs])
+fn bin_op_i64(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
+    lhs.assert(ExprType::is_const_1_i64());
+    rhs.assert(ExprType::is_const_1_i64());
+
+    ExprType::new_const_1_i64(Expr::OpExpr(
+        Operator::Bin(NumType::I64, op),
+        vec![lhs.val, rhs.val],
+    ))
 }
 
-fn nop() -> Expr {
-    Expr::Op(Operator::Const(NumType::I64, 0))
+fn nop() -> ExprType {
+    ExprType::new(Expr::Op(Operator::Nop), StackType::nop())
 }
 
-fn store(addr: Expr, val: Expr) -> Expr {
-    Expr::OpExpr(Operator::Store(NumType::I32), vec![addr, val])
+fn store_i64(addr: ExprType, val: ExprType) -> ExprType {
+    addr.assert(ExprType::is_const_1_i32());
+    val.assert(ExprType::is_const_1_i64());
+    ExprType::new(
+        Expr::OpExpr(Operator::Store(NumType::I64), vec![addr.val, val.val]),
+        StackType::new(
+            vec![ValType::Num(NumType::I32), ValType::Num(NumType::I64)],
+            vec![],
+        ),
+    )
 }
 
-fn local_to_expr(local: &Local) -> Expr {
-    Expr::Op(Operator::LocalGet(Index::Index(local.0 as u32)))
+// Type of Local must be i64
+fn local_to_i64expr(local: &Local) -> ExprType {
+    ExprType::new_const_1_i64(Expr::Op(Operator::LocalGet(Index::Index(local.0 as u32))))
 }
 
-fn expr_seq(mut instr: Vec<Expr>) -> Expr {
-    // Expr::Block(None, BlockType::Num(NumType::I64), instr)
-    todo!()
+// Type of Local must be i32
+fn local_to_i32expr(local: &Local) -> ExprType {
+    ExprType::new_const_1_i32(Expr::Op(Operator::LocalGet(Index::Index(local.0 as u32))))
+}
+
+fn expr_seq(exprs: Vec<ExprType>) -> ExprType {
+    let len = exprs.len();
+    let mut iter = exprs.into_iter();
+    let Some(first) = iter.next() else {
+        return nop();
+    };
+
+    let mut init = Vec::with_capacity(len);
+    init.push(first.val);
+    let seq_result = iter.try_fold((init, first.ty), |(mut exprs, ty), x| {
+        let ty = ty.composition(&x.ty)?;
+        exprs.push(x.val);
+        Ok::<(Vec<Expr>, StackType), ()>((exprs, ty))
+    });
+
+    let Ok((exprs, ty)) = seq_result else {
+        panic!("type error");
+    };
+
+    let instructions = exprs.into_iter().map(Instruction::Expr).collect();
+    let params = ty
+        .arg
+        .clone()
+        .into_iter()
+        .map(|v| Param::new(v, None))
+        .collect();
+    let results = ty.result.clone().into_iter().map(Into::into).collect();
+
+    let expr = Expr::Block(
+        None,
+        BlockType(TypeUse::Inline(FuncType::new(params, results))),
+        instructions,
+    );
+
+    ExprType::new(expr, ty)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_composition() {
+        let test_cases = [
+            (
+                StackType::new(
+                    vec![ValType::Num(NumType::I32), ValType::Num(NumType::I64)],
+                    vec![ValType::Num(NumType::I64)],
+                ),
+                StackType::new(
+                    vec![ValType::Num(NumType::I64)],
+                    vec![ValType::Num(NumType::F64)],
+                ),
+                StackType::new(
+                    vec![ValType::Num(NumType::I32), ValType::Num(NumType::I64)],
+                    vec![ValType::Num(NumType::F64)],
+                ),
+            ),
+            (
+                StackType::new(
+                    vec![ValType::Num(NumType::I32)],
+                    vec![
+                        ValType::Num(NumType::I64),
+                        ValType::Num(NumType::F32),
+                        ValType::Num(NumType::F64),
+                    ],
+                ),
+                StackType::new(
+                    vec![ValType::Num(NumType::F32), ValType::Num(NumType::F64)],
+                    vec![ValType::Num(NumType::F32)],
+                ),
+                StackType::new(
+                    vec![ValType::Num(NumType::I32)],
+                    vec![ValType::Num(NumType::I64), ValType::Num(NumType::F32)],
+                ),
+            ),
+            (
+                StackType::new(
+                    vec![ValType::Num(NumType::I32)],
+                    vec![ValType::Num(NumType::I64)],
+                ),
+                StackType::new(
+                    vec![
+                        ValType::Num(NumType::F32),
+                        ValType::Num(NumType::F64),
+                        ValType::Num(NumType::I64),
+                    ],
+                    vec![ValType::Num(NumType::F32)],
+                ),
+                StackType::new(
+                    vec![
+                        ValType::Num(NumType::F32),
+                        ValType::Num(NumType::F64),
+                        ValType::Num(NumType::I32),
+                    ],
+                    vec![ValType::Num(NumType::F32)],
+                ),
+            ),
+        ];
+
+        for (lhs, rhs, expected) in test_cases.iter() {
+            let result = lhs.composition(rhs).unwrap();
+            assert_eq!(result, *expected);
+        }
+    }
 }
