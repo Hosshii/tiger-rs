@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Index, Instruction, Local,
-        Module, Name, NumType, Operator, Param, TypeUse, ValType, WasmResult,
+        BinOp, BlockType, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Index,
+        Instruction, Local, Module, Name, NumType, Operator, Param, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -134,6 +134,31 @@ impl Encode for ValType {
     }
 }
 
+impl Encode for BlockType {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        if let TypeUse::Index(Index::Index(x)) = self.0 {
+            i64::from(x).encode(sink);
+            return;
+        }
+
+        let TypeUse::Inline(ref ty) = self.0 else {
+            panic!("invalid block type");
+        };
+
+        if ty.params.is_empty() && ty.result.is_empty() {
+            sink.push(0x40);
+            return;
+        }
+
+        if ty.params.is_empty() && ty.result.len() == 1 {
+            ty.result[0].encode(sink);
+            return;
+        }
+
+        panic!("multi-value block should have index");
+    }
+}
+
 impl Encode for FuncType {
     fn encode(&self, sink: &mut Vec<u8>) {
         self.params.encode(sink);
@@ -151,7 +176,14 @@ impl Encode for Expr {
                 }
                 op.encode(sink);
             }
-            Expr::Block(name, ty, instr) => {}
+            Expr::Block(_, ty, instr) => {
+                sink.push(0x02);
+                ty.encode(sink);
+                for ele in instr {
+                    ele.encode(sink);
+                }
+                sink.push(0x0B);
+            }
         }
     }
 }

@@ -74,7 +74,7 @@ pub enum Instruction {
 pub enum Operator {
     GlobalGet(Index),
     LocalGet(Index),
-    Store(NumType),
+    Store(NumType), // NumType.store
     Load(NumType),
     Bin(NumType, BinOp),
     Const(NumType, i64),
@@ -136,7 +136,13 @@ impl Func {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub type_: ValType,
-    pub name: Name,
+    pub name: Option<Name>,
+}
+
+impl Param {
+    pub fn new(type_: ValType, name: Option<Name>) -> Self {
+        Self { type_, name }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,6 +150,12 @@ pub struct WasmResult(pub ValType);
 
 impl WasmResult {
     pub fn new(val_type: ValType) -> Self {
+        Self(val_type)
+    }
+}
+
+impl From<ValType> for WasmResult {
+    fn from(val_type: ValType) -> Self {
         Self(val_type)
     }
 }
