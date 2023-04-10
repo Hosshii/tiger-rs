@@ -3,7 +3,7 @@
 # set -eux
 set -u
 
-assert() {
+assert_arm() {
     local expected="$1"
     local file="./bin_test/$2"
 
@@ -20,6 +20,27 @@ assert() {
         echo "$file => $expected expected, but got $actual"
         exit 1
     fi
+}
+
+assert_wasm(){
+    local expected="$1"
+    local file="./bin_test/$2"
+
+    local bin="../target/release/tiger"
+
+    $bin "$file" --arch wasm32-unknown-unknown > test.wasm
+    node bin_test/wasm/test.js test.wasm $expected
+    if [ "$?" = "0" ]; then
+        echo "$2: success!!"
+    else
+        echo "Test failed."
+        exit 1
+    fi
+}
+
+assert() {
+    # assert_arm "$1" "$2"
+    assert_wasm "$1" "$2"
 }
 
 cargo build --release
