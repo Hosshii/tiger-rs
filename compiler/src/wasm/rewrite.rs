@@ -1,24 +1,32 @@
+use std::collections::HashMap;
+
 use super::ast::{
-    BlockType, Export, ExportKind, Expr, Func, FuncTypeDef, Index, Instruction, Module, TypeUse,
+    BlockType, Export, ExportKind, Expr, Func, FuncTypeDef, Index, Instruction, Module, Name,
+    TypeUse,
 };
 
 pub(super) struct Rewriter {
-    fn_type_idx: u32,
     types: Vec<FuncTypeDef>,
     export: Vec<Export>,
+    local_name_map: HashMap<Name, Index>,
 }
 
 impl Rewriter {
     pub fn new() -> Self {
         Self {
-            fn_type_idx: 0, // initialize in rewrite.
             types: Vec::new(),
             export: Vec::new(),
+            local_name_map: HashMap::new(),
         }
     }
 
+    fn fn_type_idx(&self) -> u32 {
+        self.types.len() as u32
+    }
+
     pub fn rewrite(&mut self, module: &mut Module) {
-        self.fn_type_idx = module.types.len() as u32;
+        std::mem::swap(&mut self.types, &mut module.types);
+        std::mem::swap(&mut self.export, &mut module.export);
 
         for (idx, func) in module.func.iter_mut().enumerate() {
             self.rewrite_func(func, idx);
@@ -28,16 +36,14 @@ impl Rewriter {
         module.export.append(&mut self.export);
     }
 
-    fn rewrite_func(&mut self, func: &mut Func, idx: usize) {
+    fn rewrite_func(&mut self, func: &mut Func, fn_idx: usize) {
         match func.ty {
             TypeUse::Index(_) => (),
             TypeUse::Inline(ref ty) => {
-                let idx = self.fn_type_idx;
-                self.fn_type_idx += 1;
+                let idx = self.fn_type_idx();
                 self.types.push(FuncTypeDef {
                     name: None,
-                    params: ty.params.clone(),
-                    result: ty.result.clone(),
+                    ty: ty.clone(),
                 });
                 func.ty = TypeUse::Index(Index::Index(idx));
             }
@@ -46,7 +52,7 @@ impl Rewriter {
         if let Some(ref export) = func.export {
             self.export.push(Export {
                 name: export.name.clone(),
-                kind: ExportKind::Func(Index::Index(idx as u32)),
+                kind: ExportKind::Func(Index::Index(fn_idx as u32)),
             });
         }
 
@@ -61,12 +67,10 @@ impl Rewriter {
                 return;
             }
 
-            let idx = self.fn_type_idx;
-            self.fn_type_idx += 1;
+            let idx = self.fn_type_idx();
             self.types.push(FuncTypeDef {
                 name: None,
-                params: func_ty.params.clone(),
-                result: func_ty.result.clone(),
+                ty: func_ty.clone(),
             });
             ty.0 = TypeUse::Index(Index::Index(idx));
         }
@@ -93,6 +97,13 @@ impl Rewriter {
                     self.rewrite_instr(ele);
                 }
             }
+        }
+    }
+
+    fn rewrite_local_index(&mut self, idx: &mut Index) {
+        match idx {
+            Index::Index(_) => (),
+            Index::Name(x) => (),
         }
     }
 }

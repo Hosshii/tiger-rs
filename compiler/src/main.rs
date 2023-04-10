@@ -5,7 +5,14 @@ use tiger::{AARCH64_APPLE_DARWIN, X86_64_APPLE_DARWIN};
 fn main() {
     let mut args = env::args();
     let filename = args.nth(1).expect("expect filename");
-    let file = File::open(filename.as_str()).unwrap();
+    let file = match File::open(filename.as_str()) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("cannot open file {}", filename);
+            eprintln!("{}", e);
+            return;
+        }
+    };
 
     let arch = if let Some(x) = args.next() {
         assert_eq!(x, "--arch");

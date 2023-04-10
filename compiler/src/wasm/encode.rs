@@ -319,8 +319,8 @@ impl Encode for Vec<Local> {
 impl Encode for FuncTypeDef {
     fn encode(&self, sink: &mut Vec<u8>) {
         sink.push(0x60);
-        self.params.encode(sink);
-        self.result.encode(sink);
+        self.ty.params.encode(sink);
+        self.ty.result.encode(sink);
     }
 }
 

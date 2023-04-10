@@ -2,7 +2,7 @@ use crate::semant::hir::Operator as HirOperator;
 
 /// https://github.com/WebAssembly/spec/tree/master/interpreter/#s-expression-syntax
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Name(pub String);
 
 impl Name {
@@ -163,14 +163,13 @@ impl From<ValType> for WasmResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Local {
     pub type_: ValType,
-    pub name: Name,
+    pub name: Option<Name>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncTypeDef {
     pub name: Option<Name>,
-    pub params: Vec<Param>,
-    pub result: Vec<WasmResult>,
+    pub ty: FuncType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
