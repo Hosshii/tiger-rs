@@ -84,9 +84,11 @@ pub enum Operator {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Index {
-    Index(u32),
-    Name(String),
+    Index(IndexNumber),
+    Name(Name),
 }
+
+type IndexNumber = u32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 
@@ -196,20 +198,41 @@ pub enum ExportKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Global {
+    pub name: Option<Name>,
+    pub ty: GlobalType,
+    pub init: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalType {
+    pub ty: ValType,
+    pub m: Mut,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mut {
+    Const,
+    Var,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub types: Vec<FuncTypeDef>,
-    pub func: Vec<Func>,
-    pub import: Vec<Import>,
-    pub export: Vec<Export>,
+    pub funcs: Vec<Func>,
+    pub imports: Vec<Import>,
+    pub exports: Vec<Export>,
+    pub globals: Vec<Global>,
 }
 
 impl Module {
     pub fn empty() -> Self {
         Self {
             types: vec![],
-            func: vec![],
-            import: vec![],
-            export: vec![],
+            funcs: vec![],
+            imports: vec![],
+            exports: vec![],
+            globals: vec![],
         }
     }
 
@@ -234,11 +257,17 @@ impl ModuleBuilder {
     }
 
     pub fn add_func(mut self, func: Func) -> Self {
-        self.module.func.push(func);
+        self.module.funcs.push(func);
         self
     }
+
     pub fn add_type(mut self, type_: FuncTypeDef) -> Self {
         self.module.types.push(type_);
+        self
+    }
+
+    pub fn add_globals(mut self, globals: Vec<Global>) -> Self {
+        self.module.globals.extend(globals);
         self
     }
 }

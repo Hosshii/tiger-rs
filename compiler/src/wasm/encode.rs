@@ -2,8 +2,9 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, BlockType, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Index,
-        Instruction, Local, Module, Name, NumType, Operator, Param, TypeUse, ValType, WasmResult,
+        BinOp, BlockType, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
+        GlobalType, Index, Instruction, Local, Module, Mut, Name, NumType, Operator, Param,
+        TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -263,7 +264,7 @@ impl Encode for Index {
     fn encode(&self, sink: &mut Vec<u8>) {
         match self {
             Index::Index(index) => index.encode(sink),
-            Index::Name(name) => panic!("unresolved name {}", name),
+            Index::Name(name) => panic!("unresolved name {}", name.0),
         }
     }
 }
@@ -342,6 +343,29 @@ impl Encode for ExportKind {
     }
 }
 
+impl Encode for Global {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.ty.encode(sink);
+        self.init.encode(sink);
+    }
+}
+
+impl Encode for GlobalType {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.ty.encode(sink);
+        self.m.encode(sink);
+    }
+}
+
+impl Encode for Mut {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        match self {
+            Mut::Const => sink.push(0x00),
+            Mut::Var => sink.push(0x01),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum SectionId {
     Type = 1,
@@ -386,11 +410,11 @@ impl Encode for Module {
     fn encode(&self, sink: &mut Vec<u8>) {
         Module::section_list(SectionId::Type, self.types.as_slice(), sink);
 
-        let func_tys = self.func.iter().map(|f| &f.ty).collect::<Vec<_>>();
+        let func_tys = self.funcs.iter().map(|f| &f.ty).collect::<Vec<_>>();
         Module::section_list(SectionId::Function, func_tys.as_slice(), sink);
-        Module::section_list(SectionId::Export, self.export.as_slice(), sink);
+        Module::section_list(SectionId::Export, self.exports.as_slice(), sink);
 
-        Module::section_list(SectionId::Code, self.func.as_slice(), sink);
+        Module::section_list(SectionId::Code, self.funcs.as_slice(), sink);
     }
 }
 

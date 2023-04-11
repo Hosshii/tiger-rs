@@ -1,7 +1,9 @@
 mod ast;
 mod encode;
 pub mod rewrite;
-pub use encode::Encoder;
+mod watencoder;
+pub use encode::Encoder as WasmEncoder;
+pub use watencoder::Encoder as WatEncoder;
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
@@ -18,8 +20,8 @@ use crate::{
 };
 
 use self::ast::{
-    BinOp, BlockType, Expr, Func, FuncType, Index, Instruction, Module, ModuleBuilder, Name,
-    NumType, Operator, Param, ValType, WasmResult,
+    BinOp, BlockType, Expr, Func, FuncType, Global, GlobalType, Index, Instruction, Module,
+    ModuleBuilder, Mut, Name, NumType, Operator, Param, ValType, WasmResult,
 };
 
 type ExprType = WithType<Expr>;
@@ -150,9 +152,18 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
         vec![instr],
     );
 
+    let global = Global {
+        name: Some(Name::new(STACK_PTR.to_string())),
+        ty: GlobalType {
+            ty: ValType::Num(NumType::I32),
+            m: Mut::Var,
+        },
+        init: Expr::Op(Operator::Const(NumType::I32, 1048576)),
+    };
+
     let builder = ModuleBuilder::new();
 
-    builder.add_func(func).build()
+    builder.add_func(func).add_globals(vec![global]).build()
 }
 
 const STACK_PTR: &str = "stack_ptr";
@@ -345,7 +356,7 @@ impl Wasm {
     fn trans_decl(&mut self, decl: &Decl, level: Rc<Level>) -> Option<ExprType> {
         match decl {
             Decl::Type(_) => todo!(),
-            Decl::Var(VarDecl(_, var_id, _, _, _, expr, _)) => {
+            Decl::Var(VarDecl(_, var_id, _is_escape, _, _, expr, _)) => {
                 let expr = self.trans_expr(expr, level.clone());
                 let stack = level.frame.borrow_mut().alloc_stack(8);
                 let base_addr = local_to_i32expr(&level.frame.borrow().fp());
@@ -372,9 +383,9 @@ fn load_i64(addr: ExprType) -> ExprType {
 }
 
 fn sp() -> ExprType {
-    ExprType::new_const_1_i32(Expr::Op(Operator::GlobalGet(Index::Name(
+    ExprType::new_const_1_i32(Expr::Op(Operator::GlobalGet(Index::Name(Name(
         STACK_PTR.to_string(),
-    ))))
+    )))))
 }
 
 fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> ExprType {

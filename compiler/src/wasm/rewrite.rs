@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use super::ast::{
     BlockType, Export, ExportKind, Expr, Func, FuncTypeDef, Index, Instruction, Module, Name,
-    TypeUse,
+    Operator, TypeUse,
 };
 
 pub(super) struct Rewriter {
     types: Vec<FuncTypeDef>,
     export: Vec<Export>,
-    local_name_map: HashMap<Name, Index>,
+    // local_name_map: HashMap<Name, Index>,
+    global_name_map: HashMap<Name, Index>,
 }
 
 impl Rewriter {
@@ -16,7 +17,8 @@ impl Rewriter {
         Self {
             types: Vec::new(),
             export: Vec::new(),
-            local_name_map: HashMap::new(),
+            // local_name_map: HashMap::new(),
+            global_name_map: HashMap::new(),
         }
     }
 
@@ -25,15 +27,23 @@ impl Rewriter {
     }
 
     pub fn rewrite(&mut self, module: &mut Module) {
-        std::mem::swap(&mut self.types, &mut module.types);
-        std::mem::swap(&mut self.export, &mut module.export);
+        // firstly, decide global index
+        for (idx, global) in module.globals.iter().enumerate() {
+            if let Some(ref name) = global.name {
+                self.global_name_map
+                    .insert(name.clone(), Index::Index(idx as u32));
+            }
+        }
 
-        for (idx, func) in module.func.iter_mut().enumerate() {
+        std::mem::swap(&mut self.types, &mut module.types);
+        std::mem::swap(&mut self.export, &mut module.exports);
+
+        for (idx, func) in module.funcs.iter_mut().enumerate() {
             self.rewrite_func(func, idx);
         }
 
         module.types.append(&mut self.types);
-        module.export.append(&mut self.export);
+        module.exports.append(&mut self.export);
     }
 
     fn rewrite_func(&mut self, func: &mut Func, fn_idx: usize) {
@@ -85,6 +95,11 @@ impl Rewriter {
 
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         match expr {
+            Expr::Op(Operator::GlobalGet(Index::Name(name))) => {
+                if let Some(idx) = self.global_name_map.get(name) {
+                    *expr = Expr::Op(Operator::GlobalGet(idx.clone()));
+                }
+            }
             Expr::Op(_) => (),
             Expr::OpExpr(_, e) => {
                 for ele in e {
@@ -97,13 +112,6 @@ impl Rewriter {
                     self.rewrite_instr(ele);
                 }
             }
-        }
-    }
-
-    fn rewrite_local_index(&mut self, idx: &mut Index) {
-        match idx {
-            Index::Index(_) => (),
-            Index::Name(x) => (),
         }
     }
 }
