@@ -26,11 +26,18 @@ fn main() {
             tiger::compile(filename, file, io::stdout(), AARCH64_APPLE_DARWIN)
         }
         "x86_64-apple-darwin" => tiger::compile(filename, file, io::stdout(), X86_64_APPLE_DARWIN),
-        "wasm32-unknown-unknown" => tiger::compile_wasm(filename, file, io::stdout()),
+        "wasm32-unknown-unknown" => {
+            let is_wat = args.next().map_or(false, |x| x == "--wat");
+            if is_wat {
+                tiger::compile_wat(filename, file, io::stdout())
+            } else {
+                tiger::compile_wasm(filename, file, io::stdout())
+            }
+        }
         x => panic!("unknown arch {}", x),
     };
 
     if let Err(err) = result {
-        println!("{}", err)
+        eprintln!("{}", err)
     }
 }

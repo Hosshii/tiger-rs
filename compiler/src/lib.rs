@@ -16,7 +16,7 @@ use std::{
 
 use semant::translate;
 use thiserror::Error;
-use wasm::Encoder;
+use wasm::{WasmEncoder, WatEncoder};
 
 use crate::{
     codegen::{
@@ -107,10 +107,31 @@ where
     let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
     let mut module = wasm::translate(&tcx, &hir);
 
-    let mut encoder = Encoder::new();
+    let mut encoder = WasmEncoder::new();
     encoder.rewrite_module(&mut module);
 
     o.write_all(&encoder.encode_module(&module))?;
+
+    Ok(())
+}
+
+pub fn compile_wat<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
+where
+    N: Into<String>,
+    R: Read,
+    O: Write,
+{
+    let ast = parser::parse(filename, r)?;
+
+    let semantic_analyzer = Semant::new_with_base();
+
+    let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
+    let mut module = wasm::translate(&tcx, &hir);
+
+    let mut encoder = WatEncoder::new();
+    encoder.rewrite_module(&mut module);
+
+    o.write_all(encoder.encode_module(&module).as_bytes())?;
 
     Ok(())
 }
