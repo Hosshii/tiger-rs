@@ -209,19 +209,6 @@ impl<'a> ARM64<'a> {
                     _ => unreachable!(),
                 };
 
-                // save fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    stp 's0, 's1, ['s2, #-16]!".to_string(),
-                    dst: vec![],
-                    src: vec![
-                        ARM64Frame::fp().into(),
-                        ARM64Frame::lr().into(),
-                        ARM64Frame::sp().into(),
-                    ],
-                    jump: None,
-                };
-                self.emit(instruction);
-
                 let dst = ARM64Frame::call_defs().iter().map(Temp::from).collect();
                 let instruction = Instruction::Operand {
                     assembly: format!("    bl {}", format_label(name)),
@@ -237,33 +224,11 @@ impl<'a> ARM64<'a> {
                     src: Temp::from(ARM64Frame::rv()),
                 };
                 self.emit(instruction);
-
-                // load fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
-                    dst: vec![ARM64Frame::fp().into(), ARM64Frame::lr().into()],
-                    src: vec![ARM64Frame::sp().into()],
-                    jump: None,
-                };
-                self.emit(instruction);
             }
 
             Expr::Call(name, args) => {
                 let mut src = vec![self.munch_expr(name)];
                 src.append(&mut self.munch_args(args));
-
-                // save fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    stp 's0, 's1, ['s2, #-16]!".to_string(),
-                    dst: vec![],
-                    src: vec![
-                        ARM64Frame::fp().into(),
-                        ARM64Frame::lr().into(),
-                        ARM64Frame::sp().into(),
-                    ],
-                    jump: None,
-                };
-                self.emit(instruction);
 
                 let dst = ARM64Frame::call_defs().iter().map(Temp::from).collect();
                 let instruction = Instruction::Operand {
@@ -278,15 +243,6 @@ impl<'a> ARM64<'a> {
                     assembly: "    mov 'd0, 's0".to_string(),
                     dst: result,
                     src: Temp::from(ARM64Frame::rv()),
-                };
-                self.emit(instruction);
-
-                // load fp and lr
-                let instruction = Instruction::Operand {
-                    assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
-                    dst: vec![ARM64Frame::fp().into(), ARM64Frame::lr().into()],
-                    src: vec![ARM64Frame::sp().into()],
-                    jump: None,
                 };
                 self.emit(instruction);
             }
