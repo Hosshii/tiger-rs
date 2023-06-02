@@ -170,10 +170,12 @@ pub unsafe extern "C" fn substring(
         .collect::<String>()
         .into_bytes();
 
-    Box::into_raw(Box::new(TigerSting {
+    let p = Box::into_raw(Box::new(TigerSting {
         len: s.len() as TigerInt,
         data: s.as_mut_ptr(),
-    }))
+    }));
+    Box::leak(Box::new(s));
+    p
 }
 
 /// # Safety
