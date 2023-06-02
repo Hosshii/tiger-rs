@@ -226,11 +226,9 @@ impl Semant {
             .ok_or_else(|| Error::new_undefined_item(pos, Item::Type, sym))
     }
 
-    pub fn trans_prog(mut self, mut prog: Program) -> Result<(HirProgram, TyCtx)> {
+    pub fn analyze(mut self, mut prog: Program) -> Result<(HirProgram, TyCtx)> {
         EscapeFinder::find_escape(&mut prog);
 
-        // if body returns int, then use that value as exit code.
-        // otherwise use 0 as exit code.
         let prog = self.trans_prog_(prog)?;
         Ok((prog, self.ty_ctx))
     }
@@ -1105,7 +1103,7 @@ mod tests {
 
             let semantic_analyzer = Semant::new_with_base();
 
-            match semantic_analyzer.trans_prog(e) {
+            match semantic_analyzer.analyze(e) {
                 Ok(_) => println!("success!"),
                 Err(e) => panic!("fail! {}", e),
             }
