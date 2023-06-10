@@ -35,6 +35,12 @@ impl Encoder {
     }
 }
 
+impl Default for Encoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub trait Encode {
     fn encode(&self, sink: &mut Vec<u8>);
 }
@@ -209,6 +215,10 @@ impl Encode for Operator {
                 sink.push(0x20);
                 var.encode(sink);
             }
+            Operator::LocalSet(var) => {
+                sink.push(0x21);
+                var.encode(sink);
+            }
             Operator::Store(num_type) => {
                 match num_type {
                     NumType::I32 => sink.push(0x36),
@@ -308,12 +318,17 @@ impl Encode for WasmResult {
 
 impl Encode for Vec<Local> {
     fn encode(&self, sink: &mut Vec<u8>) {
-        let v = self
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (i as u32, &v.type_))
-            .collect::<Vec<_>>();
-        v.encode(sink);
+        let mut compressed = Vec::new();
+        for l in self {
+            if let Some((count, ty)) = compressed.last_mut() {
+                if *ty == &l.type_ {
+                    *count += 1;
+                    continue;
+                }
+            }
+            compressed.push((1, &l.type_));
+        }
+        compressed.encode(sink)
     }
 }
 
@@ -367,7 +382,7 @@ impl Encode for Mut {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum SectionId {
+pub enum SectionId {
     Type = 1,
     Import = 2,
     Function = 3,

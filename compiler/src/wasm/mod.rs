@@ -1,5 +1,11 @@
+//! sp -> stack_ptr
+//! fp -> frame_ptr
+//! address is 32bit
+//! locals are 64bit except first arg which means static link.
+
 mod ast;
-mod encode;
+pub mod encode;
+mod frame;
 pub mod rewrite;
 mod watencoder;
 pub use encode::Encoder as WasmEncoder;
@@ -19,9 +25,12 @@ use crate::{
     wasm::ast::{InlineFuncExport, TypeUse},
 };
 
-use self::ast::{
-    BinOp, BlockType, Expr, Func, FuncType, Global, GlobalType, Index, Instruction, Module,
-    ModuleBuilder, Mut, Name, NumType, Operator, Param, ValType, WasmResult,
+use self::{
+    ast::{
+        BinOp, BlockType, Expr, Func, FuncType, Global, GlobalType, Instruction, Local, Module,
+        ModuleBuilder, Mut, Name, NumType, Operator, Param, ValType, WasmResult,
+    },
+    frame::{Access as FrameAccess, Frame},
 };
 
 type ExprType = WithType<Expr>;
@@ -90,10 +99,7 @@ impl StackType {
     }
 
     pub fn const_(result: Vec<ValType>) -> Self {
-        Self {
-            arg: Vec::new(),
-            result,
-        }
+        Self::new(Vec::new(), result)
     }
 
     pub fn nop() -> Self {
@@ -135,10 +141,19 @@ impl StackType {
 }
 
 const MAIN_SYMBOL: &str = "_start";
+const STACK_PTR: &str = "stack_ptr";
+const FRAME_PTR: &str = "frame_ptr";
 
-pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
+pub fn translate(_tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new();
-    let expr = wasm.trans_expr(hir, Rc::new(Level::outermost_with_name(MAIN_SYMBOL)));
+    let outermost_level = Rc::new(Level::outermost_with_name(MAIN_SYMBOL));
+    let expr = wasm.trans_expr(hir, outermost_level.clone());
+    let locals = (0..outermost_level.frame.borrow().local_count())
+        .map(|_| Local {
+            type_: ValType::Num(NumType::I64),
+            name: None,
+        })
+        .collect::<Vec<_>>();
 
     let instr = Instruction::Expr(expr.val);
     let func = Func::new(
@@ -148,7 +163,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
             vec![WasmResult::new(ValType::Num(NumType::I64))],
         )),
         Some(InlineFuncExport::new(Name::new(MAIN_SYMBOL.to_string()))),
-        vec![],
+        locals,
         vec![instr],
     );
 
@@ -166,74 +181,6 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     builder.add_func(func).add_globals(vec![global]).build()
 }
 
-const STACK_PTR: &str = "stack_ptr";
-
-#[derive(Debug, PartialEq, Eq)]
-struct Stack(usize);
-
-#[derive(Debug, PartialEq, Eq)]
-struct Local(usize);
-
-/// Stack(x) means
-/// fp - x
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct Memory {
-    address: usize,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct Frame {
-    name: Label,
-    pointer: usize,
-    local_count: usize,
-    env: Stack,
-}
-
-impl Frame {
-    pub fn new(name: Label) -> Self {
-        Self {
-            name,
-            pointer: 0,
-            local_count: 0,
-            env: Stack(0),
-        }
-    }
-
-    fn alloc_stack(&mut self, size: usize) -> Stack {
-        let ptr = self.pointer;
-        self.pointer += size;
-        Stack(ptr)
-    }
-
-    fn alloc_local(&mut self, count: usize) -> Local {
-        let num = self.local_count;
-        self.local_count += count;
-        Local(num)
-    }
-
-    fn env(&self) -> &Stack {
-        &self.env
-    }
-
-    // i32
-    fn fp(&self) -> Local {
-        Local(0)
-    }
-
-    fn exp(access: &Stack, base_addr: ExprType) -> ExprType {
-        base_addr.assert(ExprType::is_const_1_i32());
-
-        let expr = Expr::OpExpr(
-            Operator::Bin(NumType::I32, BinOp::Sub),
-            vec![
-                base_addr.val,
-                Expr::Op(Operator::Const(NumType::I32, access.0 as i64)),
-            ],
-        );
-        ExprType::new_const_1_i32(expr)
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 struct Level {
     frame: RefCell<Frame>,
@@ -243,14 +190,16 @@ struct Level {
 impl Level {
     fn outermost_with_name(name: impl Into<String>) -> Self {
         Self {
-            frame: RefCell::new(Frame::new(Label::NamedFn(name.into()))),
+            frame: RefCell::new(Frame::new(Label::NamedFn(name.into()), 0)),
             parent: None,
         }
     }
 }
 
+type Access = (FrameAccess, Rc<Level>);
+
 struct Wasm {
-    var_env: HashMap<VarId, (Stack, Rc<Level>)>,
+    var_env: HashMap<VarId, Access>,
 }
 
 impl Wasm {
@@ -262,11 +211,7 @@ impl Wasm {
 
     fn trans_expr(&mut self, expr: &HirExpr, level: Rc<Level>) -> ExprType {
         match &expr.kind {
-            ExprKind::LValue(lvalue, _) => {
-                let lvalue = self.trans_lvalue(lvalue, level);
-                lvalue.assert(ExprType::is_const_1(ValType::Num(NumType::I32)));
-                load_i64(lvalue)
-            }
+            ExprKind::LValue(lvalue, _) => self.load_lvalue(lvalue, level),
             ExprKind::Nil(_) => todo!(),
             ExprKind::Sequence(_, _) => todo!(),
             ExprKind::Int(v, _) => num_i64(*v as i64),
@@ -290,23 +235,12 @@ impl Wasm {
             ExprKind::Op(_, _, _, _) => todo!(),
             ExprKind::Neg(_, _) => todo!(),
             ExprKind::RecordCreation(_, _, _) => todo!(),
-            ExprKind::ArrayCreation {
-                type_ident,
-                size,
-                init,
-                pos,
-            } => todo!(),
+            ExprKind::ArrayCreation { .. } => todo!(),
             ExprKind::Assign(lvalue, expr, _) => {
-                let lvalue = self.trans_lvalue(lvalue, level.clone());
-                let expr = self.trans_expr(expr, level);
-                store_i64(lvalue, expr)
+                let expr = self.trans_expr(expr, level.clone());
+                self.store_lvalue(lvalue, level, expr)
             }
-            ExprKind::If {
-                cond,
-                then,
-                els,
-                pos,
-            } => todo!(),
+            ExprKind::If { .. } => todo!(),
             ExprKind::While(_, _, _) => todo!(),
             ExprKind::Break(_) => todo!(),
             ExprKind::Let(decls, exprs, _) => {
@@ -327,51 +261,47 @@ impl Wasm {
         }
     }
 
-    // Put the address of lvalue on the stack top.
-    fn trans_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>) -> ExprType {
+    fn store_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>, expr: ExprType) -> ExprType {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
                 let env = calc_static_link(level.as_ref(), ancestor_level);
-                Frame::exp(access, env)
+                Frame::store2access(access, env, expr)
             }
-            HirLValue::RecordField {
-                record,
-                record_type,
-                field_ident,
-                field_index,
-                field_type,
-                pos,
-            } => todo!(),
-            HirLValue::Array {
-                array,
-                array_type,
-                index,
-                index_type,
-                pos,
-            } => todo!(),
+            HirLValue::RecordField { .. } => todo!(),
+            HirLValue::Array { .. } => todo!(),
+        }
+    }
+
+    fn load_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>) -> ExprType {
+        match lvalue {
+            HirLValue::Var(_, var_id, _, _) => {
+                let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
+                let env = calc_static_link(level.as_ref(), ancestor_level);
+                Frame::get_access_content(access, env)
+            }
+            HirLValue::RecordField { .. } => todo!(),
+            HirLValue::Array { .. } => todo!(),
         }
     }
 
     fn trans_decl(&mut self, decl: &Decl, level: Rc<Level>) -> Option<ExprType> {
         match decl {
             Decl::Type(_) => todo!(),
-            Decl::Var(VarDecl(_, var_id, _is_escape, _, _, expr, _)) => {
+            Decl::Var(VarDecl(_, var_id, is_escape, _, _, expr, _)) => {
                 let expr = self.trans_expr(expr, level.clone());
-                let stack = level.frame.borrow_mut().alloc_stack(8);
-                let base_addr = local_to_i32expr(&level.frame.borrow().fp());
-                let addr = Frame::exp(&stack, base_addr);
-
-                self.var_env.insert(*var_id, (stack, level));
-
-                Some(store_i64(addr, expr))
+                let access = level.frame.borrow_mut().alloc_local(*is_escape);
+                let base_addr = Frame::fp();
+                let store_expr = Frame::store2access(&access, base_addr, expr);
+                self.var_env.insert(*var_id, (access, level));
+                Some(store_expr)
             }
             Decl::Func(_) => todo!(),
         }
     }
 }
 
-fn load_i64(addr: ExprType) -> ExprType {
+fn _load_i64(addr: ExprType) -> ExprType {
     addr.assert(ExprType::is_const_1_i32());
     let expr = Expr::OpExpr(Operator::Load(NumType::I64), vec![addr.val]);
 
@@ -382,14 +312,8 @@ fn load_i64(addr: ExprType) -> ExprType {
     ExprType::new(expr, ty)
 }
 
-fn sp() -> ExprType {
-    ExprType::new_const_1_i32(Expr::Op(Operator::GlobalGet(Index::Name(Name(
-        STACK_PTR.to_string(),
-    )))))
-}
-
 fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> ExprType {
-    let mut link = sp();
+    let mut link = Frame::sp();
     if cur_level == ancestor_level {
         return link;
     }
@@ -397,7 +321,7 @@ fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> 
     while cur_level != ancestor_level {
         let frame = cur_level.frame.borrow();
         let link_access = frame.env();
-        link = Frame::exp(link_access, link);
+        link = Frame::get_access_content(link_access, link);
         let parent = ancestor_level.parent.as_deref().expect("cur_level is root");
         cur_level = parent;
     }
@@ -423,7 +347,7 @@ fn nop() -> ExprType {
     ExprType::new(Expr::Op(Operator::Nop), StackType::nop())
 }
 
-fn store_i64(addr: ExprType, val: ExprType) -> ExprType {
+fn _store_i64(addr: ExprType, val: ExprType) -> ExprType {
     addr.assert(ExprType::is_const_1_i32());
     val.assert(ExprType::is_const_1_i64());
     ExprType::new(
@@ -433,16 +357,6 @@ fn store_i64(addr: ExprType, val: ExprType) -> ExprType {
             vec![],
         ),
     )
-}
-
-// Type of Local must be i64
-fn local_to_i64expr(local: &Local) -> ExprType {
-    ExprType::new_const_1_i64(Expr::Op(Operator::LocalGet(Index::Index(local.0 as u32))))
-}
-
-// Type of Local must be i32
-fn local_to_i32expr(local: &Local) -> ExprType {
-    ExprType::new_const_1_i32(Expr::Op(Operator::LocalGet(Index::Index(local.0 as u32))))
 }
 
 fn expr_seq(exprs: Vec<ExprType>) -> ExprType {

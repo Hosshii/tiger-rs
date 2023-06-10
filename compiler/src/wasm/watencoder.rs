@@ -9,6 +9,7 @@ use super::{
     rewrite::Rewriter,
 };
 
+#[derive(Debug, Default)]
 pub struct Encoder {
     pub(crate) bytes: String,
 }
@@ -141,7 +142,25 @@ impl Encode for ValType {
 
 impl Encode for BlockType {
     fn encode(&self, sink: &mut String) {
-        self.0.encode(sink);
+        if let TypeUse::Index(Index::Index(_)) = self.0 {
+            self.0.encode(sink);
+            return;
+        }
+
+        let TypeUse::Inline(ref ty) = self.0 else {
+            panic!("invalid block type");
+        };
+
+        if ty.params.is_empty() && ty.result.is_empty() {
+            return;
+        }
+
+        if ty.params.is_empty() && ty.result.len() == 1 {
+            ty.result[0].encode(sink);
+            return;
+        }
+
+        panic!("multi-value block should have index");
     }
 }
 
@@ -211,6 +230,10 @@ impl Encode for Operator {
                 sink.push_str("local.get ");
                 var.encode(sink);
             }
+            Operator::LocalSet(var) => {
+                sink.push_str("local.set ");
+                var.encode(sink);
+            }
             Operator::Store(num_type) => {
                 num_type.encode(sink);
                 sink.push_str(".store")
@@ -254,10 +277,10 @@ impl<T: Debug> Encode for TypeUse<T> {
         match self {
             TypeUse::Index(index) => index.encode(sink),
             TypeUse::Inline(type_) => {
-                panic!("unresolved type {:?}", type_)
+                panic!("unresolved type: {:?}", type_);
             }
         }
-        sink.push_str(" )");
+        sink.push(')');
     }
 }
 
@@ -265,7 +288,7 @@ impl Encode for InlineFuncExport {
     fn encode(&self, sink: &mut String) {
         sink.push_str("(export \"");
         self.name.encode(sink);
-        sink.push_str("\" )");
+        sink.push_str("\")");
     }
 }
 
@@ -326,13 +349,14 @@ impl Encode for FuncTypeDef {
             sink.push('$');
             name.encode(sink);
         }
+        sink.push_str("(func ");
         self.ty.encode(sink);
-        sink.push(')');
+        sink.push_str("))");
     }
 }
 
 impl Encode for Import {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, _sink: &mut String) {
         todo!()
     }
 }

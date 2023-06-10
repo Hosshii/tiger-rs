@@ -9,7 +9,6 @@ use crate::{
     ir::{BinOp, Expr, Stmt},
 };
 
-const PTR_SIZE: i64 = 8;
 static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
     rbp: Temp::new(),
     rsp: Temp::new(),
@@ -101,7 +100,7 @@ static TEMP_MAP: Lazy<HashMap<Temp, &'static str>> = Lazy::new(|| {
 pub struct X86 {
     name: Label,
     formals: Vec<Access>,
-    pointer: i64, // greater than 0
+    pointer: u64, // greater than 0
 }
 
 impl X86 {
@@ -125,8 +124,10 @@ impl X86 {
         REGISTERS_GLOBAL.rdx
     }
 
-    fn aligned_ptr(&self) -> i64 {
-        self.pointer + 16 - self.pointer % 16
+    fn aligned_ptr(&self) -> u64 {
+        (self.pointer + 16)
+            .checked_sub(self.pointer % 16)
+            .expect("ovefrlow")
     }
 }
 
@@ -157,8 +158,8 @@ impl Frame for X86 {
 
     fn alloc_local(&mut self, is_escape: bool) -> Self::Access {
         if is_escape {
-            self.pointer += PTR_SIZE;
-            Access::InFrame(-self.pointer)
+            self.pointer += Self::WORD_SIZE;
+            Access::InFrame(-(self.pointer as i64))
         } else {
             Access::InReg(Temp::new())
         }

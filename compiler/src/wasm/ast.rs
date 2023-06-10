@@ -74,6 +74,7 @@ pub enum Instruction {
 pub enum Operator {
     GlobalGet(Index),
     LocalGet(Index),
+    LocalSet(Index),
     Store(NumType), // NumType.store
     Load(NumType),
     Bin(NumType, BinOp),
@@ -235,10 +236,6 @@ impl Module {
             globals: vec![],
         }
     }
-
-    pub fn builder() -> ModuleBuilder {
-        ModuleBuilder::new()
-    }
 }
 
 pub struct ModuleBuilder {
@@ -261,7 +258,7 @@ impl ModuleBuilder {
         self
     }
 
-    pub fn add_type(mut self, type_: FuncTypeDef) -> Self {
+    pub fn _add_type(mut self, type_: FuncTypeDef) -> Self {
         self.module.types.push(type_);
         self
     }

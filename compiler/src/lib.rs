@@ -7,7 +7,7 @@ mod semant;
 mod asm;
 mod common;
 mod frame;
-mod wasm;
+pub mod wasm;
 
 use std::{
     io::{self, Read, Write},

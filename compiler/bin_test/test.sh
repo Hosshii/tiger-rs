@@ -3,14 +3,17 @@
 # set -eux
 set -u
 
+script_dir=$(cd $(dirname $0) && pwd)
+root_dir=$(dirname $(dirname $script_dir))
+
 assert_arm() {
     local expected="$1"
-    local file="./bin_test/$2"
+    local file="${script_dir}/$2"
 
-    local bin="../target/release/tiger"
+    local bin="${root_dir}/target/release/tiger"
 
     $bin "$file" > tmp.s
-    cc -o tmp.out tmp.s ../target/release/libcdylib.dylib
+    cc -o tmp.out tmp.s ${root_dir}/target/release/libcdylib.dylib
     ./tmp.out
     actual="$?"
 
@@ -24,12 +27,16 @@ assert_arm() {
 
 assert_wasm(){
     local expected="$1"
-    local file="./bin_test/$2"
+    local file="${script_dir}/$2"
+    local tmp_wasm="${script_dir}/wasm/test.wasm"
+    local tmp_wat="${script_dir}/wasm/test.wat" # for debug
+    local test_js="${script_dir}/wasm/test.js"
 
-    local bin="../target/release/tiger"
+    local bin="${root_dir}/target/release/tiger"
 
-    $bin "$file" --arch wasm32-unknown-unknown > test.wasm
-    node bin_test/wasm/test.js test.wasm $expected
+    $bin "$file" --arch wasm32-unknown-unknown > $tmp_wasm
+    $bin "$file" --arch wasm32-unknown-unknown --wat > $tmp_wat
+    node ${test_js} $tmp_wasm $expected
     if [ "$?" = "0" ]; then
         echo "$2: success!!"
     else
