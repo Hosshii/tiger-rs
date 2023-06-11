@@ -86,6 +86,11 @@ pub enum CvtOp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TestOp {
+    Eqz,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Op(Operator),
     OpExpr(Operator, Vec<Expr>),
@@ -108,12 +113,15 @@ pub enum Instruction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operator {
+    Br(Index),
+    BrIf(Index),
     GlobalGet(Index),
     LocalGet(Index),
     LocalSet(Index),
     Store(NumType), // NumType.store
     Load(NumType),
     Bin(NumType, BinOp),
+    Test(NumType, TestOp),
     Const(NumType, i64),
     Convert(NumType, NumType, CvtOp, Option<Sign>),
     Nop,
@@ -124,6 +132,12 @@ pub enum Operator {
 pub enum Index {
     Index(IndexNumber),
     Name(Name),
+}
+
+impl From<IndexNumber> for Index {
+    fn from(idx: u32) -> Self {
+        Self::Index(idx)
+    }
 }
 
 type IndexNumber = u32;

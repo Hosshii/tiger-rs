@@ -4,7 +4,7 @@ use super::{
     ast::{
         BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
         GlobalType, Import, Index, InlineFuncExport, Instruction, Local, Module, Mut, Name,
-        NumType, Operator, Param, TypeUse, ValType, WasmResult,
+        NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -30,6 +30,32 @@ impl Encoder {
     pub fn rewrite_module(&mut self, module: &mut Module) {
         let mut rewriter = Rewriter::new();
         rewriter.rewrite(module);
+    }
+}
+
+struct MultiLine<'a, T>(&'a [T]);
+
+impl<'a, T> MultiLine<'a, T> {
+    pub fn new(item: &'a [T]) -> Self {
+        Self(item)
+    }
+}
+
+impl<'a, T> From<&'a [T]> for MultiLine<'a, T> {
+    fn from(item: &'a [T]) -> Self {
+        Self(item)
+    }
+}
+
+impl<T: Encode> Encode for MultiLine<'_, T> {
+    fn encode(&self, sink: &mut String) {
+        let len = self.0.len();
+        for (idx, item) in self.0.iter().enumerate() {
+            item.encode(sink);
+            if idx < len - 1 {
+                sink.push('\n');
+            }
+        }
     }
 }
 
@@ -188,6 +214,14 @@ impl Encode for BinOp {
     }
 }
 
+impl Encode for TestOp {
+    fn encode(&self, sink: &mut String) {
+        match self {
+            TestOp::Eqz => sink.push_str("eqz"),
+        }
+    }
+}
+
 impl Encode for CvtOp {
     fn encode(&self, sink: &mut String) {
         match self {
@@ -198,17 +232,16 @@ impl Encode for CvtOp {
 
 impl Encode for Expr {
     fn encode(&self, sink: &mut String) {
+        sink.push('(');
         match self {
             Expr::Op(op) => op.encode(sink),
             Expr::OpExpr(op, exprs) => {
-                for expr in exprs {
-                    expr.encode(sink);
-                    sink.push('\n');
-                }
                 op.encode(sink);
+                sink.push(' ');
+                MultiLine::new(exprs).encode(sink);
             }
             Expr::Block(name, ty, instrs) => {
-                sink.push_str("(block ");
+                sink.push_str("block ");
                 if let Some(name) = name {
                     sink.push('$');
                     name.encode(sink);
@@ -216,33 +249,27 @@ impl Encode for Expr {
                 }
                 ty.encode(sink);
                 sink.push('\n');
-                for instr in instrs {
-                    instr.encode(sink);
-                    sink.push('\n');
-                }
-                sink.push(')');
+                MultiLine::new(instrs).encode(sink);
             }
             Expr::If(name, block_ty, cond, then, els) => {
-                sink.push_str("(if ");
+                sink.push_str("if ");
                 if let Some(name) = name {
                     sink.push('$');
                     name.encode(sink);
                     sink.push(' ');
                 }
                 block_ty.encode(sink);
-                sink.push_str("\n(");
+                sink.push('\n');
                 cond.encode(sink);
-                sink.push_str(")\n(");
+                sink.push('\n');
                 then.encode(sink);
-                sink.push_str(")\n");
                 if let Some(els) = els {
-                    sink.push('(');
+                    sink.push('\n');
                     els.encode(sink);
-                    sink.push_str(")\n");
                 }
             }
             Expr::Loop(name, block_ty, instr) => {
-                sink.push_str("(loop ");
+                sink.push_str("loop ");
                 if let Some(name) = name {
                     sink.push('$');
                     name.encode(sink);
@@ -251,9 +278,9 @@ impl Encode for Expr {
                 block_ty.encode(sink);
                 sink.push('\n');
                 instr.encode(sink);
-                sink.push_str(")\n");
             }
         }
+        sink.push(')');
     }
 }
 
@@ -269,6 +296,14 @@ impl Encode for Instruction {
 impl Encode for Operator {
     fn encode(&self, sink: &mut String) {
         match self {
+            Operator::Br(index) => {
+                sink.push_str("br ");
+                index.encode(sink);
+            }
+            Operator::BrIf(index) => {
+                sink.push_str("br_if ");
+                index.encode(sink);
+            }
             Operator::GlobalGet(var) => {
                 sink.push_str("global.get ");
                 var.encode(sink);
@@ -293,6 +328,11 @@ impl Encode for Operator {
                 num_type.encode(sink);
                 sink.push('.');
                 bin_op.encode(sink);
+            }
+            Operator::Test(num_type, test_op) => {
+                num_type.encode(sink);
+                sink.push('.');
+                test_op.encode(sink);
             }
             Operator::Const(num_type, value) => {
                 num_type.encode(sink);
@@ -360,9 +400,7 @@ impl Encode for Func {
         sink.push(' ');
         self.locals.encode(sink);
         sink.push(' ');
-        for instr in self.instr.iter() {
-            instr.encode(sink);
-        }
+        MultiLine::new(self.instr.as_slice()).encode(sink);
         sink.push(')');
     }
 }
@@ -497,30 +535,19 @@ impl Encode for GlobalType {
 //     }
 // }
 
-struct Lines<'a, T>(&'a [T]);
-impl<'a, T: Encode> Encode for Lines<'a, T> {
-    fn encode(&self, sink: &mut String) {
-        for line in self.0.iter() {
-            line.encode(sink);
-            sink.push('\n');
-        }
-    }
-}
-
-impl<'a, T> From<&'a [T]> for Lines<'a, T> {
-    fn from(arr: &'a [T]) -> Self {
-        Self(arr)
-    }
-}
-
 impl Encode for Module {
     fn encode(&self, sink: &mut String) {
         sink.push_str("(module\n");
-        Lines::from(self.types.as_slice()).encode(sink);
-        Lines::from(self.funcs.as_slice()).encode(sink);
-        Lines::from(self.imports.as_slice()).encode(sink);
-        Lines::from(self.exports.as_slice()).encode(sink);
-        Lines::from(self.globals.as_slice()).encode(sink);
+        MultiLine::from(self.types.as_slice()).encode(sink);
+        sink.push('\n');
+        MultiLine::from(self.funcs.as_slice()).encode(sink);
+        sink.push('\n');
+        MultiLine::from(self.imports.as_slice()).encode(sink);
+        sink.push('\n');
+        MultiLine::from(self.exports.as_slice()).encode(sink);
+        sink.push('\n');
+        MultiLine::from(self.globals.as_slice()).encode(sink);
+        sink.push('\n');
         sink.push(')');
     }
 }

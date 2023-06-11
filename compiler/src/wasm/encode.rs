@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use super::{
     ast::{
         BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Index, Instruction, Local, Module, Mut, Name, NumType, Operator, Param,
+        GlobalType, Index, Instruction, Local, Module, Mut, Name, NumType, Operator, Param, TestOp,
         TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
@@ -237,6 +237,14 @@ impl Encode for Instruction {
 impl Encode for Operator {
     fn encode(&self, sink: &mut Vec<u8>) {
         match self {
+            Operator::Br(index) => {
+                sink.push(0x0C);
+                index.encode(sink);
+            }
+            Operator::BrIf(index) => {
+                sink.push(0x0D);
+                index.encode(sink);
+            }
             Operator::GlobalGet(var) => {
                 sink.push(0x23);
                 var.encode(sink);
@@ -272,6 +280,11 @@ impl Encode for Operator {
                 0u32.encode(sink);
             }
             Operator::Bin(num_type, bin_op) => sink.push(gen_bin_code(num_type, bin_op)),
+            Operator::Test(num_type, bin_op) => match (num_type, bin_op) {
+                (NumType::I32, TestOp::Eqz) => sink.push(0x45),
+                (NumType::I64, TestOp::Eqz) => sink.push(0x50),
+                _ => unimplemented!(),
+            },
             Operator::Const(num_type, value) => {
                 match num_type {
                     NumType::I32 => sink.push(0x41),

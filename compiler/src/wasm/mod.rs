@@ -26,8 +26,9 @@ use crate::{
 
 use self::{
     ast::{
-        BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Instruction, Local,
-        Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, ValType, WasmResult,
+        BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Index, Instruction,
+        Local, Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, TestOp, ValType,
+        WasmResult,
     },
     frame::{Access as FrameAccess, Frame},
 };
@@ -250,7 +251,11 @@ impl Wasm {
 
                 if_expr(cond, then, els)
             }
-            ExprKind::While(_, _, _) => todo!(),
+            ExprKind::While(cond, instr, _) => {
+                let cond = self.trans_expr(cond, level.clone());
+                let body = self.trans_expr(instr, level);
+                while_expr(cond, body)
+            }
             ExprKind::Break(_) => todo!(),
             ExprKind::Let(decls, exprs, _) => {
                 let mut decls = decls
@@ -429,6 +434,34 @@ fn if_expr(cond: ExprType, then: ExprType, els: Option<ExprType>) -> ExprType {
     );
 
     ExprType::new(expr, then.ty)
+}
+
+fn while_expr(cond: ExprType, body: ExprType) -> ExprType {
+    cond.assert_ty(StackType::const_1_i32());
+    let block_ty = BlockType(TypeUse::Inline(body.ty.clone().into()));
+    let stack_type = body.ty;
+
+    let body = Expr::Block(
+        None,
+        block_ty.clone(),
+        vec![Instruction::Expr(Expr::Loop(
+            None,
+            block_ty,
+            vec![
+                Instruction::Expr(Expr::OpExpr(
+                    Operator::BrIf(Index::from(1)),
+                    vec![Expr::OpExpr(
+                        Operator::Test(NumType::I32, TestOp::Eqz),
+                        vec![cond.val],
+                    )],
+                )),
+                Instruction::Expr(body.val),
+                Instruction::Op(Operator::Br(Index::from(0))),
+            ],
+        ))],
+    );
+
+    ExprType::new(body, stack_type)
 }
 
 fn i64_2_i32(expr: ExprType) -> ExprType {
