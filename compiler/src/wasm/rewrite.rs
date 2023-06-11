@@ -112,6 +112,26 @@ impl Rewriter {
                     self.rewrite_instr(ele);
                 }
             }
+            Expr::If(_, block_ty, cond, then, els) => {
+                self.rewrite_block_type(block_ty);
+                for ele in cond {
+                    self.rewrite_expr(ele);
+                }
+                for ele in then {
+                    self.rewrite_instr(ele);
+                }
+                if let Some(els) = els {
+                    for ele in els {
+                        self.rewrite_instr(ele);
+                    }
+                }
+            }
+            Expr::Loop(_, block_ty, instr) => {
+                self.rewrite_block_type(block_ty);
+                for ele in instr {
+                    self.rewrite_instr(ele);
+                }
+            }
         }
     }
 }

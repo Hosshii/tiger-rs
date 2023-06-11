@@ -176,6 +176,7 @@ impl Encode for BinOp {
         match self {
             BinOp::Add => sink.push_str("add"),
             BinOp::Sub => sink.push_str("sub"),
+            _ => todo!(),
         }
     }
 }
@@ -192,7 +193,7 @@ impl Encode for Expr {
                 op.encode(sink);
             }
             Expr::Block(name, ty, instrs) => {
-                sink.push_str("block ");
+                sink.push_str("(block ");
                 if let Some(name) = name {
                     sink.push('$');
                     name.encode(sink);
@@ -204,7 +205,38 @@ impl Encode for Expr {
                     instr.encode(sink);
                     sink.push('\n');
                 }
-                sink.push_str("end");
+                sink.push(')');
+            }
+            Expr::If(name, block_ty, cond, then, els) => {
+                sink.push_str("(if ");
+                if let Some(name) = name {
+                    sink.push('$');
+                    name.encode(sink);
+                    sink.push(' ');
+                }
+                block_ty.encode(sink);
+                sink.push('\n');
+                cond.encode(sink);
+                sink.push('\n');
+                then.encode(sink);
+                sink.push('\n');
+                if let Some(els) = els {
+                    els.encode(sink);
+                    sink.push('\n');
+                }
+                sink.push_str("\n");
+            }
+            Expr::Loop(name, block_ty, instr) => {
+                sink.push_str("(loop ");
+                if let Some(name) = name {
+                    sink.push('$');
+                    name.encode(sink);
+                    sink.push(' ');
+                }
+                block_ty.encode(sink);
+                sink.push_str("\n");
+                instr.encode(sink);
+                sink.push_str(")\n");
             }
         }
     }

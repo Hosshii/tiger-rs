@@ -70,6 +70,10 @@ impl ExprType {
         }
     }
 
+    pub fn assert_eq(&self, other: &Self) {
+        assert_eq!(self.ty, other.ty);
+    }
+
     pub fn is_const_1(ret_ty: ValType) -> impl FnOnce(&Self) -> bool {
         move |expr_type: &Self| {
             let arg = &expr_type.ty.arg;
@@ -137,6 +141,15 @@ impl StackType {
             .collect();
 
         Ok(Self { arg, result })
+    }
+}
+
+impl From<StackType> for FuncType {
+    fn from(value: StackType) -> Self {
+        Self {
+            params: value.arg.into_iter().map(Into::into).collect(),
+            result: value.result.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -240,7 +253,14 @@ impl Wasm {
                 let expr = self.trans_expr(expr, level.clone());
                 self.store_lvalue(lvalue, level, expr)
             }
-            ExprKind::If { .. } => todo!(),
+            ExprKind::If {
+                cond, then, els, ..
+            } => {
+                let cond = self.trans_expr(cond, level.clone());
+                let then = self.trans_expr(then, level.clone());
+                let els = els.as_deref().map(|els| self.trans_expr(els, level));
+                if_expr(cond, then, els)
+            }
             ExprKind::While(_, _, _) => todo!(),
             ExprKind::Break(_) => todo!(),
             ExprKind::Let(decls, exprs, _) => {
@@ -394,6 +414,23 @@ fn expr_seq(exprs: Vec<ExprType>) -> ExprType {
     );
 
     ExprType::new(expr, ty)
+}
+
+fn if_expr(cond: ExprType, then: ExprType, els: Option<ExprType>) -> ExprType {
+    cond.assert(ExprType::is_const_1_i32());
+    if let Some(ref els) = els {
+        then.assert_eq(els);
+    }
+
+    let expr = Expr::If(
+        None,
+        BlockType(TypeUse::Inline(then.ty.clone().into())),
+        vec![cond.val],
+        vec![Instruction::Expr(then.val)],
+        els.map(|v| vec![Instruction::Expr(v.val)]),
+    );
+
+    ExprType::new(expr, then.ty)
 }
 
 #[cfg(test)]

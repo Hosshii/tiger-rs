@@ -191,6 +191,34 @@ impl Encode for Expr {
                 }
                 sink.push(0x0B);
             }
+            Expr::If(_, block_ty, cond, then, els) => {
+                for ele in cond {
+                    ele.encode(sink);
+                }
+
+                sink.push(0x04);
+                block_ty.encode(sink);
+
+                for ele in then {
+                    ele.encode(sink);
+                }
+
+                if let Some(els) = els {
+                    sink.push(0x05);
+                    for ele in els {
+                        ele.encode(sink);
+                    }
+                }
+                sink.push(0x0B);
+            }
+            Expr::Loop(_, block_ty, instr) => {
+                sink.push(0x03);
+                block_ty.encode(sink);
+                for ele in instr {
+                    ele.encode(sink);
+                }
+                sink.push(0x0B);
+            }
         }
     }
 }
@@ -203,6 +231,31 @@ impl Encode for Instruction {
         }
     }
 }
+
+macro_rules! bin_op_inner {
+    () => {};
+}
+
+//       i32,  i64,  f32,  f64;
+// add, 0x6a, 0x6b, 0x7c, 0x7d;
+// sub, 0x6a, 0x6b, 0x7c, 0x7d;
+
+// generate_match!(
+//           I32,  I64,  F32,  F64;
+//     Add; 0x6A, 0x7C, 0x92, 0xA0;
+//     Sub; 0x6B, 0x7D, 0x93, 0xA1;
+// );
+
+// match (num_type, bin_op) {
+//     (NumType::I32, BinOp::Add) => 0x6A,
+//     (NumType::I64, BinOp::Add) => 0x7C,
+//     (NumType::F32, BinOp::Add) => 0x92,
+//     (NumType::F64, BinOp::Add) => 0xA0,
+//     (NumType::I32, BinOp::Sub) => 0x6B,
+//     (NumType::I64, BinOp::Sub) => 0x7D,
+//     (NumType::F32, BinOp::Sub) => 0x93,
+//     (NumType::F64, BinOp::Sub) => 0xA1,
+// }
 
 impl Encode for Operator {
     fn encode(&self, sink: &mut Vec<u8>) {
@@ -250,6 +303,7 @@ impl Encode for Operator {
                 (NumType::F32, BinOp::Sub) => sink.push(0x93),
                 (NumType::F64, BinOp::Add) => sink.push(0xA0),
                 (NumType::F64, BinOp::Sub) => sink.push(0xA1),
+                _ => (),
             },
             Operator::Const(num_type, value) => {
                 match num_type {

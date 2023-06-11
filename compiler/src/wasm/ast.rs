@@ -43,6 +43,14 @@ impl FuncType {
 pub enum BinOp {
     Add,
     Sub,
+    Mul,
+    DivSigned,
+    Eq,
+    Ne,
+    LessThanSigned,
+    LessOrEqualSigned,
+    GreaterThanSigned,
+    GreaterOrEqualSigned,
 }
 
 impl TryFrom<HirOperator> for BinOp {
@@ -52,6 +60,15 @@ impl TryFrom<HirOperator> for BinOp {
         match op {
             HirOperator::Plus => Ok(Self::Add),
             HirOperator::Minus => Ok(Self::Sub),
+            HirOperator::Mul => Ok(Self::Mul),
+            HirOperator::Div => Ok(Self::DivSigned),
+            HirOperator::Eq => Ok(Self::Eq),
+            HirOperator::Neq => Ok(Self::Ne),
+            HirOperator::Lt => Ok(Self::LessThanSigned),
+            HirOperator::Le => Ok(Self::LessOrEqualSigned),
+            HirOperator::Gt => Ok(Self::GreaterThanSigned),
+            HirOperator::Ge => Ok(Self::GreaterOrEqualSigned),
+
             _ => Err(()),
         }
     }
@@ -62,6 +79,14 @@ pub enum Expr {
     Op(Operator),
     OpExpr(Operator, Vec<Expr>),
     Block(Option<Name>, BlockType, Vec<Instruction>),
+    If(
+        Option<Name>,
+        BlockType,
+        Vec<Expr>,
+        Vec<Instruction>,
+        Option<Vec<Instruction>>,
+    ),
+    Loop(Option<Name>, BlockType, Vec<Instruction>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +170,15 @@ pub struct Param {
 impl Param {
     pub fn new(type_: ValType, name: Option<Name>) -> Self {
         Self { type_, name }
+    }
+}
+
+impl From<ValType> for Param {
+    fn from(val_type: ValType) -> Self {
+        Self {
+            type_: val_type,
+            name: None,
+        }
     }
 }
 
