@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, BlockType, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
+        BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
         GlobalType, Import, Index, InlineFuncExport, Instruction, Local, Module, Mut, Name,
         NumType, Operator, Param, TypeUse, ValType, WasmResult,
     },
@@ -176,7 +176,22 @@ impl Encode for BinOp {
         match self {
             BinOp::Add => sink.push_str("add"),
             BinOp::Sub => sink.push_str("sub"),
-            _ => todo!(),
+            BinOp::Mul => sink.push_str("mul"),
+            BinOp::DivSigned => sink.push_str("div_s"),
+            BinOp::Eq => sink.push_str("eq"),
+            BinOp::Ne => sink.push_str("ne"),
+            BinOp::LessThanSigned => sink.push_str("lt_s"),
+            BinOp::LessOrEqualSigned => sink.push_str("le_s"),
+            BinOp::GreaterThanSigned => sink.push_str("gt_s"),
+            BinOp::GreaterOrEqualSigned => sink.push_str("ge_s"),
+        }
+    }
+}
+
+impl Encode for CvtOp {
+    fn encode(&self, sink: &mut String) {
+        match self {
+            CvtOp::Wrap => sink.push_str("wrap"),
         }
     }
 }
@@ -215,16 +230,16 @@ impl Encode for Expr {
                     sink.push(' ');
                 }
                 block_ty.encode(sink);
-                sink.push('\n');
+                sink.push_str("\n(");
                 cond.encode(sink);
-                sink.push('\n');
+                sink.push_str(")\n(");
                 then.encode(sink);
-                sink.push('\n');
+                sink.push_str(")\n");
                 if let Some(els) = els {
+                    sink.push('(');
                     els.encode(sink);
-                    sink.push('\n');
+                    sink.push_str(")\n");
                 }
-                sink.push_str("\n");
             }
             Expr::Loop(name, block_ty, instr) => {
                 sink.push_str("(loop ");
@@ -234,7 +249,7 @@ impl Encode for Expr {
                     sink.push(' ');
                 }
                 block_ty.encode(sink);
-                sink.push_str("\n");
+                sink.push('\n');
                 instr.encode(sink);
                 sink.push_str(")\n");
             }
@@ -283,6 +298,16 @@ impl Encode for Operator {
                 num_type.encode(sink);
                 sink.push_str(".const ");
                 value.encode(sink);
+            }
+            Operator::Convert(t1, t2, op, sign) => {
+                t1.encode(sink);
+                sink.push('.');
+                op.encode(sink);
+                sink.push('_');
+                t2.encode(sink);
+                if sign.is_some() {
+                    sink.push_str("_s");
+                }
             }
             Operator::Nop => {
                 todo!()

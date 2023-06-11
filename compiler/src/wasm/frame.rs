@@ -71,7 +71,7 @@ impl Frame {
     }
 
     pub(super) fn get_access_content(access: &Access, base_addr: ExprType) -> ExprType {
-        base_addr.assert(ExprType::is_const_1_i32());
+        base_addr.assert_ty(StackType::const_1_i32());
 
         let expr = match access {
             Access::InFrame(val) => Expr::OpExpr(
@@ -88,8 +88,8 @@ impl Frame {
     }
 
     pub(super) fn store2access(access: &Access, base_addr: ExprType, expr: ExprType) -> ExprType {
-        base_addr.assert(ExprType::is_const_1_i32());
-        expr.assert(ExprType::is_const_1_i64());
+        base_addr.assert_ty(StackType::const_1_i32());
+        expr.assert_ty(StackType::const_1_i64());
 
         let expr = match access {
             Access::InFrame(val) => Expr::OpExpr(

@@ -2,15 +2,17 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream, Parser},
-    Error, LitInt, Result, Token,
+    Error, Expr, LitInt, Result, Token,
 };
 
 /// generate_match!(
+///     num_type, bin_op;
 ///     BinOp;NumType; I32,  I64,  F32,  F64;
 ///     Add;           0x6A, 0x7C, 0x92, 0xA0;
 ///     Sub;           0x6B, 0x7D, 0x93, 0xA1;
 /// );
 
+/// match (num_type, bin_op) {
 ///     (NumType::I32, BinOp::Add) => 0x6A,
 ///     (NumType::I64, BinOp::Add) => 0x7C,
 ///     (NumType::F32, BinOp::Add) => 0x92,
@@ -19,6 +21,7 @@ use syn::{
 ///     (NumType::I64, BinOp::Sub) => 0x7D,
 ///     (NumType::F32, BinOp::Sub) => 0x93,
 ///     (NumType::F64, BinOp::Sub) => 0xA1,
+/// }
 
 #[proc_macro]
 pub fn generate_match(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -32,6 +35,11 @@ fn generate_match_impl(tokens: TokenStream) -> TokenStream {
 }
 
 fn generate_match_parse(input: ParseStream) -> Result<TokenStream> {
+    let num_type_expr: Expr = expect_t(&input)?;
+    expect_t::<Token![,]>(&input)?;
+    let bin_op_expr: Expr = expect_t(&input)?;
+    expect_t::<Token![;]>(&input)?;
+
     let (bin_op, num_type, num_type_variants) = parse_first_row(&input)?;
 
     let mut match_arms = TokenStream::new();
@@ -57,7 +65,13 @@ fn generate_match_parse(input: ParseStream) -> Result<TokenStream> {
         }
     }
 
-    Ok(match_arms)
+    let body = quote! {
+         match (#num_type_expr, #bin_op_expr) {
+             #match_arms
+         }
+    };
+
+    Ok(body)
 }
 
 fn expect_t<T: Parse>(input: &ParseStream) -> Result<T> {
@@ -115,31 +129,24 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    enum NumType {
-        I32,
-        I64,
-    }
-
-    enum BinOp {
-        Add,
-        Sub,
-    }
-
     #[test]
     fn test_generate_match() {
         generate_match_impl(TokenStream::new());
         assert_eq!(
             generate_match_impl(quote! {
+                num_type, bin_op;
                 BinOp;NumType;  I32,  I64;
                 Add;           0x6A, 0x7C ;
                 Sub;           0x6B, 0x7D ;
             })
             .to_string(),
             quote! {
+                match (num_type, bin_op) {
                     (NumType::I32, BinOp::Add) => 0x6A,
                     (NumType::I64, BinOp::Add) => 0x7C,
                     (NumType::I32, BinOp::Sub) => 0x6B,
                     (NumType::I64, BinOp::Sub) => 0x7D,
+                }
             }
             .to_string()
         );

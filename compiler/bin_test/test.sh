@@ -34,8 +34,8 @@ assert_wasm(){
 
     local bin="${root_dir}/target/release/tiger"
 
-    $bin "$file" --arch wasm32-unknown-unknown > $tmp_wasm
-    $bin "$file" --arch wasm32-unknown-unknown --wat > $tmp_wat
+    RUST_BACKTRACE=1 $bin "$file" --arch wasm32-unknown-unknown > $tmp_wasm
+    RUST_BACKTRACE=1 $bin "$file" --arch wasm32-unknown-unknown --wat > $tmp_wat
     node ${test_js} $tmp_wasm $expected
     if [ "$?" = "0" ]; then
         echo "$2: success!!"

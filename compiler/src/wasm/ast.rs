@@ -11,7 +11,7 @@ impl Name {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum NumType {
     I32,
     I64,
@@ -75,6 +75,17 @@ impl TryFrom<HirOperator> for BinOp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sign {
+    Singed,
+    Unsigned,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CvtOp {
+    Wrap,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Op(Operator),
     OpExpr(Operator, Vec<Expr>),
@@ -104,6 +115,7 @@ pub enum Operator {
     Load(NumType),
     Bin(NumType, BinOp),
     Const(NumType, i64),
+    Convert(NumType, NumType, CvtOp, Option<Sign>),
     Nop,
     Drop,
 }

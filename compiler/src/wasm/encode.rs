@@ -2,12 +2,14 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, BlockType, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
+        BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
         GlobalType, Index, Instruction, Local, Module, Mut, Name, NumType, Operator, Param,
         TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
+
+use macros::generate_match;
 
 pub struct Encoder {
     pub(crate) bytes: Vec<u8>,
@@ -232,31 +234,6 @@ impl Encode for Instruction {
     }
 }
 
-macro_rules! bin_op_inner {
-    () => {};
-}
-
-//       i32,  i64,  f32,  f64;
-// add, 0x6a, 0x6b, 0x7c, 0x7d;
-// sub, 0x6a, 0x6b, 0x7c, 0x7d;
-
-// generate_match!(
-//           I32,  I64,  F32,  F64;
-//     Add; 0x6A, 0x7C, 0x92, 0xA0;
-//     Sub; 0x6B, 0x7D, 0x93, 0xA1;
-// );
-
-// match (num_type, bin_op) {
-//     (NumType::I32, BinOp::Add) => 0x6A,
-//     (NumType::I64, BinOp::Add) => 0x7C,
-//     (NumType::F32, BinOp::Add) => 0x92,
-//     (NumType::F64, BinOp::Add) => 0xA0,
-//     (NumType::I32, BinOp::Sub) => 0x6B,
-//     (NumType::I64, BinOp::Sub) => 0x7D,
-//     (NumType::F32, BinOp::Sub) => 0x93,
-//     (NumType::F64, BinOp::Sub) => 0xA1,
-// }
-
 impl Encode for Operator {
     fn encode(&self, sink: &mut Vec<u8>) {
         match self {
@@ -294,17 +271,7 @@ impl Encode for Operator {
                 32u32.encode(sink);
                 0u32.encode(sink);
             }
-            Operator::Bin(num_type, bin_op) => match (num_type, bin_op) {
-                (NumType::I32, BinOp::Add) => sink.push(0x6A),
-                (NumType::I32, BinOp::Sub) => sink.push(0x6B),
-                (NumType::I64, BinOp::Add) => sink.push(0x7C),
-                (NumType::I64, BinOp::Sub) => sink.push(0x7D),
-                (NumType::F32, BinOp::Add) => sink.push(0x92),
-                (NumType::F32, BinOp::Sub) => sink.push(0x93),
-                (NumType::F64, BinOp::Add) => sink.push(0xA0),
-                (NumType::F64, BinOp::Sub) => sink.push(0xA1),
-                _ => (),
-            },
+            Operator::Bin(num_type, bin_op) => sink.push(gen_bin_code(num_type, bin_op)),
             Operator::Const(num_type, value) => {
                 match num_type {
                     NumType::I32 => sink.push(0x41),
@@ -314,6 +281,10 @@ impl Encode for Operator {
                 }
                 value.encode(sink);
             }
+            Operator::Convert(t1, t2, op, sign) => match (t1, t2, op, sign) {
+                (NumType::I32, NumType::I64, CvtOp::Wrap, None) => sink.push(0xA7),
+                _ => unimplemented!(),
+            },
             Operator::Nop => {
                 sink.push(0x01);
             }
@@ -321,6 +292,23 @@ impl Encode for Operator {
                 sink.push(0x1A);
             }
         }
+    }
+}
+
+fn gen_bin_code(num_type: &NumType, bin_op: &BinOp) -> u8 {
+    generate_match! {
+        num_type, bin_op;
+        BinOp;NumType;        I32,  I64,  F32,  F64;
+        Add;                  0x6A, 0x7C, 0x92, 0xA0;
+        Sub;                  0x6B, 0x7D, 0x93, 0xA1;
+        Mul;                  0x6C, 0x7E, 0x94, 0xA2;
+        DivSigned;            0x6D, 0x7F, 0x95, 0xA3;
+        Eq;                   0x46, 0x51, 0x5B, 0x61;
+        Ne;                   0x47, 0x52, 0x5C, 0x62;
+        LessThanSigned;       0x48, 0x53, 0x5D, 0x63;
+        LessOrEqualSigned;    0x4C, 0x57, 0x5F, 0x65;
+        GreaterThanSigned;    0x4A, 0x55, 0x5E, 0x64;
+        GreaterOrEqualSigned; 0x4E, 0x59, 0x60, 0x66;
     }
 }
 

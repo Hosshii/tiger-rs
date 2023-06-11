@@ -18,8 +18,7 @@ use crate::{
     semant::{
         ctx::{TyCtx, VarId},
         hir::{
-            Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Operator as HirOperator,
-            Program as HirProgram, VarDecl,
+            Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram, VarDecl,
         },
     },
     wasm::ast::{InlineFuncExport, TypeUse},
@@ -27,8 +26,8 @@ use crate::{
 
 use self::{
     ast::{
-        BinOp, BlockType, Expr, Func, FuncType, Global, GlobalType, Instruction, Local, Module,
-        ModuleBuilder, Mut, Name, NumType, Operator, Param, ValType, WasmResult,
+        BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Instruction, Local,
+        Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, ValType, WasmResult,
     },
     frame::{Access as FrameAccess, Frame},
 };
@@ -61,33 +60,12 @@ impl ExprType {
         Self::new_const_(expr, vec![ValType::Num(NumType::I64)])
     }
 
-    pub fn assert<F>(&self, f: F)
-    where
-        F: FnOnce(&Self) -> bool,
-    {
-        if !f(self) {
-            panic!("assertion failed {:?}", self)
-        }
+    pub fn assert_ty(&self, ty: StackType) {
+        assert_eq!(self.ty, ty);
     }
 
-    pub fn assert_eq(&self, other: &Self) {
+    pub fn assert_eq_ty(&self, other: &Self) {
         assert_eq!(self.ty, other.ty);
-    }
-
-    pub fn is_const_1(ret_ty: ValType) -> impl FnOnce(&Self) -> bool {
-        move |expr_type: &Self| {
-            let arg = &expr_type.ty.arg;
-            let result = &expr_type.ty.result;
-            arg.is_empty() && result.len() == 1 && result[0] == ret_ty
-        }
-    }
-
-    pub fn is_const_1_i32() -> impl FnOnce(&Self) -> bool {
-        Self::is_const_1(ValType::Num(NumType::I32))
-    }
-
-    pub fn is_const_1_i64() -> impl FnOnce(&Self) -> bool {
-        Self::is_const_1(ValType::Num(NumType::I64))
     }
 }
 
@@ -141,6 +119,22 @@ impl StackType {
             .collect();
 
         Ok(Self { arg, result })
+    }
+
+    pub fn const_1_i32() -> StackType {
+        StackType::new(vec![], vec![ValType::Num(NumType::I32)])
+    }
+
+    pub fn is_const_1_i64(&self) -> bool {
+        self.is_const_1() && self.result[0] == ValType::Num(NumType::I64)
+    }
+
+    pub fn const_1_i64() -> StackType {
+        StackType::new(vec![], vec![ValType::Num(NumType::I64)])
+    }
+
+    pub fn is_const_1(&self) -> bool {
+        self.arg.is_empty() && self.result.len() == 1
     }
 }
 
@@ -230,22 +224,12 @@ impl Wasm {
             ExprKind::Int(v, _) => num_i64(*v as i64),
             ExprKind::Str(_, _) => todo!(),
             ExprKind::FuncCall(_, _, _, _) => todo!(),
-            ExprKind::Op(
-                op @ (HirOperator::Plus
-                | HirOperator::Minus
-                | HirOperator::Mul
-                | HirOperator::Div
-                | HirOperator::And
-                | HirOperator::Or),
-                lhs,
-                rhs,
-                _,
-            ) => {
+            ExprKind::Op(op, lhs, rhs, _) => {
                 let lhs = self.trans_expr(lhs, level.clone());
                 let rhs = self.trans_expr(rhs, level);
                 bin_op_i64((*op).try_into().unwrap(), lhs, rhs)
             }
-            ExprKind::Op(_, _, _, _) => todo!(),
+
             ExprKind::Neg(_, _) => todo!(),
             ExprKind::RecordCreation(_, _, _) => todo!(),
             ExprKind::ArrayCreation { .. } => todo!(),
@@ -256,9 +240,14 @@ impl Wasm {
             ExprKind::If {
                 cond, then, els, ..
             } => {
-                let cond = self.trans_expr(cond, level.clone());
+                let mut cond = self.trans_expr(cond, level.clone());
                 let then = self.trans_expr(then, level.clone());
                 let els = els.as_deref().map(|els| self.trans_expr(els, level));
+
+                if cond.ty.is_const_1_i64() {
+                    cond = i64_2_i32(cond);
+                }
+
                 if_expr(cond, then, els)
             }
             ExprKind::While(_, _, _) => todo!(),
@@ -322,7 +311,7 @@ impl Wasm {
 }
 
 fn _load_i64(addr: ExprType) -> ExprType {
-    addr.assert(ExprType::is_const_1_i32());
+    addr.assert_ty(StackType::const_1_i32());
     let expr = Expr::OpExpr(Operator::Load(NumType::I64), vec![addr.val]);
 
     let ty = StackType::new(
@@ -354,13 +343,22 @@ fn num_i64(v: i64) -> ExprType {
 }
 
 fn bin_op_i64(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
-    lhs.assert(ExprType::is_const_1_i64());
-    rhs.assert(ExprType::is_const_1_i64());
+    lhs.assert_ty(StackType::const_1_i64());
+    rhs.assert_ty(StackType::const_1_i64());
 
-    ExprType::new_const_1_i64(Expr::OpExpr(
-        Operator::Bin(NumType::I64, op),
-        vec![lhs.val, rhs.val],
-    ))
+    let ty = match op {
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::DivSigned => NumType::I64,
+        BinOp::Eq
+        | BinOp::Ne
+        | BinOp::LessThanSigned
+        | BinOp::LessOrEqualSigned
+        | BinOp::GreaterThanSigned
+        | BinOp::GreaterOrEqualSigned => NumType::I32,
+    };
+    ExprType::new_const_(
+        Expr::OpExpr(Operator::Bin(NumType::I64, op), vec![lhs.val, rhs.val]),
+        vec![ValType::Num(ty)],
+    )
 }
 
 fn nop() -> ExprType {
@@ -368,8 +366,8 @@ fn nop() -> ExprType {
 }
 
 fn _store_i64(addr: ExprType, val: ExprType) -> ExprType {
-    addr.assert(ExprType::is_const_1_i32());
-    val.assert(ExprType::is_const_1_i64());
+    addr.assert_ty(StackType::const_1_i32());
+    val.assert_ty(StackType::const_1_i64());
     ExprType::new(
         Expr::OpExpr(Operator::Store(NumType::I64), vec![addr.val, val.val]),
         StackType::new(
@@ -417,9 +415,9 @@ fn expr_seq(exprs: Vec<ExprType>) -> ExprType {
 }
 
 fn if_expr(cond: ExprType, then: ExprType, els: Option<ExprType>) -> ExprType {
-    cond.assert(ExprType::is_const_1_i32());
+    cond.assert_ty(StackType::const_1_i32());
     if let Some(ref els) = els {
-        then.assert_eq(els);
+        then.assert_eq_ty(els);
     }
 
     let expr = Expr::If(
@@ -431,6 +429,16 @@ fn if_expr(cond: ExprType, then: ExprType, els: Option<ExprType>) -> ExprType {
     );
 
     ExprType::new(expr, then.ty)
+}
+
+fn i64_2_i32(expr: ExprType) -> ExprType {
+    expr.assert_ty(StackType::const_1_i64());
+
+    let expr = Expr::OpExpr(
+        Operator::Convert(NumType::I32, NumType::I64, CvtOp::Wrap, None),
+        vec![expr.val],
+    );
+    ExprType::new_const_1_i32(expr)
 }
 
 #[cfg(test)]
