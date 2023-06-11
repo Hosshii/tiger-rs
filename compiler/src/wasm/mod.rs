@@ -221,7 +221,13 @@ impl Wasm {
         match &expr.kind {
             ExprKind::LValue(lvalue, _) => self.load_lvalue(lvalue, level),
             ExprKind::Nil(_) => todo!(),
-            ExprKind::Sequence(_, _) => todo!(),
+            ExprKind::Sequence(exprs, _) => {
+                let exprs = exprs
+                    .iter()
+                    .map(|expr| self.trans_expr(expr, level.clone()))
+                    .collect();
+                expr_seq(exprs)
+            }
             ExprKind::Int(v, _) => num_i64(*v as i64),
             ExprKind::Str(_, _) => todo!(),
             ExprKind::FuncCall(_, _, _, _) => todo!(),

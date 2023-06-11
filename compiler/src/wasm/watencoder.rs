@@ -507,34 +507,6 @@ impl Encode for GlobalType {
     }
 }
 
-// impl Encode for Mut {
-//     fn encode(&self, sink: &mut String) {
-//         match self {
-//             Mut::Const => sink.push_str("const"),
-//             Mut::Var => sink.push_str("var"),
-//         }
-//     }
-// }
-
-// impl Module {
-//     fn section<T: Encode>(id: SectionId, cont: T, sink: &mut String) {
-//         let mut tmp = Vec::new();
-//         cont.encode(&mut tmp);
-
-//         id.encode(sink);
-//         tmp.len().encode(sink);
-//         sink.extend_from_slice(&tmp);
-//     }
-
-//     fn section_list<T: Encode>(id: SectionId, cont: &[T], sink: &mut String) {
-//         if cont.is_empty() {
-//             return;
-//         }
-
-//         Self::section(id, cont, sink);
-//     }
-// }
-
 impl Encode for Module {
     fn encode(&self, sink: &mut String) {
         sink.push_str("(module\n");
