@@ -46,7 +46,7 @@ where
 
     let semantic_analyzer = Semant::new_with_base();
 
-    let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
+    let (hir, tcx) = semantic_analyzer.analyze(ast)?;
     let fragments = translate::translate::<C::Frame>(&tcx, &hir, C::MAIN_SYMBOL);
 
     writeln!(o, "{}", C::header())?;
@@ -104,7 +104,7 @@ where
 
     let semantic_analyzer = Semant::new_with_base();
 
-    let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
+    let (hir, tcx) = semantic_analyzer.analyze(ast)?;
     let mut module = wasm::translate(&tcx, &hir);
 
     let mut encoder = WasmEncoder::new();
@@ -125,7 +125,7 @@ where
 
     let semantic_analyzer = Semant::new_with_base();
 
-    let (hir, tcx) = semantic_analyzer.trans_prog(ast)?;
+    let (hir, tcx) = semantic_analyzer.analyze(ast)?;
     let mut module = wasm::translate(&tcx, &hir);
 
     let mut encoder = WatEncoder::new();

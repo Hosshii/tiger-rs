@@ -59,7 +59,7 @@ impl From<LalrpopError> for Error {
                 kind: ErrorKind::InvalidToken,
                 loc: location,
             },
-            lalrpop_util::ParseError::UnrecognizedEOF { location, expected } => Error {
+            lalrpop_util::ParseError::UnrecognizedEof { location, expected } => Error {
                 kind: ErrorKind::Eof(expected),
                 loc: location,
             },
