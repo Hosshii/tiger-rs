@@ -13,8 +13,6 @@ impl TypeId {
 }
 
 /// `Type` represents tiger language's type.
-/// `Complete` can determine the type just by looking at it and it never changes.
-/// `InComplete` may be incomplete due to mutual recursion etc. And may be changed later.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
     Int,

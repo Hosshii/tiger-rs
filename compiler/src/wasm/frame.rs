@@ -1,7 +1,7 @@
 use crate::common::Label;
 
 use super::{
-    ast::{BinOp, Expr, Index, Name, NumType, Operator},
+    ast::{BinOp, Expr, Index, Local as AstLocal, Name, NumType, Operator, ValType},
     ExprType, StackType, FRAME_PTR, STACK_PTR,
 };
 
@@ -20,41 +20,81 @@ impl From<Local> for Index {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Param(usize);
+
+impl Param {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl From<Param> for Index {
+    fn from(value: Param) -> Self {
+        Index::Index(value.0 as u32)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Frame {
     name: Label,
     pointer: usize,
     local_count: usize, // 0 indexed
-    param_count: usize,
+    formals: Vec<Access>,
     env: Access,
 }
 
 impl Frame {
     const WORD_SIZE: usize = 4;
 
-    pub fn new(name: Label, param_count: usize) -> Self {
-        Self {
+    // 0 param is env
+    pub fn new(name: Label, formals: Vec<bool>) -> Self {
+        let mut frame = Self {
             name,
             pointer: 0,
             local_count: 0,
-            param_count,
-            env: Access::InLocal(Local::new(0)),
-        }
+            formals: vec![],
+            env: Access::Param(Param::new(0)),
+        };
+        let formals = formals.into_iter().map(|v| frame.alloc_local(v)).collect();
+        frame.formals = formals;
+        frame
     }
 
     pub fn alloc_local(&mut self, is_escape: bool) -> Access {
         if is_escape {
             self.pointer += Self::WORD_SIZE;
-            Access::InFrame(self.pointer)
+            Access::Frame(self.pointer)
         } else {
             let count = self.local_count;
             self.local_count += 1;
-            Access::InLocal(Local::new(count + self.param_count))
+            Access::Local(Local::new(count + self.param_count()))
         }
+    }
+
+    fn param_count(&self) -> usize {
+        self.formals.len()
     }
 
     pub fn env(&self) -> &Access {
         &self.env
+    }
+
+    pub fn formals(&self) -> &[Access] {
+        self.formals.as_slice()
+    }
+
+    pub fn name(&self) -> &Label {
+        &self.name
+    }
+
+    pub fn ast_locals(&self) -> Vec<AstLocal> {
+        (0..self.local_count)
+            .map(|_| AstLocal {
+                type_: ValType::Num(NumType::I64),
+                name: None,
+            })
+            .collect()
     }
 
     // i32
@@ -74,14 +114,15 @@ impl Frame {
         base_addr.assert_ty(StackType::const_1_i32());
 
         let expr = match access {
-            Access::InFrame(val) => Expr::OpExpr(
+            Access::Frame(val) => Expr::OpExpr(
                 Operator::Bin(NumType::I32, BinOp::Sub),
                 vec![
                     base_addr.val,
                     Expr::Op(Operator::Const(NumType::I32, *val as i64)),
                 ],
             ),
-            Access::InLocal(local) => Expr::Op(Operator::LocalGet((*local).into())),
+            Access::Local(local) => Expr::Op(Operator::LocalGet((*local).into())),
+            Access::Param(param) => Expr::Op(Operator::LocalGet((*param).into())),
         };
 
         ExprType::new_const_1_i64(expr)
@@ -92,7 +133,7 @@ impl Frame {
         expr.assert_ty(StackType::const_1_i64());
 
         let expr = match access {
-            Access::InFrame(val) => Expr::OpExpr(
+            Access::Frame(val) => Expr::OpExpr(
                 Operator::Store(NumType::I64),
                 vec![
                     Expr::OpExpr(
@@ -105,22 +146,21 @@ impl Frame {
                     expr.val,
                 ],
             ),
-            Access::InLocal(local) => {
+            Access::Local(local) => {
                 Expr::OpExpr(Operator::LocalSet((*local).into()), vec![expr.val])
+            }
+            Access::Param(param) => {
+                Expr::OpExpr(Operator::LocalSet((*param).into()), vec![expr.val])
             }
         };
 
         ExprType::new(expr, StackType::nop())
     }
-
-    /// count of local variables
-    pub fn local_count(&self) -> usize {
-        self.local_count
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Access {
-    InFrame(usize),
-    InLocal(Local),
+    Frame(usize),
+    Local(Local),
+    Param(Param),
 }

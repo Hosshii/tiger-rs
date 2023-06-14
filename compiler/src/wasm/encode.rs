@@ -245,6 +245,10 @@ impl Encode for Operator {
                 sink.push(0x0D);
                 index.encode(sink);
             }
+            Operator::Call(index) => {
+                sink.push(0x10);
+                index.encode(sink);
+            }
             Operator::GlobalGet(var) => {
                 sink.push(0x23);
                 var.encode(sink);
@@ -521,7 +525,7 @@ mod tests {
 
         let builder = ModuleBuilder::new();
 
-        let module = builder.add_func(func).build();
+        let module = builder.add_funcs(vec![func]).build();
 
         // (module
         //     (func (result i64) i64.const 10))
@@ -548,7 +552,7 @@ mod tests {
 
         let builder = ModuleBuilder::new();
 
-        let module = builder.add_func(func).build();
+        let module = builder.add_funcs(vec![func]).build();
 
         // (module
         //     (func (export "_start")(result i64) i64.const 10))

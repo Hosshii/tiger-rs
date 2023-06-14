@@ -11,6 +11,12 @@ impl Name {
     }
 }
 
+impl<T: Into<String>> From<T> for Name {
+    fn from(name: T) -> Self {
+        Self(name.into())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum NumType {
     I32,
@@ -115,6 +121,7 @@ pub enum Instruction {
 pub enum Operator {
     Br(Index),
     BrIf(Index),
+    Call(Index),
     GlobalGet(Index),
     LocalGet(Index),
     LocalSet(Index),
@@ -313,8 +320,8 @@ impl ModuleBuilder {
         self.module
     }
 
-    pub fn add_func(mut self, func: Func) -> Self {
-        self.module.funcs.push(func);
+    pub fn add_funcs(mut self, func: Vec<Func>) -> Self {
+        self.module.funcs.extend(func);
         self
     }
 

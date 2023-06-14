@@ -10,6 +10,7 @@ pub(super) struct Rewriter {
     export: Vec<Export>,
     // local_name_map: HashMap<Name, Index>,
     global_name_map: HashMap<Name, Index>,
+    func_name_map: HashMap<Name, Index>,
 }
 
 impl Rewriter {
@@ -19,6 +20,7 @@ impl Rewriter {
             export: Vec::new(),
             // local_name_map: HashMap::new(),
             global_name_map: HashMap::new(),
+            func_name_map: HashMap::new(),
         }
     }
 
@@ -31,6 +33,14 @@ impl Rewriter {
         for (idx, global) in module.globals.iter().enumerate() {
             if let Some(ref name) = global.name {
                 self.global_name_map
+                    .insert(name.clone(), Index::Index(idx as u32));
+            }
+        }
+
+        // secondly, decide func index
+        for (idx, func) in module.funcs.iter().enumerate() {
+            if let Some(ref name) = func.name {
+                self.func_name_map
                     .insert(name.clone(), Index::Index(idx as u32));
             }
         }
@@ -95,13 +105,9 @@ impl Rewriter {
 
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         match expr {
-            Expr::Op(Operator::GlobalGet(Index::Name(name))) => {
-                if let Some(idx) = self.global_name_map.get(name) {
-                    *expr = Expr::Op(Operator::GlobalGet(idx.clone()));
-                }
-            }
-            Expr::Op(_) => (),
-            Expr::OpExpr(_, e) => {
+            Expr::Op(op) => self.rewrite_operator(op),
+            Expr::OpExpr(op, e) => {
+                self.rewrite_operator(op);
                 for ele in e {
                     self.rewrite_expr(ele);
                 }
@@ -132,6 +138,22 @@ impl Rewriter {
                     self.rewrite_instr(ele);
                 }
             }
+        }
+    }
+
+    fn rewrite_operator(&self, op: &mut Operator) {
+        match op {
+            Operator::GlobalGet(Index::Name(name)) => {
+                if let Some(idx) = self.global_name_map.get(name) {
+                    *op = Operator::GlobalGet(idx.clone());
+                }
+            }
+            Operator::Call(Index::Name(name)) => {
+                if let Some(idx) = self.func_name_map.get(name) {
+                    *op = Operator::Call(idx.clone());
+                }
+            }
+            _ => (),
         }
     }
 }

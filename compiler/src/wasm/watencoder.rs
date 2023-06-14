@@ -304,6 +304,10 @@ impl Encode for Operator {
                 sink.push_str("br_if ");
                 index.encode(sink);
             }
+            Operator::Call(index) => {
+                sink.push_str("call ");
+                index.encode(sink);
+            }
             Operator::GlobalGet(var) => {
                 sink.push_str("global.get ");
                 var.encode(sink);

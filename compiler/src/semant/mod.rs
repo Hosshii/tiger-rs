@@ -1,10 +1,10 @@
 mod builtin;
-pub mod ctx;
+pub(crate) mod ctx;
 mod env;
 mod escape;
 pub(crate) mod hir;
-pub mod translate;
-mod types;
+pub(crate) mod translate;
+pub(crate) mod types;
 
 use std::{
     collections::{HashMap, HashSet},

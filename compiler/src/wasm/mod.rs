@@ -11,15 +11,20 @@ mod watencoder;
 pub use encode::Encoder as WasmEncoder;
 pub use watencoder::Encoder as WatEncoder;
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
 
 use crate::{
     common::Label,
     semant::{
-        ctx::{TyCtx, VarId},
+        ctx::{FnId, TyCtx, VarId},
         hir::{
             Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram, VarDecl,
         },
+        types::Type,
     },
     wasm::ast::{InlineFuncExport, TypeUse},
 };
@@ -27,8 +32,7 @@ use crate::{
 use self::{
     ast::{
         BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Index, Instruction,
-        Local, Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, TestOp, ValType,
-        WasmResult,
+        Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, TestOp, ValType, WasmResult,
     },
     frame::{Access as FrameAccess, Frame},
 };
@@ -151,17 +155,14 @@ impl From<StackType> for FuncType {
 const MAIN_SYMBOL: &str = "_start";
 const STACK_PTR: &str = "stack_ptr";
 const FRAME_PTR: &str = "frame_ptr";
+const STACK_ADDR: i64 = 1048576;
 
-pub fn translate(_tcx: &TyCtx, hir: &HirProgram) -> Module {
-    let mut wasm = Wasm::new();
-    let outermost_level = Rc::new(Level::outermost_with_name(MAIN_SYMBOL));
+pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
+    let mut wasm = Wasm::new(tcx);
+    let outermost_level = Level::outermost_with_name(MAIN_SYMBOL);
     let expr = wasm.trans_expr(hir, outermost_level.clone());
-    let locals = (0..outermost_level.frame.borrow().local_count())
-        .map(|_| Local {
-            type_: ValType::Num(NumType::I64),
-            name: None,
-        })
-        .collect::<Vec<_>>();
+    let mut funcs = wasm.funcs;
+    let locals = outermost_level.frame().ast_locals();
 
     let instr = Instruction::Expr(expr.val);
     let func = Func::new(
@@ -174,6 +175,7 @@ pub fn translate(_tcx: &TyCtx, hir: &HirProgram) -> Module {
         locals,
         vec![instr],
     );
+    funcs.push(func);
 
     let global = Global {
         name: Some(Name::new(STACK_PTR.to_string())),
@@ -181,43 +183,91 @@ pub fn translate(_tcx: &TyCtx, hir: &HirProgram) -> Module {
             ty: ValType::Num(NumType::I32),
             m: Mut::Var,
         },
-        init: Expr::Op(Operator::Const(NumType::I32, 1048576)),
+        init: Expr::Op(Operator::Const(NumType::I32, STACK_ADDR)),
     };
 
     let builder = ModuleBuilder::new();
 
-    builder.add_func(func).add_globals(vec![global]).build()
+    builder.add_funcs(funcs).add_globals(vec![global]).build()
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Level(Rc<RefCell<LevelInner>>);
+
+impl Level {
+    fn new(parent_level: Level, name: Label, formals: Vec<bool>) -> Level {
+        Level(Rc::new(RefCell::new(LevelInner::new(
+            parent_level,
+            name,
+            formals,
+        ))))
+    }
+
+    fn outermost_with_name(name: impl Into<String>) -> Self {
+        Level(Rc::new(RefCell::new(LevelInner::outermost_with_name(name))))
+    }
+
+    fn formals(self) -> Vec<Access> {
+        self.0
+            .borrow()
+            .formals()
+            .iter()
+            .map(|access| (access.clone(), self.clone()))
+            .collect()
+    }
+
+    fn frame(&self) -> Ref<Frame> {
+        Ref::map(self.0.borrow(), |v| &v.frame)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct Level {
-    frame: RefCell<Frame>,
-    parent: Option<Box<Level>>,
+struct LevelInner {
+    frame: Frame,
+    parent: Option<Level>,
 }
 
-impl Level {
+impl LevelInner {
     fn outermost_with_name(name: impl Into<String>) -> Self {
         Self {
-            frame: RefCell::new(Frame::new(Label::NamedFn(name.into()), 0)),
+            frame: Frame::new(Label::NamedFn(name.into()), vec![]),
             parent: None,
         }
     }
-}
 
-type Access = (FrameAccess, Rc<Level>);
-
-struct Wasm {
-    var_env: HashMap<VarId, Access>,
-}
-
-impl Wasm {
-    pub fn new() -> Self {
+    fn new(parent: Level, name: Label, formals: Vec<bool>) -> Self {
         Self {
-            var_env: HashMap::new(),
+            frame: Frame::new(name, formals),
+            parent: Some(parent),
         }
     }
 
-    fn trans_expr(&mut self, expr: &HirExpr, level: Rc<Level>) -> ExprType {
+    fn formals(&self) -> &[FrameAccess] {
+        self.frame.formals()
+    }
+}
+
+type Access = (FrameAccess, Level);
+
+struct Wasm<'tcx> {
+    var_env: HashMap<VarId, Access>,
+    fn_env: HashMap<FnId, Level>,
+    tcx: &'tcx TyCtx,
+
+    funcs: Vec<Func>,
+}
+
+impl<'tcx> Wasm<'tcx> {
+    pub fn new(tcx: &'tcx TyCtx) -> Self {
+        Self {
+            var_env: HashMap::new(),
+            fn_env: HashMap::new(),
+            tcx,
+            funcs: Vec::new(),
+        }
+    }
+
+    fn trans_expr(&mut self, expr: &HirExpr, level: Level) -> ExprType {
         match &expr.kind {
             ExprKind::LValue(lvalue, _) => self.load_lvalue(lvalue, level),
             ExprKind::Nil(_) => todo!(),
@@ -230,7 +280,28 @@ impl Wasm {
             }
             ExprKind::Int(v, _) => num_i64(*v as i64),
             ExprKind::Str(_, _) => todo!(),
-            ExprKind::FuncCall(_, _, _, _) => todo!(),
+            ExprKind::FuncCall(_, fn_id, args, _) => {
+                let entry = self.tcx.fn_(*fn_id);
+                let ret_ty = self.tcx.type_(entry.result());
+                let ret_ty = StackType::new(vec![], convert_ty(ret_ty));
+
+                let (args_ty, args_expr): (Vec<_>, Vec<_>) = args
+                    .iter()
+                    .map(|a| {
+                        let e = self.trans_expr(a, level.clone());
+                        (e.ty, e.val)
+                    })
+                    .unzip();
+                let args_ty = args_ty
+                    .iter()
+                    .cloned()
+                    .try_fold(StackType::nop(), |acc: StackType, e| acc.composition(&e))
+                    .expect("type error");
+
+                let fn_ty = args_ty.composition(&ret_ty).expect("type error");
+
+                fn_call(entry.label(), fn_ty, args_expr)
+            }
             ExprKind::Op(op, lhs, rhs, _) => {
                 let lhs = self.trans_expr(lhs, level.clone());
                 let rhs = self.trans_expr(rhs, level);
@@ -281,11 +352,11 @@ impl Wasm {
         }
     }
 
-    fn store_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>, expr: ExprType) -> ExprType {
+    fn store_lvalue(&mut self, lvalue: &HirLValue, level: Level, expr: ExprType) -> ExprType {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
-                let env = calc_static_link(level.as_ref(), ancestor_level);
+                let env = calc_static_link(level, ancestor_level.clone());
                 Frame::store2access(access, env, expr)
             }
             HirLValue::RecordField { .. } => todo!(),
@@ -293,11 +364,11 @@ impl Wasm {
         }
     }
 
-    fn load_lvalue(&mut self, lvalue: &HirLValue, level: Rc<Level>) -> ExprType {
+    fn load_lvalue(&mut self, lvalue: &HirLValue, level: Level) -> ExprType {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
-                let env = calc_static_link(level.as_ref(), ancestor_level);
+                let env = calc_static_link(level, ancestor_level.clone());
                 Frame::get_access_content(access, env)
             }
             HirLValue::RecordField { .. } => todo!(),
@@ -305,18 +376,78 @@ impl Wasm {
         }
     }
 
-    fn trans_decl(&mut self, decl: &Decl, level: Rc<Level>) -> Option<ExprType> {
+    fn trans_decl(&mut self, decl: &Decl, parent_level: Level) -> Option<ExprType> {
         match decl {
             Decl::Type(_) => todo!(),
             Decl::Var(VarDecl(_, var_id, is_escape, _, _, expr, _)) => {
-                let expr = self.trans_expr(expr, level.clone());
-                let access = level.frame.borrow_mut().alloc_local(*is_escape);
+                let expr = self.trans_expr(expr, parent_level.clone());
+                let access = parent_level.0.borrow_mut().frame.alloc_local(*is_escape);
                 let base_addr = Frame::fp();
                 let store_expr = Frame::store2access(&access, base_addr, expr);
-                self.var_env.insert(*var_id, (access, level));
+                self.var_env.insert(*var_id, (access, parent_level));
                 Some(store_expr)
             }
-            Decl::Func(_) => todo!(),
+            Decl::Func(fn_decls) => {
+                for decl in fn_decls {
+                    let formals_is_escape: Vec<_> =
+                        decl.params.iter().map(|p| p.is_escape).collect();
+                    let entry = self.tcx.fn_(decl.fn_id);
+                    let level = Level::new(
+                        parent_level.clone(),
+                        entry.label().clone(),
+                        formals_is_escape,
+                    );
+                    self.fn_env.insert(decl.fn_id, level);
+                }
+
+                for decl in fn_decls {
+                    let level = self
+                        .fn_env
+                        .get(&decl.fn_id)
+                        .expect("level not found")
+                        .clone();
+                    for (param, access) in decl.params.iter().zip(level.clone().formals()) {
+                        self.var_env.insert(param.var_id, access);
+                    }
+
+                    let body = self.trans_expr(&decl.body, level.clone());
+
+                    self.proc_entry_exit(level, body);
+                }
+
+                None
+            }
+        }
+    }
+
+    fn proc_entry_exit(&mut self, level: Level, body: ExprType) {
+        let name = Name::from(format_label(level.frame().name()));
+        let ty = TypeUse::Inline(body.ty.into());
+        let locals = level.frame().ast_locals();
+
+        self.funcs.push(Func {
+            name: Some(name),
+            ty,
+            export: None,
+            locals,
+            instr: vec![Instruction::Expr(body.val)],
+        });
+    }
+}
+
+fn format_label(label: &Label) -> String {
+    match label {
+        Label::Num(_) | Label::Fn(_, _) => {
+            format!("L.{}", label)
+        }
+        Label::NamedFn(s) => {
+            // Calling function named `exit` is not working correctry.
+            // So rename it to `tiger_exit`.
+            if s == "exit" {
+                "_tiger_exit".to_string()
+            } else {
+                format!("_{}", label)
+            }
         }
     }
 }
@@ -332,17 +463,26 @@ fn _load_i64(addr: ExprType) -> ExprType {
     ExprType::new(expr, ty)
 }
 
-fn calc_static_link<'a>(mut cur_level: &'a Level, ancestor_level: &'a Level) -> ExprType {
+fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
     let mut link = Frame::sp();
     if cur_level == ancestor_level {
         return link;
     }
 
     while cur_level != ancestor_level {
-        let frame = cur_level.frame.borrow();
+        let bor = cur_level.0.borrow();
+        let frame = &bor.frame;
         let link_access = frame.env();
         link = Frame::get_access_content(link_access, link);
-        let parent = ancestor_level.parent.as_deref().expect("cur_level is root");
+        let parent = ancestor_level
+            .0
+            .borrow()
+            .parent
+            .as_ref()
+            .expect("cur_level is root")
+            .clone();
+        drop(bor);
+
         cur_level = parent;
     }
 
@@ -478,6 +618,24 @@ fn i64_2_i32(expr: ExprType) -> ExprType {
         vec![expr.val],
     );
     ExprType::new_const_1_i32(expr)
+}
+
+fn convert_ty(ty: &Type) -> Vec<ValType> {
+    match ty {
+        Type::Int => vec![ValType::Num(NumType::I64)],
+        Type::String | Type::Record { .. } | Type::Array { .. } | Type::Nil => {
+            vec![ValType::Num(NumType::I32)]
+        }
+        Type::Unit => vec![],
+    }
+}
+
+fn fn_call(label: &Label, fn_ty: StackType, args: Vec<Expr>) -> ExprType {
+    let expr = Expr::OpExpr(
+        Operator::Call(Index::Name(format_label(label).into())),
+        args,
+    );
+    ExprType::new(expr, fn_ty)
 }
 
 #[cfg(test)]

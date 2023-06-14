@@ -757,8 +757,8 @@ impl<'tcx, F: Frame> Translator<'tcx, F> {
                         .get(&decl.fn_id)
                         .expect("fn level not found")
                         .clone();
-                    for (param, level) in decl.params.iter().zip(level.formals()) {
-                        self.var_env.insert(param.var_id, level);
+                    for (param, access) in decl.params.iter().zip(level.formals()) {
+                        self.var_env.insert(param.var_id, access);
                     }
 
                     let body = self.trans_expr(&decl.body, &mut level, break_label);
