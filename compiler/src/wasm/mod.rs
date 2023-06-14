@@ -283,24 +283,17 @@ impl<'tcx> Wasm<'tcx> {
             ExprKind::FuncCall(_, fn_id, args, _) => {
                 let entry = self.tcx.fn_(*fn_id);
                 let ret_ty = self.tcx.type_(entry.result());
-                let ret_ty = StackType::new(vec![], convert_ty(ret_ty));
+                let ret_ty = StackType::new(vec![], vec![convert_ty(ret_ty)]);
 
-                let (args_ty, args_expr): (Vec<_>, Vec<_>) = args
+                let args_expr = args
                     .iter()
                     .map(|a| {
                         let e = self.trans_expr(a, level.clone());
-                        (e.ty, e.val)
+                        e.val
                     })
-                    .unzip();
-                let args_ty = args_ty
-                    .iter()
-                    .cloned()
-                    .try_fold(StackType::nop(), |acc: StackType, e| acc.composition(&e))
-                    .expect("type error");
+                    .collect();
 
-                let fn_ty = args_ty.composition(&ret_ty).expect("type error");
-
-                fn_call(entry.label(), fn_ty, args_expr)
+                fn_call(entry.label(), ret_ty, args_expr)
             }
             ExprKind::Op(op, lhs, rhs, _) => {
                 let lhs = self.trans_expr(lhs, level.clone());
@@ -620,22 +613,23 @@ fn i64_2_i32(expr: ExprType) -> ExprType {
     ExprType::new_const_1_i32(expr)
 }
 
-fn convert_ty(ty: &Type) -> Vec<ValType> {
+fn convert_ty(ty: &Type) -> ValType {
     match ty {
-        Type::Int => vec![ValType::Num(NumType::I64)],
+        Type::Int => ValType::Num(NumType::I64),
         Type::String | Type::Record { .. } | Type::Array { .. } | Type::Nil => {
-            vec![ValType::Num(NumType::I32)]
+            ValType::Num(NumType::I32)
         }
-        Type::Unit => vec![],
+        // TODO: unit の扱い
+        Type::Unit => todo!(),
     }
 }
 
-fn fn_call(label: &Label, fn_ty: StackType, args: Vec<Expr>) -> ExprType {
+fn fn_call(label: &Label, ret_ty: StackType, args: Vec<Expr>) -> ExprType {
     let expr = Expr::OpExpr(
         Operator::Call(Index::Name(format_label(label).into())),
         args,
     );
-    ExprType::new(expr, fn_ty)
+    ExprType::new(expr, ret_ty)
 }
 
 #[cfg(test)]
