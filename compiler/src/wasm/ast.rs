@@ -98,6 +98,7 @@ pub enum TestOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
+    Comment(String, Box<Expr>),
     Op(Operator),
     OpExpr(Operator, Vec<Expr>),
     Block(Option<Name>, BlockType, Vec<Instruction>),
@@ -109,6 +110,12 @@ pub enum Expr {
         Option<Vec<Instruction>>,
     ),
     Loop(Option<Name>, BlockType, Vec<Instruction>),
+}
+
+impl Expr {
+    pub fn add_comment(self, comment: impl Into<String>) -> Self {
+        Self::Comment(comment.into(), Box::new(self))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

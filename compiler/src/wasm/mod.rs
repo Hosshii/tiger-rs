@@ -73,6 +73,11 @@ impl ExprType {
     pub fn assert_eq_ty(&self, other: &Self) {
         assert_eq!(self.ty, other.ty);
     }
+
+    pub fn add_comment(mut self, comment: impl Into<String>) -> Self {
+        self.val = self.val.add_comment(comment);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -292,9 +297,9 @@ impl<'tcx> Wasm<'tcx> {
                     .iter()
                     .map(|expr| self.trans_expr(expr, level.clone()))
                     .collect();
-                expr_seq(exprs)
+                expr_seq(exprs).add_comment("seq")
             }
-            ExprKind::Int(v, _) => num_i64(*v as i64),
+            ExprKind::Int(v, _) => num_i64(*v as i64).add_comment("int"),
             ExprKind::Str(_, _) => todo!(),
             ExprKind::FuncCall(_, fn_id, args, _) => {
                 let entry = self.tcx.fn_(*fn_id);
@@ -311,11 +316,12 @@ impl<'tcx> Wasm<'tcx> {
                 let fn_level = self.fn_env.get(fn_id).expect("level not found");
 
                 fn_call(entry.label(), fn_level.clone(), level, ret_ty, args_expr)
+                    .add_comment("fn call")
             }
             ExprKind::Op(op, lhs, rhs, _) => {
                 let lhs = self.trans_expr(lhs, level.clone());
                 let rhs = self.trans_expr(rhs, level);
-                bin_op_i64((*op).try_into().unwrap(), lhs, rhs)
+                bin_op_i64((*op).try_into().unwrap(), lhs, rhs).add_comment("bin op")
             }
 
             ExprKind::Neg(_, _) => todo!(),
@@ -323,7 +329,7 @@ impl<'tcx> Wasm<'tcx> {
             ExprKind::ArrayCreation { .. } => todo!(),
             ExprKind::Assign(lvalue, expr, _) => {
                 let expr = self.trans_expr(expr, level.clone());
-                self.store_lvalue(lvalue, level, expr)
+                self.store_lvalue(lvalue, level, expr).add_comment("assign")
             }
             ExprKind::If {
                 cond, then, els, ..
@@ -336,12 +342,12 @@ impl<'tcx> Wasm<'tcx> {
                     cond = i64_2_i32(cond);
                 }
 
-                if_expr(cond, then, els)
+                if_expr(cond, then, els).add_comment("if expr")
             }
             ExprKind::While(cond, instr, _) => {
                 let cond = self.trans_expr(cond, level.clone());
                 let body = self.trans_expr(instr, level);
-                while_expr(cond, body)
+                while_expr(cond, body).add_comment("while expr")
             }
             ExprKind::Break(_) => todo!(),
             ExprKind::Let(decls, exprs, _) => {
@@ -357,7 +363,7 @@ impl<'tcx> Wasm<'tcx> {
 
                 decls.append(&mut exprs);
 
-                expr_seq(decls)
+                expr_seq(decls).add_comment("expr seq")
             }
         }
     }
@@ -403,7 +409,7 @@ impl<'tcx> Wasm<'tcx> {
                 drop(frame);
 
                 self.var_env.insert(*var_id, (access, parent_level));
-                Some(store_expr)
+                Some(store_expr.add_comment("decl var"))
             }
             Decl::Func(fn_decls) => {
                 for decl in fn_decls {
@@ -434,8 +440,8 @@ impl<'tcx> Wasm<'tcx> {
                     for (param, access) in decl
                         .params
                         .iter()
+                        // skip static link
                         .zip(level.clone().formals().into_iter().skip(1))
-                    // skip static link
                     {
                         self.var_env.insert(param.var_id, access);
                     }
@@ -461,7 +467,8 @@ impl<'tcx> Wasm<'tcx> {
 
     fn proc_entry_exit(&mut self, level: Level, args_ty: StackType, body: ExprType) {
         let frame = level.frame();
-        let body = frame.proc_entry_exit3(body);
+        let body = frame.proc_entry_exit1(body);
+        let body = frame.proc_entry_exit3(body).add_comment("proc entry exit");
 
         let name = Name::from(format_label(level.frame().name()));
         let export = match level.frame().name() {

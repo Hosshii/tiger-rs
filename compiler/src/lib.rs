@@ -131,7 +131,7 @@ where
     let mut encoder = WatEncoder::new();
     encoder.rewrite_module(&mut module);
 
-    o.write_all(encoder.encode_module(&module).as_bytes())?;
+    o.write_all(WatEncoder::encode_module(&module).as_bytes())?;
 
     Ok(())
 }

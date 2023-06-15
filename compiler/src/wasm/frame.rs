@@ -56,7 +56,7 @@ impl Frame {
     pub fn alloc_local(&mut self, is_escape: bool, ty: ValType) -> Access {
         if is_escape {
             self.pointer += super::size(&ty);
-            Access::Frame(self.pointer)
+            Access::Frame(self.pointer, ty)
         } else {
             let count = self.local_count;
             self.local_count += 1;
@@ -67,7 +67,7 @@ impl Frame {
     pub fn alloc_param(&mut self, index: usize, is_escape: bool, ty: ValType) -> Access {
         if is_escape {
             self.pointer += super::size(&ty);
-            Access::Frame(self.pointer)
+            Access::Frame(self.pointer, ty)
         } else {
             Access::Param(Param::new(index, ty))
         }
@@ -134,16 +134,20 @@ impl Frame {
         base_addr.assert_ty(StackType::const_1_i32());
 
         let expr = match access {
-            Access::Frame(val) => Expr::OpExpr(
-                Operator::Load(ret_ty),
-                vec![Expr::OpExpr(
-                    Operator::Bin(NumType::I32, BinOp::Sub),
-                    vec![
-                        base_addr.val,
-                        Expr::Op(Operator::Const(NumType::I32, *val as i64)),
-                    ],
-                )],
-            ),
+            Access::Frame(val, ValType::Num(ty)) => {
+                assert_eq!(ty, &ret_ty);
+
+                Expr::OpExpr(
+                    Operator::Load(ret_ty),
+                    vec![Expr::OpExpr(
+                        Operator::Bin(NumType::I32, BinOp::Sub),
+                        vec![
+                            base_addr.val,
+                            Expr::Op(Operator::Const(NumType::I32, *val as i64)),
+                        ],
+                    )],
+                )
+            }
             Access::Local(local) => {
                 assert_eq!(local.1, ValType::Num(ret_ty));
                 Expr::Op(Operator::LocalGet(self.local_as_index(local)))
@@ -152,7 +156,8 @@ impl Frame {
                 assert_eq!(param.1, ValType::Num(ret_ty));
                 Expr::Op(Operator::LocalGet(self.param_as_index(param)))
             }
-        };
+        }
+        .add_comment("get_access_content");
 
         ExprType::new_const_(expr, vec![ValType::Num(ret_ty)])
     }
@@ -167,8 +172,8 @@ impl Frame {
         expr.assert_ty(StackType::const_1_i64());
 
         let expr = match access {
-            Access::Frame(val) => Expr::OpExpr(
-                Operator::Store(NumType::I64),
+            Access::Frame(val, ValType::Num(n)) => Expr::OpExpr(
+                Operator::Store(*n),
                 vec![
                     Expr::OpExpr(
                         Operator::Bin(NumType::I32, BinOp::Sub),
@@ -188,9 +193,43 @@ impl Frame {
                 Operator::LocalSet(self.param_as_index(param)),
                 vec![expr.val],
             ),
-        };
+        }
+        .add_comment("store2access");
 
         ExprType::new(expr, StackType::nop())
+    }
+
+    /// move escaped arg into stack
+    pub(super) fn proc_entry_exit1(&self, expr: ExprType) -> ExprType {
+        let exprs = self
+            .formals()
+            .iter()
+            .enumerate()
+            .flat_map(|(idx, access)| {
+                if let Access::Frame(n, ValType::Num(ty)) = access {
+                    let e = Expr::OpExpr(
+                        Operator::Store(*ty),
+                        vec![
+                            Expr::OpExpr(
+                                Operator::Bin(NumType::I32, BinOp::Sub),
+                                vec![
+                                    Self::fp().val,
+                                    Expr::Op(Operator::Const(NumType::I32, *n as i64)),
+                                ],
+                            ),
+                            Expr::Op(Operator::LocalGet(
+                                self.param_as_index(&Param::new(idx, ValType::Num(*ty))),
+                            )),
+                        ],
+                    );
+                    Some(ExprType::new(e, StackType::nop()))
+                } else {
+                    None
+                }
+            })
+            .chain([expr])
+            .collect();
+        super::expr_seq(exprs).add_comment("proc_entry_exit1")
     }
 
     /// prologue and epilogue
@@ -243,12 +282,13 @@ impl Frame {
                 StackType::nop(),
             ),
         ])
+        .add_comment("proc_entry_exit3")
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Access {
-    Frame(usize),
+    Frame(usize, ValType),
     Local(Local),
     Param(Param),
 }

@@ -105,6 +105,7 @@ impl Rewriter {
 
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         match expr {
+            Expr::Comment(_, e) => self.rewrite_expr(e),
             Expr::Op(op) => self.rewrite_operator(op),
             Expr::OpExpr(op, e) => {
                 self.rewrite_operator(op);

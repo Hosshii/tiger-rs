@@ -178,6 +178,7 @@ impl Encode for FuncType {
 impl Encode for Expr {
     fn encode(&self, sink: &mut Vec<u8>) {
         match self {
+            Expr::Comment(_, e) => e.encode(sink),
             Expr::Op(op) => op.encode(sink),
             Expr::OpExpr(op, exprs) => {
                 for expr in exprs {

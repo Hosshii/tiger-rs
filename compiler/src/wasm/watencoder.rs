@@ -9,21 +9,61 @@ use super::{
     rewrite::Rewriter,
 };
 
-#[derive(Debug, Default)]
-pub struct Encoder {
-    pub(crate) bytes: String,
+pub struct Line {
+    indent: usize,
+    bytes: String,
+    width: usize,
 }
 
-impl Encoder {
-    pub fn new() -> Self {
+impl Line {
+    pub fn new(width: usize) -> Self {
         Self {
+            indent: 0,
             bytes: String::new(),
+            width,
         }
     }
 
-    pub fn encode_module(mut self, module: &Module) -> String {
-        module.encode(&mut self.bytes);
-        self.bytes
+    pub fn push(&mut self, ch: char) {
+        self.bytes.push(ch);
+    }
+
+    pub fn push_str(&mut self, s: &str) {
+        self.bytes.push_str(s);
+    }
+
+    pub fn pop(&mut self) {
+        self.bytes.pop();
+    }
+
+    pub fn newline(&mut self) {
+        self.bytes.push('\n');
+        self.bytes.push_str(" ".repeat(self.indent).as_str());
+    }
+
+    pub fn block<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.indent += self.width;
+        self.newline();
+        f(self);
+        self.indent -= self.width;
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Encoder {}
+
+impl Encoder {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn encode_module(module: &Module) -> String {
+        let mut line = Line::new(2);
+        module.encode(&mut line);
+        line.bytes
     }
 
     /// Remove syntax sugar.
@@ -48,30 +88,30 @@ impl<'a, T> From<&'a [T]> for MultiLine<'a, T> {
 }
 
 impl<T: Encode> Encode for MultiLine<'_, T> {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         let len = self.0.len();
         for (idx, item) in self.0.iter().enumerate() {
             item.encode(sink);
             if idx < len - 1 {
-                sink.push('\n');
+                sink.newline();
             }
         }
     }
 }
 
 pub trait Encode {
-    fn encode(&self, sink: &mut String);
+    fn encode(&self, sink: &mut Line);
 }
 
 impl<T: Encode + ?Sized> Encode for &'_ T {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         (*self).encode(sink)
     }
 }
 
 /// https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: Encode> Encode for [T] {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         for item in self.iter() {
             // sink.push('(');
             item.encode(sink);
@@ -82,50 +122,50 @@ impl<T: Encode> Encode for [T] {
 }
 
 impl<T: Encode> Encode for Vec<T> {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         self.as_slice().encode(sink)
     }
 }
 
 impl Encode for u8 {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str(self.to_string().as_str());
     }
 }
 
 impl Encode for usize {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         assert!(*self <= u32::MAX as usize);
         (*self as u32).encode(sink)
     }
 }
 
 impl Encode for u32 {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str(self.to_string().as_str());
     }
 }
 
 impl Encode for i32 {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str(self.to_string().as_str());
     }
 }
 
 impl Encode for u64 {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str(self.to_string().as_str());
     }
 }
 
 impl Encode for i64 {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str(self.to_string().as_str());
     }
 }
 
 impl Encode for str {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str(self);
     }
 }
@@ -135,20 +175,20 @@ where
     T: Encode,
     U: Encode,
 {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         self.0.encode(sink);
         self.1.encode(sink);
     }
 }
 
 impl Encode for Name {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         self.0.encode(sink);
     }
 }
 
 impl Encode for NumType {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             NumType::I32 => sink.push_str("i32"),
             NumType::I64 => sink.push_str("i64"),
@@ -159,7 +199,7 @@ impl Encode for NumType {
 }
 
 impl Encode for ValType {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             ValType::Num(num_type) => num_type.encode(sink),
         }
@@ -167,7 +207,7 @@ impl Encode for ValType {
 }
 
 impl Encode for BlockType {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         if let TypeUse::Index(Index::Index(_)) = self.0 {
             self.0.encode(sink);
             return;
@@ -191,14 +231,14 @@ impl Encode for BlockType {
 }
 
 impl Encode for FuncType {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         self.params.encode(sink);
         self.result.encode(sink);
     }
 }
 
 impl Encode for BinOp {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             BinOp::Add => sink.push_str("add"),
             BinOp::Sub => sink.push_str("sub"),
@@ -215,7 +255,7 @@ impl Encode for BinOp {
 }
 
 impl Encode for TestOp {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             TestOp::Eqz => sink.push_str("eqz"),
         }
@@ -223,7 +263,7 @@ impl Encode for TestOp {
 }
 
 impl Encode for CvtOp {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             CvtOp::Wrap => sink.push_str("wrap"),
         }
@@ -231,14 +271,26 @@ impl Encode for CvtOp {
 }
 
 impl Encode for Expr {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push('(');
         match self {
+            Expr::Comment(comment, expr) => {
+                sink.pop();
+                sink.newline();
+                sink.push_str("(; ");
+                comment.encode(sink);
+                sink.push_str(";)");
+                sink.newline();
+                expr.encode(sink);
+
+                // dont push last ')'
+                return;
+            }
             Expr::Op(op) => op.encode(sink),
             Expr::OpExpr(op, exprs) => {
                 op.encode(sink);
                 sink.push(' ');
-                MultiLine::new(exprs).encode(sink);
+                sink.block(|sink| MultiLine::new(exprs).encode(sink))
             }
             Expr::Block(name, ty, instrs) => {
                 sink.push_str("block ");
@@ -248,8 +300,7 @@ impl Encode for Expr {
                     sink.push(' ');
                 }
                 ty.encode(sink);
-                sink.push('\n');
-                MultiLine::new(instrs).encode(sink);
+                sink.block(|sink| MultiLine::new(instrs).encode(sink));
             }
             Expr::If(name, block_ty, cond, then, els) => {
                 sink.push_str("if ");
@@ -259,13 +310,10 @@ impl Encode for Expr {
                     sink.push(' ');
                 }
                 block_ty.encode(sink);
-                sink.push('\n');
-                cond.encode(sink);
-                sink.push('\n');
-                then.encode(sink);
+                sink.block(|sink| cond.encode(sink));
+                sink.block(|sink| then.encode(sink));
                 if let Some(els) = els {
-                    sink.push('\n');
-                    els.encode(sink);
+                    sink.block(|sink| els.encode(sink));
                 }
             }
             Expr::Loop(name, block_ty, instr) => {
@@ -276,8 +324,7 @@ impl Encode for Expr {
                     sink.push(' ');
                 }
                 block_ty.encode(sink);
-                sink.push('\n');
-                instr.encode(sink);
+                sink.block(|sink| instr.encode(sink));
             }
         }
         sink.push(')');
@@ -285,7 +332,7 @@ impl Encode for Expr {
 }
 
 impl Encode for Instruction {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             Instruction::Expr(expr) => expr.encode(sink),
             Instruction::Op(op) => op.encode(sink),
@@ -294,7 +341,7 @@ impl Encode for Instruction {
 }
 
 impl Encode for Operator {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             Operator::Br(index) => {
                 sink.push_str("br ");
@@ -368,7 +415,7 @@ impl Encode for Operator {
 }
 
 impl Encode for Index {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self {
             Index::Index(index) => index.encode(sink),
             Index::Name(name) => panic!("unresolved name {}", name.0),
@@ -377,7 +424,7 @@ impl Encode for Index {
 }
 
 impl<T: Debug> Encode for TypeUse<T> {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(type ");
         match self {
             TypeUse::Index(index) => index.encode(sink),
@@ -390,7 +437,7 @@ impl<T: Debug> Encode for TypeUse<T> {
 }
 
 impl Encode for InlineFuncExport {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(export \"");
         self.name.encode(sink);
         sink.push_str("\")");
@@ -398,7 +445,7 @@ impl Encode for InlineFuncExport {
 }
 
 impl Encode for Func {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(func ");
         if let Some(ref export) = self.export {
             export.encode(sink);
@@ -414,7 +461,7 @@ impl Encode for Func {
 }
 
 impl Encode for Param {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(param ");
         if let Some(ref name) = self.name {
             sink.push('$');
@@ -426,7 +473,7 @@ impl Encode for Param {
 }
 
 impl Encode for WasmResult {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(result ");
         self.0.encode(sink);
         sink.push(')');
@@ -434,7 +481,7 @@ impl Encode for WasmResult {
 }
 
 impl Encode for Local {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(local ");
         if let Some(ref name) = self.name {
             sink.push('$');
@@ -446,7 +493,7 @@ impl Encode for Local {
 }
 
 impl Encode for FuncTypeDef {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(type ");
         if let Some(ref name) = self.name {
             sink.push('$');
@@ -459,13 +506,13 @@ impl Encode for FuncTypeDef {
 }
 
 impl Encode for Import {
-    fn encode(&self, _sink: &mut String) {
+    fn encode(&self, _sink: &mut Line) {
         todo!()
     }
 }
 
 impl Encode for Export {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(export \"");
         self.name.encode(sink);
         sink.push('"');
@@ -475,7 +522,7 @@ impl Encode for Export {
 }
 
 impl Encode for ExportKind {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push('(');
         match self {
             ExportKind::Func(index) => {
@@ -488,7 +535,7 @@ impl Encode for ExportKind {
 }
 
 impl Encode for Global {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(global ");
         if let Some(name) = &self.name {
             sink.push('$');
@@ -503,7 +550,7 @@ impl Encode for Global {
 }
 
 impl Encode for GlobalType {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self.m {
             Mut::Const => self.ty.encode(sink),
             Mut::Var => {
@@ -516,7 +563,7 @@ impl Encode for GlobalType {
 }
 
 impl Encode for Limits {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         match self.max {
             Some(max) => {
                 sink.push('(');
@@ -531,7 +578,7 @@ impl Encode for Limits {
 }
 
 impl Encode for Memory {
-    fn encode(&self, sink: &mut String) {
+    fn encode(&self, sink: &mut Line) {
         sink.push_str("(memory ");
         if let Some(name) = &self.name {
             sink.push('$');
@@ -544,18 +591,19 @@ impl Encode for Memory {
 }
 
 impl Encode for Module {
-    fn encode(&self, sink: &mut String) {
-        sink.push_str("(module\n");
+    fn encode(&self, sink: &mut Line) {
+        sink.push_str("(module");
+        sink.newline();
         MultiLine::from(self.types.as_slice()).encode(sink);
-        sink.push('\n');
+        sink.newline();
         MultiLine::from(self.funcs.as_slice()).encode(sink);
-        sink.push('\n');
+        sink.newline();
         MultiLine::from(self.imports.as_slice()).encode(sink);
-        sink.push('\n');
+        sink.newline();
         MultiLine::from(self.exports.as_slice()).encode(sink);
-        sink.push('\n');
+        sink.newline();
         MultiLine::from(self.globals.as_slice()).encode(sink);
-        sink.push('\n');
+        sink.newline();
         MultiLine::from(self.memories.as_slice()).encode(sink);
         sink.push(')');
     }
