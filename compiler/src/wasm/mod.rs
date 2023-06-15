@@ -468,7 +468,7 @@ impl<'tcx> Wasm<'tcx> {
     fn proc_entry_exit(&mut self, level: Level, args_ty: StackType, body: ExprType) {
         let frame = level.frame();
         let body = frame.proc_entry_exit1(body);
-        let body = frame.proc_entry_exit3(body).add_comment("proc entry exit");
+        let body = frame.proc_entry_exit3(body);
 
         let name = Name::from(format_label(level.frame().name()));
         let export = match level.frame().name() {
@@ -522,7 +522,7 @@ fn _load_i64(addr: ExprType) -> ExprType {
 }
 
 fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
-    let mut link = Frame::sp();
+    let mut link = Frame::fp();
     if cur_level == ancestor_level {
         return link;
     }

@@ -227,7 +227,7 @@ impl Frame {
                     None
                 }
             })
-            .chain([expr])
+            .chain([expr.add_comment("proc_entry_exit1 body")])
             .collect();
         super::expr_seq(exprs).add_comment("proc_entry_exit1")
     }
@@ -237,7 +237,7 @@ impl Frame {
         super::expr_seq(vec![
             // prologue
             // push rpb
-            super::push(Self::fp()),
+            super::push(Self::fp()).add_comment("prologue start"),
             // mov rbp, rsp
             ExprType::new(
                 Expr::OpExpr(
@@ -253,7 +253,8 @@ impl Frame {
                     self.aligned_ptr() as i64,
                 ))),
                 BinOp::Sub,
-            ),
+            )
+            .add_comment("prologue end"),
             // body
             expr,
             // epilogue
@@ -264,7 +265,8 @@ impl Frame {
                     self.aligned_ptr() as i64,
                 ))),
                 BinOp::Add,
-            ),
+            )
+            .add_comment("epilogue start"),
             // mov rsp, rbp
             ExprType::new(
                 Expr::OpExpr(
@@ -280,7 +282,8 @@ impl Frame {
                     vec![super::pop(NumType::I32).val],
                 ),
                 StackType::nop(),
-            ),
+            )
+            .add_comment("epilogue end"),
         ])
         .add_comment("proc_entry_exit3")
     }
