@@ -12,7 +12,7 @@ pub use encode::Encoder as WasmEncoder;
 pub use watencoder::Encoder as WatEncoder;
 
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     rc::Rc,
 };
@@ -219,6 +219,10 @@ impl Level {
     fn frame(&self) -> Ref<Frame> {
         Ref::map(self.0.borrow(), |v| &v.frame)
     }
+
+    fn frame_mut(&self) -> RefMut<Frame> {
+        RefMut::map(self.0.borrow_mut(), |v| &mut v.frame)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -349,8 +353,9 @@ impl<'tcx> Wasm<'tcx> {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
-                let env = calc_static_link(level, ancestor_level.clone());
-                Frame::store2access(access, env, expr)
+                let env = calc_static_link(level.clone(), ancestor_level.clone());
+                let frame = level.frame();
+                frame.store2access(access, env, expr)
             }
             HirLValue::RecordField { .. } => todo!(),
             HirLValue::Array { .. } => todo!(),
@@ -361,8 +366,9 @@ impl<'tcx> Wasm<'tcx> {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
-                let env = calc_static_link(level, ancestor_level.clone());
-                Frame::get_access_content(access, env)
+                let env = calc_static_link(level.clone(), ancestor_level.clone());
+                let frame = level.frame();
+                frame.get_access_content(access, env)
             }
             HirLValue::RecordField { .. } => todo!(),
             HirLValue::Array { .. } => todo!(),
@@ -374,9 +380,12 @@ impl<'tcx> Wasm<'tcx> {
             Decl::Type(_) => todo!(),
             Decl::Var(VarDecl(_, var_id, is_escape, _, _, expr, _)) => {
                 let expr = self.trans_expr(expr, parent_level.clone());
-                let access = parent_level.0.borrow_mut().frame.alloc_local(*is_escape);
+                let mut frame = parent_level.frame_mut();
+                let access = frame.alloc_local(*is_escape);
                 let base_addr = Frame::fp();
-                let store_expr = Frame::store2access(&access, base_addr, expr);
+                let store_expr = frame.store2access(&access, base_addr, expr);
+                drop(frame);
+
                 self.var_env.insert(*var_id, (access, parent_level));
                 Some(store_expr)
             }
@@ -405,7 +414,14 @@ impl<'tcx> Wasm<'tcx> {
 
                     let body = self.trans_expr(&decl.body, level.clone());
 
-                    self.proc_entry_exit(level, body);
+                    let args_ty: Vec<_> = decl
+                        .params
+                        .iter()
+                        .map(|p| convert_ty(self.tcx.type_(p.type_id)))
+                        .collect();
+                    let args_ty = StackType::new(args_ty, vec![]);
+
+                    self.proc_entry_exit(level, args_ty, body);
                 }
 
                 None
@@ -413,9 +429,12 @@ impl<'tcx> Wasm<'tcx> {
         }
     }
 
-    fn proc_entry_exit(&mut self, level: Level, body: ExprType) {
+    fn proc_entry_exit(&mut self, level: Level, args_ty: StackType, body: ExprType) {
         let name = Name::from(format_label(level.frame().name()));
-        let ty = TypeUse::Inline(body.ty.into());
+        // arg_ty has only arg type.
+        // so this is unfallable.
+        let ty = args_ty.composition(&body.ty).expect("type error");
+        let ty = TypeUse::Inline(ty.into());
         let locals = level.frame().ast_locals();
 
         self.funcs.push(Func {
@@ -463,10 +482,9 @@ fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
     }
 
     while cur_level != ancestor_level {
-        let bor = cur_level.0.borrow();
-        let frame = &bor.frame;
+        let frame = cur_level.frame();
         let link_access = frame.env();
-        link = Frame::get_access_content(link_access, link);
+        link = frame.get_access_content(link_access, link);
         let parent = ancestor_level
             .0
             .borrow()
@@ -474,7 +492,7 @@ fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
             .as_ref()
             .expect("cur_level is root")
             .clone();
-        drop(bor);
+        drop(frame);
 
         cur_level = parent;
     }
