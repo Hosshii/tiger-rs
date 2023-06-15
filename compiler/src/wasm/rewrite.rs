@@ -143,9 +143,11 @@ impl Rewriter {
 
     fn rewrite_operator(&self, op: &mut Operator) {
         match op {
-            Operator::GlobalGet(Index::Name(name)) => {
-                if let Some(idx) = self.global_name_map.get(name) {
-                    *op = Operator::GlobalGet(idx.clone());
+            Operator::GlobalGet(index) | Operator::GlobalSet(index) => {
+                if let Index::Name(name) = index {
+                    if let Some(idx) = self.global_name_map.get(name) {
+                        *index = idx.clone();
+                    }
                 }
             }
             Operator::Call(Index::Name(name)) => {

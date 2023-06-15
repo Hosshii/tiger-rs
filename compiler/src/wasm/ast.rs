@@ -25,7 +25,7 @@ pub enum NumType {
     F64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum ValType {
     Num(NumType),
 }
@@ -123,6 +123,7 @@ pub enum Operator {
     BrIf(Index),
     Call(Index),
     GlobalGet(Index),
+    GlobalSet(Index),
     LocalGet(Index),
     LocalSet(Index),
     Store(NumType), // NumType.store
@@ -285,12 +286,27 @@ pub enum Mut {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Memory {
+    pub name: Option<Name>,
+    pub ty: MemoryType,
+}
+
+pub type MemoryType = Limits;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Limits {
+    pub min: u32,
+    pub max: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub types: Vec<FuncTypeDef>,
     pub funcs: Vec<Func>,
     pub imports: Vec<Import>,
     pub exports: Vec<Export>,
     pub globals: Vec<Global>,
+    pub memories: Vec<Memory>,
 }
 
 impl Module {
@@ -301,6 +317,7 @@ impl Module {
             imports: vec![],
             exports: vec![],
             globals: vec![],
+            memories: vec![],
         }
     }
 }
@@ -332,6 +349,11 @@ impl ModuleBuilder {
 
     pub fn add_globals(mut self, globals: Vec<Global>) -> Self {
         self.module.globals.extend(globals);
+        self
+    }
+
+    pub fn add_memory(mut self, memory: Memory) -> Self {
+        self.module.memories.push(memory);
         self
     }
 }

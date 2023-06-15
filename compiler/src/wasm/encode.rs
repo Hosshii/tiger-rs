@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use super::{
     ast::{
         BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Index, Instruction, Local, Module, Mut, Name, NumType, Operator, Param, TestOp,
-        TypeUse, ValType, WasmResult,
+        GlobalType, Index, Instruction, Limits, Local, Memory, Module, Mut, Name, NumType,
+        Operator, Param, TestOp, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -253,6 +253,10 @@ impl Encode for Operator {
                 sink.push(0x23);
                 var.encode(sink);
             }
+            Operator::GlobalSet(var) => {
+                sink.push(0x24);
+                var.encode(sink);
+            }
             Operator::LocalGet(var) => {
                 sink.push(0x20);
                 var.encode(sink);
@@ -269,7 +273,7 @@ impl Encode for Operator {
                     NumType::F64 => sink.push(0x39),
                 }
                 // TODO
-                32u32.encode(sink);
+                0u32.encode(sink);
                 0u32.encode(sink);
             }
             Operator::Load(num_type) => {
@@ -280,7 +284,7 @@ impl Encode for Operator {
                     NumType::F64 => sink.push(0x2B),
                 }
                 // TODO
-                32u32.encode(sink);
+                0u32.encode(sink);
                 0u32.encode(sink);
             }
             Operator::Bin(num_type, bin_op) => sink.push(gen_bin_code(num_type, bin_op)),
@@ -421,6 +425,7 @@ impl Encode for Global {
     fn encode(&self, sink: &mut Vec<u8>) {
         self.ty.encode(sink);
         self.init.encode(sink);
+        sink.push(0x0B);
     }
 }
 
@@ -437,6 +442,28 @@ impl Encode for Mut {
             Mut::Const => sink.push(0x00),
             Mut::Var => sink.push(0x01),
         }
+    }
+}
+
+impl Encode for Limits {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        match self.max {
+            Some(max) => {
+                sink.push(0x01);
+                self.min.encode(sink);
+                max.encode(sink);
+            }
+            None => {
+                sink.push(0x00);
+                self.min.encode(sink);
+            }
+        }
+    }
+}
+
+impl Encode for Memory {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.ty.encode(sink);
     }
 }
 
@@ -486,6 +513,8 @@ impl Encode for Module {
 
         let func_tys = self.funcs.iter().map(|f| &f.ty).collect::<Vec<_>>();
         Module::section_list(SectionId::Function, func_tys.as_slice(), sink);
+        Module::section_list(SectionId::Memory, self.memories.as_slice(), sink);
+        Module::section_list(SectionId::Global, self.globals.as_slice(), sink);
         Module::section_list(SectionId::Export, self.exports.as_slice(), sink);
 
         Module::section_list(SectionId::Code, self.funcs.as_slice(), sink);

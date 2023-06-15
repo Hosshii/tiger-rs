@@ -1,7 +1,7 @@
 //! sp -> stack_ptr
 //! fp -> frame_ptr
 //! address is 32bit
-//! locals are 64bit except first arg which means static link.
+//! args are 64bit except first arg which means static link.
 
 mod ast;
 pub mod encode;
@@ -32,7 +32,8 @@ use crate::{
 use self::{
     ast::{
         BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Index, Instruction,
-        Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, TestOp, ValType, WasmResult,
+        Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, TestOp,
+        ValType, WasmResult,
     },
     frame::{Access as FrameAccess, Frame},
 };
@@ -153,49 +154,60 @@ impl From<StackType> for FuncType {
 }
 
 const MAIN_SYMBOL: &str = "_start";
+
 const STACK_PTR: &str = "stack_ptr";
-const FRAME_PTR: &str = "frame_ptr";
 const STACK_ADDR: i64 = 1048576;
+
+const FRAME_PTR: &str = "frame_ptr";
+const FRAME_ADDR: i64 = 0;
 
 pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new(tcx);
     let outermost_level = Level::outermost_with_name(MAIN_SYMBOL);
     let expr = wasm.trans_expr(hir, outermost_level.clone());
-    let mut funcs = wasm.funcs;
-    let locals = outermost_level.frame().ast_locals();
+    wasm.proc_entry_exit(outermost_level, StackType::nop(), expr);
 
-    let instr = Instruction::Expr(expr.val);
-    let func = Func::new(
-        Some(Name::new(MAIN_SYMBOL.to_string())),
-        TypeUse::Inline(FuncType::new(
-            vec![],
-            vec![WasmResult::new(ValType::Num(NumType::I64))],
-        )),
-        Some(InlineFuncExport::new(Name::new(MAIN_SYMBOL.to_string()))),
-        locals,
-        vec![instr],
-    );
-    funcs.push(func);
-
-    let global = Global {
-        name: Some(Name::new(STACK_PTR.to_string())),
-        ty: GlobalType {
-            ty: ValType::Num(NumType::I32),
-            m: Mut::Var,
+    let funcs = wasm.funcs;
+    let globals = vec![
+        Global {
+            name: Some(Name::new(STACK_PTR.to_string())),
+            ty: GlobalType {
+                ty: ValType::Num(NumType::I32),
+                m: Mut::Var,
+            },
+            init: Expr::Op(Operator::Const(NumType::I32, STACK_ADDR)),
         },
-        init: Expr::Op(Operator::Const(NumType::I32, STACK_ADDR)),
+        Global {
+            name: Some(Name::new(FRAME_PTR.to_string())),
+            ty: GlobalType {
+                ty: ValType::Num(NumType::I32),
+                m: Mut::Var,
+            },
+            init: Expr::Op(Operator::Const(NumType::I32, FRAME_ADDR)),
+        },
+    ];
+
+    let memory = Memory {
+        name: None,
+        ty: Limits { min: 16, max: None },
     };
 
     let builder = ModuleBuilder::new();
 
-    builder.add_funcs(funcs).add_globals(vec![global]).build()
+    builder
+        .add_funcs(funcs)
+        .add_globals(globals)
+        .add_memory(memory)
+        .build()
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Level(Rc<RefCell<LevelInner>>);
 
 impl Level {
-    fn new(parent_level: Level, name: Label, formals: Vec<bool>) -> Level {
+    fn new(parent_level: Level, name: Label, mut formals: Vec<(bool, ValType)>) -> Level {
+        // for static link
+        formals.insert(0, (true, ValType::Num(NumType::I32)));
         Level(Rc::new(RefCell::new(LevelInner::new(
             parent_level,
             name,
@@ -239,7 +251,7 @@ impl LevelInner {
         }
     }
 
-    fn new(parent: Level, name: Label, formals: Vec<bool>) -> Self {
+    fn new(parent: Level, name: Label, formals: Vec<(bool, ValType)>) -> Self {
         Self {
             frame: Frame::new(name, formals),
             parent: Some(parent),
@@ -296,8 +308,9 @@ impl<'tcx> Wasm<'tcx> {
                         e.val
                     })
                     .collect();
+                let fn_level = self.fn_env.get(fn_id).expect("level not found");
 
-                fn_call(entry.label(), ret_ty, args_expr)
+                fn_call(entry.label(), fn_level.clone(), level, ret_ty, args_expr)
             }
             ExprKind::Op(op, lhs, rhs, _) => {
                 let lhs = self.trans_expr(lhs, level.clone());
@@ -368,7 +381,7 @@ impl<'tcx> Wasm<'tcx> {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
                 let env = calc_static_link(level.clone(), ancestor_level.clone());
                 let frame = level.frame();
-                frame.get_access_content(access, env)
+                frame.get_access_content(access, env, NumType::I64)
             }
             HirLValue::RecordField { .. } => todo!(),
             HirLValue::Array { .. } => todo!(),
@@ -378,10 +391,13 @@ impl<'tcx> Wasm<'tcx> {
     fn trans_decl(&mut self, decl: &Decl, parent_level: Level) -> Option<ExprType> {
         match decl {
             Decl::Type(_) => todo!(),
-            Decl::Var(VarDecl(_, var_id, is_escape, _, _, expr, _)) => {
+            Decl::Var(VarDecl(_, var_id, is_escape, _, ty_id, expr, _)) => {
                 let expr = self.trans_expr(expr, parent_level.clone());
+
                 let mut frame = parent_level.frame_mut();
-                let access = frame.alloc_local(*is_escape);
+                let ty = self.tcx.type_(*ty_id);
+                let access = frame.alloc_local(*is_escape, convert_ty(ty));
+
                 let base_addr = Frame::fp();
                 let store_expr = frame.store2access(&access, base_addr, expr);
                 drop(frame);
@@ -391,8 +407,15 @@ impl<'tcx> Wasm<'tcx> {
             }
             Decl::Func(fn_decls) => {
                 for decl in fn_decls {
-                    let formals_is_escape: Vec<_> =
-                        decl.params.iter().map(|p| p.is_escape).collect();
+                    let formals_is_escape: Vec<_> = decl
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let ty = self.tcx.type_(p.type_id);
+                            let is_escape = p.is_escape;
+                            (is_escape, convert_ty(ty))
+                        })
+                        .collect();
                     let entry = self.tcx.fn_(decl.fn_id);
                     let level = Level::new(
                         parent_level.clone(),
@@ -408,17 +431,24 @@ impl<'tcx> Wasm<'tcx> {
                         .get(&decl.fn_id)
                         .expect("level not found")
                         .clone();
-                    for (param, access) in decl.params.iter().zip(level.clone().formals()) {
+                    for (param, access) in decl
+                        .params
+                        .iter()
+                        .zip(level.clone().formals().into_iter().skip(1))
+                    // skip static link
+                    {
                         self.var_env.insert(param.var_id, access);
                     }
 
                     let body = self.trans_expr(&decl.body, level.clone());
 
-                    let args_ty: Vec<_> = decl
+                    let mut args_ty: Vec<_> = decl
                         .params
                         .iter()
                         .map(|p| convert_ty(self.tcx.type_(p.type_id)))
                         .collect();
+                    // add static link
+                    args_ty.insert(0, ValType::Num(NumType::I32));
                     let args_ty = StackType::new(args_ty, vec![]);
 
                     self.proc_entry_exit(level, args_ty, body);
@@ -430,17 +460,26 @@ impl<'tcx> Wasm<'tcx> {
     }
 
     fn proc_entry_exit(&mut self, level: Level, args_ty: StackType, body: ExprType) {
+        let frame = level.frame();
+        let body = frame.proc_entry_exit3(body);
+
         let name = Name::from(format_label(level.frame().name()));
+        let export = match level.frame().name() {
+            Label::NamedFn(name) => Some(InlineFuncExport { name: name.into() }),
+            _ => None,
+        };
         // arg_ty has only arg type.
         // so this is unfallable.
         let ty = args_ty.composition(&body.ty).expect("type error");
         let ty = TypeUse::Inline(ty.into());
         let locals = level.frame().ast_locals();
 
+        // prologue
+
         self.funcs.push(Func {
             name: Some(name),
             ty,
-            export: None,
+            export,
             locals,
             instr: vec![Instruction::Expr(body.val)],
         });
@@ -484,8 +523,8 @@ fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
     while cur_level != ancestor_level {
         let frame = cur_level.frame();
         let link_access = frame.env();
-        link = frame.get_access_content(link_access, link);
-        let parent = ancestor_level
+        link = frame.get_access_content(link_access, link, NumType::I32);
+        let parent = cur_level
             .0
             .borrow()
             .parent
@@ -642,7 +681,93 @@ fn convert_ty(ty: &Type) -> ValType {
     }
 }
 
-fn fn_call(label: &Label, ret_ty: StackType, args: Vec<Expr>) -> ExprType {
+fn size(ty: &ValType) -> usize {
+    match ty {
+        ValType::Num(NumType::I32) => 4,
+        ValType::Num(NumType::I64) => 8,
+        _ => unimplemented!(),
+    }
+}
+
+fn push(expr: ExprType) -> ExprType {
+    assert!(expr.ty.is_const_1());
+    let ValType::Num(expr_ty) = expr.ty.result[0];
+
+    let sub_stack_ptr = bin_stack_ptr(
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+            NumType::I32,
+            size(&expr.ty.result[0]) as i64,
+        ))),
+        BinOp::Sub,
+    );
+
+    let store_expr = Expr::OpExpr(
+        Operator::Store(expr_ty),
+        vec![
+            Expr::Op(Operator::GlobalGet(Index::Name(STACK_PTR.into()))),
+            expr.val,
+        ],
+    );
+    let store_expr = ExprType::new(store_expr, StackType::nop());
+
+    expr_seq(vec![sub_stack_ptr, store_expr])
+}
+
+fn pop(ty: NumType) -> ExprType {
+    let load_expr = Expr::OpExpr(
+        Operator::Load(ty),
+        vec![Expr::Op(Operator::GlobalGet(Index::Name(STACK_PTR.into())))],
+    );
+    let load_expr = ExprType::new(load_expr, StackType::const_(vec![ValType::Num(ty)]));
+
+    let add_stack_ptr = bin_stack_ptr(
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+            NumType::I32,
+            size(&ValType::Num(ty)) as i64,
+        ))),
+        BinOp::Add,
+    );
+
+    expr_seq(vec![load_expr, add_stack_ptr])
+}
+
+// $sp <- $sp `op` expr
+fn bin_stack_ptr(expr: ExprType, op: BinOp) -> ExprType {
+    assert!(expr.ty.is_const_1());
+
+    let sub_stack_ptr = Expr::OpExpr(
+        Operator::GlobalSet(Index::Name(STACK_PTR.into())),
+        vec![Expr::OpExpr(
+            Operator::Bin(NumType::I32, op),
+            vec![
+                Expr::Op(Operator::GlobalGet(Index::Name(STACK_PTR.into()))),
+                expr.val,
+            ],
+        )],
+    );
+    ExprType::new(sub_stack_ptr, StackType::nop())
+}
+
+fn fn_call(
+    label: &Label,
+    fn_level: Level,
+    cur_level: Level,
+    ret_ty: StackType,
+    mut args: Vec<Expr>,
+) -> ExprType {
+    // 関数には、その関数の親のフレームへのポインタが渡される。
+    // 関数の宣言されたレベル(fn_level)の親のレベルを渡す。
+    // 一番外側だったら、自分自身のレベルを渡す。
+    let parent_level = fn_level
+        .0
+        .borrow()
+        .parent
+        .clone()
+        .unwrap_or(cur_level.clone());
+    let link = calc_static_link(cur_level, parent_level);
+    link.assert_ty(StackType::const_1_i32());
+
+    args.insert(0, link.val);
     let expr = Expr::OpExpr(
         Operator::Call(Index::Name(format_label(label).into())),
         args,

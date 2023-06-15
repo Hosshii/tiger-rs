@@ -6,20 +6,20 @@ use super::{
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Local(usize);
+pub struct Local(usize, ValType);
 
 impl Local {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
+    pub fn new(idx: usize, ty: ValType) -> Self {
+        Self(idx, ty)
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Param(usize);
+pub struct Param(usize, ValType);
 
 impl Param {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
+    pub fn new(idx: usize, ty: ValType) -> Self {
+        Self(idx, ty)
     }
 }
 
@@ -36,41 +36,47 @@ impl Frame {
     const WORD_SIZE: usize = 4;
 
     // 0 param is env
-    pub fn new(name: Label, formals: Vec<bool>) -> Self {
+    pub fn new(name: Label, formals: Vec<(bool, ValType)>) -> Self {
         let mut frame = Self {
             name,
             pointer: 0,
             local_count: 0,
             formals: vec![],
-            env: Access::Param(Param::new(0)),
+            env: Access::Param(Param::new(0, ValType::Num(NumType::I32))),
         };
         let formals = formals
             .into_iter()
             .enumerate()
-            .map(|(idx, v)| frame.alloc_param(idx, v))
+            .map(|(idx, (is_escape, ty))| frame.alloc_param(idx, is_escape, ty))
             .collect();
         frame.formals = formals;
         frame
     }
 
-    pub fn alloc_local(&mut self, is_escape: bool) -> Access {
+    pub fn alloc_local(&mut self, is_escape: bool, ty: ValType) -> Access {
         if is_escape {
-            self.pointer += Self::WORD_SIZE;
+            self.pointer += super::size(&ty);
             Access::Frame(self.pointer)
         } else {
             let count = self.local_count;
             self.local_count += 1;
-            Access::Local(Local::new(count))
+            Access::Local(Local::new(count, ty))
         }
     }
 
-    pub fn alloc_param(&mut self, index: usize, is_escape: bool) -> Access {
+    pub fn alloc_param(&mut self, index: usize, is_escape: bool, ty: ValType) -> Access {
         if is_escape {
-            self.pointer += Self::WORD_SIZE;
+            self.pointer += super::size(&ty);
             Access::Frame(self.pointer)
         } else {
-            Access::Param(Param::new(index))
+            Access::Param(Param::new(index, ty))
         }
+    }
+
+    pub fn aligned_ptr(&self) -> usize {
+        (self.pointer + 16)
+            .checked_sub(self.pointer % 16)
+            .expect("ovefrlow")
     }
 
     fn param_count(&self) -> usize {
@@ -119,22 +125,36 @@ impl Frame {
         Index::Index(param.0 as u32)
     }
 
-    pub(super) fn get_access_content(&self, access: &Access, base_addr: ExprType) -> ExprType {
+    pub(super) fn get_access_content(
+        &self,
+        access: &Access,
+        base_addr: ExprType,
+        ret_ty: NumType,
+    ) -> ExprType {
         base_addr.assert_ty(StackType::const_1_i32());
 
         let expr = match access {
             Access::Frame(val) => Expr::OpExpr(
-                Operator::Bin(NumType::I32, BinOp::Sub),
-                vec![
-                    base_addr.val,
-                    Expr::Op(Operator::Const(NumType::I32, *val as i64)),
-                ],
+                Operator::Load(ret_ty),
+                vec![Expr::OpExpr(
+                    Operator::Bin(NumType::I32, BinOp::Sub),
+                    vec![
+                        base_addr.val,
+                        Expr::Op(Operator::Const(NumType::I32, *val as i64)),
+                    ],
+                )],
             ),
-            Access::Local(local) => Expr::Op(Operator::LocalGet(self.local_as_index(local))),
-            Access::Param(param) => Expr::Op(Operator::LocalGet(self.param_as_index(param))),
+            Access::Local(local) => {
+                assert_eq!(local.1, ValType::Num(ret_ty));
+                Expr::Op(Operator::LocalGet(self.local_as_index(local)))
+            }
+            Access::Param(param) => {
+                assert_eq!(param.1, ValType::Num(ret_ty));
+                Expr::Op(Operator::LocalGet(self.param_as_index(param)))
+            }
         };
 
-        ExprType::new_const_1_i64(expr)
+        ExprType::new_const_(expr, vec![ValType::Num(ret_ty)])
     }
 
     pub(super) fn store2access(
@@ -171,6 +191,58 @@ impl Frame {
         };
 
         ExprType::new(expr, StackType::nop())
+    }
+
+    /// prologue and epilogue
+    pub(super) fn proc_entry_exit3(&self, expr: ExprType) -> ExprType {
+        super::expr_seq(vec![
+            // prologue
+            // push rpb
+            super::push(Self::fp()),
+            // mov rbp, rsp
+            ExprType::new(
+                Expr::OpExpr(
+                    Operator::GlobalSet(Index::Name(FRAME_PTR.into())),
+                    vec![Self::sp().val],
+                ),
+                StackType::nop(),
+            ),
+            // sub rsp, aligned_ptr
+            super::bin_stack_ptr(
+                ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+                    NumType::I32,
+                    self.aligned_ptr() as i64,
+                ))),
+                BinOp::Sub,
+            ),
+            // body
+            expr,
+            // epilogue
+            // add rsp, aligned_ptr
+            super::bin_stack_ptr(
+                ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+                    NumType::I32,
+                    self.aligned_ptr() as i64,
+                ))),
+                BinOp::Add,
+            ),
+            // mov rsp, rbp
+            ExprType::new(
+                Expr::OpExpr(
+                    Operator::GlobalSet(Index::Name(STACK_PTR.into())),
+                    vec![Self::sp().val],
+                ),
+                StackType::nop(),
+            ),
+            // pop rbp
+            ExprType::new(
+                Expr::OpExpr(
+                    Operator::GlobalSet(Index::Name(FRAME_PTR.into())),
+                    vec![super::pop(NumType::I32).val],
+                ),
+                StackType::nop(),
+            ),
+        ])
     }
 }
 

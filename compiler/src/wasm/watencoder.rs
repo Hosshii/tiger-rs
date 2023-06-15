@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use super::{
     ast::{
         BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Import, Index, InlineFuncExport, Instruction, Local, Module, Mut, Name,
-        NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
+        GlobalType, Import, Index, InlineFuncExport, Instruction, Limits, Local, Memory, Module,
+        Mut, Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -312,6 +312,10 @@ impl Encode for Operator {
                 sink.push_str("global.get ");
                 var.encode(sink);
             }
+            Operator::GlobalSet(var) => {
+                sink.push_str("global.set ");
+                var.encode(sink);
+            }
             Operator::LocalGet(var) => {
                 sink.push_str("local.get ");
                 var.encode(sink);
@@ -511,6 +515,34 @@ impl Encode for GlobalType {
     }
 }
 
+impl Encode for Limits {
+    fn encode(&self, sink: &mut String) {
+        match self.max {
+            Some(max) => {
+                sink.push('(');
+                self.min.encode(sink);
+                sink.push(' ');
+                max.encode(sink);
+                sink.push(')');
+            }
+            None => self.min.encode(sink),
+        }
+    }
+}
+
+impl Encode for Memory {
+    fn encode(&self, sink: &mut String) {
+        sink.push_str("(memory ");
+        if let Some(name) = &self.name {
+            sink.push('$');
+            name.encode(sink);
+        }
+        sink.push(' ');
+        self.ty.encode(sink);
+        sink.push(')');
+    }
+}
+
 impl Encode for Module {
     fn encode(&self, sink: &mut String) {
         sink.push_str("(module\n");
@@ -524,6 +556,7 @@ impl Encode for Module {
         sink.push('\n');
         MultiLine::from(self.globals.as_slice()).encode(sink);
         sink.push('\n');
+        MultiLine::from(self.memories.as_slice()).encode(sink);
         sink.push(')');
     }
 }
