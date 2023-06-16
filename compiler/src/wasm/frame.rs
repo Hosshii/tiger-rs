@@ -27,20 +27,20 @@ impl Param {
 pub struct Frame {
     name: Label,
     pointer: usize,
-    local_count: usize, // 0 indexed
+    locals: Vec<Local>,
     formals: Vec<Access>,
     env: Access,
 }
 
 impl Frame {
-    const WORD_SIZE: usize = 4;
+    pub const WORD_SIZE: usize = 4;
 
     // 0 param is env
     pub fn new(name: Label, formals: Vec<(bool, ValType)>) -> Self {
         let mut frame = Self {
             name,
             pointer: 0,
-            local_count: 0,
+            locals: Vec::new(),
             formals: vec![],
             env: Access::Param(Param::new(0, ValType::Num(NumType::I32))),
         };
@@ -58,9 +58,10 @@ impl Frame {
             self.pointer += super::size(&ty);
             Access::Frame(self.pointer, ty)
         } else {
-            let count = self.local_count;
-            self.local_count += 1;
-            Access::Local(Local::new(count, ty))
+            let count = self.locals.len();
+            let local = Local::new(count, ty);
+            self.locals.push(local);
+            Access::Local(local)
         }
     }
 
@@ -71,6 +72,12 @@ impl Frame {
         } else {
             Access::Param(Param::new(index, ty))
         }
+    }
+
+    pub(super) fn init_local(&mut self, is_escape: bool, expr: ExprType) -> (Access, ExprType) {
+        let access = self.alloc_local(is_escape, expr.ty.result[0]);
+        let expr = self.store2access(&access, Self::fp(), expr);
+        (access, expr)
     }
 
     pub fn aligned_ptr(&self) -> usize {
@@ -96,9 +103,10 @@ impl Frame {
     }
 
     pub fn ast_locals(&self) -> Vec<AstLocal> {
-        (0..self.local_count)
-            .map(|_| AstLocal {
-                type_: ValType::Num(NumType::I64),
+        self.locals
+            .iter()
+            .map(|local| AstLocal {
+                type_: local.1,
                 name: None,
             })
             .collect()
@@ -169,30 +177,39 @@ impl Frame {
         expr: ExprType,
     ) -> ExprType {
         base_addr.assert_ty(StackType::const_1_i32());
-        expr.assert_ty(StackType::const_1_i64());
+        assert!(expr.ty.is_const_1());
 
         let expr = match access {
-            Access::Frame(val, ValType::Num(n)) => Expr::OpExpr(
-                Operator::Store(*n),
-                vec![
-                    Expr::OpExpr(
-                        Operator::Bin(NumType::I32, BinOp::Sub),
-                        vec![
-                            base_addr.val,
-                            Expr::Op(Operator::Const(NumType::I32, *val as i64)),
-                        ],
-                    ),
-                    expr.val,
-                ],
-            ),
-            Access::Local(local) => Expr::OpExpr(
-                Operator::LocalSet(self.local_as_index(local)),
-                vec![expr.val],
-            ),
-            Access::Param(param) => Expr::OpExpr(
-                Operator::LocalSet(self.param_as_index(param)),
-                vec![expr.val],
-            ),
+            Access::Frame(val, val_ty @ ValType::Num(n)) => {
+                expr.assert_ty(StackType::const_(vec![*val_ty]));
+                Expr::OpExpr(
+                    Operator::Store(*n),
+                    vec![
+                        Expr::OpExpr(
+                            Operator::Bin(NumType::I32, BinOp::Sub),
+                            vec![
+                                base_addr.val,
+                                Expr::Op(Operator::Const(NumType::I32, *val as i64)),
+                            ],
+                        ),
+                        expr.val,
+                    ],
+                )
+            }
+            Access::Local(local) => {
+                assert_eq!(local.1, expr.ty.result[0]);
+                Expr::OpExpr(
+                    Operator::LocalSet(self.local_as_index(local)),
+                    vec![expr.val],
+                )
+            }
+            Access::Param(param) => {
+                assert_eq!(param.1, expr.ty.result[0]);
+                Expr::OpExpr(
+                    Operator::LocalSet(self.param_as_index(param)),
+                    vec![expr.val],
+                )
+            }
         }
         .add_comment("store2access");
 
@@ -287,6 +304,14 @@ impl Frame {
         ])
         .add_comment("proc_entry_exit3")
     }
+
+    pub(super) fn extern_call(name: &str, args: Vec<ExprType>, ret_ty: Vec<ValType>) -> ExprType {
+        let expr = Expr::OpExpr(
+            Operator::Call(Index::Name(name.into())),
+            args.into_iter().map(|e| e.val).collect(),
+        );
+        ExprType::new(expr, StackType::const_(ret_ty))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -294,4 +319,22 @@ pub enum Access {
     Frame(usize, ValType),
     Local(Local),
     Param(Param),
+}
+
+pub trait Size {
+    fn byte_size(&self) -> usize;
+    fn word_size(&self) -> usize {
+        assert!(self.byte_size() % Frame::WORD_SIZE == 0);
+        self.byte_size() / Frame::WORD_SIZE
+    }
+}
+
+impl Size for NumType {
+    fn byte_size(&self) -> usize {
+        match self {
+            NumType::I32 => 4,
+            NumType::I64 => 8,
+            _ => unimplemented!(),
+        }
+    }
 }

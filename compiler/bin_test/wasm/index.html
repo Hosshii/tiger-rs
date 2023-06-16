@@ -7,10 +7,16 @@
 </head>
 <body>
   <script>
-    WebAssembly.instantiateStreaming(fetch("test.wasm"))
-      .then(obj => {
-        console.log(obj.instance.exports._start());  
-      });
+    WebAssembly.instantiateStreaming(fetch("cdylib.wasm"))
+      .then(from_rust => {
+        const importObj = {
+          env: from_rust.instance.exports
+        }
+        WebAssembly.instantiateStreaming(fetch("test.wasm"), importObj)
+          .then(obj => {
+            console.log(obj.instance.exports._start());  
+        });
+      })
   </script>
 </body>
 </html>

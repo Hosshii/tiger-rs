@@ -21,6 +21,34 @@ pub extern "C" fn initArray(size: TigerInt) -> *mut TigerArray {
     }))
 }
 
+#[no_mangle]
+/// # Safety
+/// addr must be valid
+pub unsafe extern "C" fn loadi32(addr: *const i32) -> i32 {
+    unsafe { core::ptr::read_unaligned(addr) }
+}
+
+#[no_mangle]
+/// # Safety
+/// addr must be valid
+pub unsafe extern "C" fn loadi64(addr: *const i64) -> i64 {
+    unsafe { core::ptr::read_unaligned(addr) }
+}
+
+#[no_mangle]
+/// # Safety
+/// addr must be valid
+pub unsafe extern "C" fn storei32(addr: *mut i32, val: i32) {
+    unsafe { core::ptr::write_unaligned(addr, val) }
+}
+
+#[no_mangle]
+/// # Safety
+/// addr must be valid
+pub unsafe extern "C" fn storei64(addr: *mut i64, val: i64) {
+    unsafe { core::ptr::write_unaligned(addr, val) }
+}
+
 #[repr(C)]
 pub struct TigerRecord {
     len: TigerInt,

@@ -10,6 +10,7 @@ pub mod rewrite;
 mod watencoder;
 pub use encode::Encoder as WasmEncoder;
 pub use watencoder::Encoder as WatEncoder;
+mod builtin;
 
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -26,16 +27,20 @@ use crate::{
         },
         types::Type,
     },
-    wasm::ast::{InlineFuncExport, TypeUse},
+    wasm::{
+        ast::{InlineFuncExport, TypeUse},
+        builtin::{STORE_I32, STORE_I64},
+    },
 };
 
 use self::{
     ast::{
-        BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Index, Instruction,
-        Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator, Param, TestOp,
-        ValType, WasmResult,
+        BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Import, ImportKind,
+        Index, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator,
+        Param, TestOp, ValType,
     },
-    frame::{Access as FrameAccess, Frame},
+    builtin::{BUILTIN_FUNCS, INIT_ARRAY, LOAD_I32, LOAD_I64},
+    frame::{Access as FrameAccess, Frame, Size},
 };
 
 type ExprType = WithType<Expr>;
@@ -55,6 +60,13 @@ impl ExprType {
         Self {
             val: expr,
             ty: StackType::const_(result),
+        }
+    }
+
+    pub fn new_const_1(expr: Expr, result: ValType) -> Self {
+        Self {
+            val: expr,
+            ty: StackType::new_const_1(result),
         }
     }
 
@@ -93,6 +105,10 @@ impl StackType {
 
     pub fn const_(result: Vec<ValType>) -> Self {
         Self::new(Vec::new(), result)
+    }
+
+    pub fn new_const_1(result: ValType) -> Self {
+        Self::new(Vec::new(), vec![result])
     }
 
     pub fn nop() -> Self {
@@ -166,6 +182,8 @@ const STACK_ADDR: i64 = 1048576;
 const FRAME_PTR: &str = "frame_ptr";
 const FRAME_ADDR: i64 = 0;
 
+const JS_OBJECT_NAME: &str = "env";
+
 pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new(tcx);
     let outermost_level = Level::outermost_with_name(MAIN_SYMBOL);
@@ -197,12 +215,26 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
         ty: Limits { min: 16, max: None },
     };
 
+    let builtin = [INIT_ARRAY, LOAD_I32, LOAD_I64, STORE_I32, STORE_I64];
+
+    let imports = builtin
+        .map(|name| Import {
+            module: JS_OBJECT_NAME.to_string(),
+            name: name.to_string(),
+            kind: ImportKind::Func(
+                Some(Index::Name(name.into())),
+                TypeUse::Inline(BUILTIN_FUNCS[name].clone()),
+            ),
+        })
+        .to_vec();
+
     let builder = ModuleBuilder::new();
 
     builder
         .add_funcs(funcs)
         .add_globals(globals)
         .add_memory(memory)
+        .add_imports(imports)
         .build()
 }
 
@@ -321,12 +353,18 @@ impl<'tcx> Wasm<'tcx> {
             ExprKind::Op(op, lhs, rhs, _) => {
                 let lhs = self.trans_expr(lhs, level.clone());
                 let rhs = self.trans_expr(rhs, level);
-                bin_op_i64((*op).try_into().unwrap(), lhs, rhs).add_comment("bin op")
+                bin_op((*op).try_into().unwrap(), lhs, rhs).add_comment("bin op")
             }
 
             ExprKind::Neg(_, _) => todo!(),
             ExprKind::RecordCreation(_, _, _) => todo!(),
-            ExprKind::ArrayCreation { .. } => todo!(),
+            ExprKind::ArrayCreation { size, init, .. } => {
+                let size = self.trans_expr(size, level.clone());
+                let size = i64_2_i32(size);
+                let init = self.trans_expr(init, level.clone());
+                let mut frame = level.frame_mut();
+                array_creation(&mut frame, size, init).add_comment("array creation")
+            }
             ExprKind::Assign(lvalue, expr, _) => {
                 let expr = self.trans_expr(expr, level.clone());
                 self.store_lvalue(lvalue, level, expr).add_comment("assign")
@@ -383,20 +421,48 @@ impl<'tcx> Wasm<'tcx> {
 
     fn load_lvalue(&mut self, lvalue: &HirLValue, level: Level) -> ExprType {
         match lvalue {
-            HirLValue::Var(_, var_id, _, _) => {
+            HirLValue::Var(_, var_id, type_id, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
                 let env = calc_static_link(level.clone(), ancestor_level.clone());
                 let frame = level.frame();
-                frame.get_access_content(access, env, NumType::I64)
+                let ty = self.tcx.type_(*type_id);
+                let ValType::Num(ty) = convert_ty(ty);
+                frame.get_access_content(access, env, ty)
             }
             HirLValue::RecordField { .. } => todo!(),
-            HirLValue::Array { .. } => todo!(),
+            HirLValue::Array {
+                array,
+                index,
+                array_type,
+                ..
+            } => {
+                let Type::Array { ty, ..} = self.tcx.type_(*array_type) else {
+                    unreachable!("not array");
+                };
+                let ty = self.tcx.type_(*ty);
+                let val_type @ ValType::Num(num_ty) = convert_ty(ty);
+
+                let var = self.load_lvalue(array, level.clone());
+                let subscript = self.trans_expr(index, level);
+                let subscript = i64_2_i32(subscript);
+
+                let load_fn = match num_ty {
+                    NumType::I32 => LOAD_I32,
+                    NumType::I64 => LOAD_I64,
+                    _ => unimplemented!(),
+                };
+                Frame::extern_call(
+                    load_fn,
+                    vec![array_subscript(num_ty, var, subscript)],
+                    vec![val_type],
+                )
+            }
         }
     }
 
     fn trans_decl(&mut self, decl: &Decl, parent_level: Level) -> Option<ExprType> {
         match decl {
-            Decl::Type(_) => todo!(),
+            Decl::Type(_) => None,
             Decl::Var(VarDecl(_, var_id, is_escape, _, ty_id, expr, _)) => {
                 let expr = self.trans_expr(expr, parent_level.clone());
 
@@ -504,7 +570,7 @@ fn format_label(label: &Label) -> String {
             if s == "exit" {
                 "_tiger_exit".to_string()
             } else {
-                format!("_{}", label)
+                format!("{}", label)
             }
         }
     }
@@ -550,12 +616,15 @@ fn num_i64(v: i64) -> ExprType {
     ExprType::new_const_1_i64(Expr::Op(Operator::Const(NumType::I64, v)))
 }
 
-fn bin_op_i64(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
-    lhs.assert_ty(StackType::const_1_i64());
-    rhs.assert_ty(StackType::const_1_i64());
+fn bin_op(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
+    lhs.assert_eq_ty(&rhs);
+    assert!(lhs.ty.is_const_1());
+    assert!(rhs.ty.is_const_1());
 
-    let ty = match op {
-        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::DivSigned => NumType::I64,
+    let ValType::Num(operand_ty) = lhs.ty.result[0];
+
+    let result_ty = match op {
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::DivSigned => operand_ty,
         BinOp::Eq
         | BinOp::Ne
         | BinOp::LessThanSigned
@@ -563,9 +632,10 @@ fn bin_op_i64(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
         | BinOp::GreaterThanSigned
         | BinOp::GreaterOrEqualSigned => NumType::I32,
     };
+
     ExprType::new_const_(
-        Expr::OpExpr(Operator::Bin(NumType::I64, op), vec![lhs.val, rhs.val]),
-        vec![ValType::Num(ty)],
+        Expr::OpExpr(Operator::Bin(operand_ty, op), vec![lhs.val, rhs.val]),
+        vec![ValType::Num(result_ty)],
     )
 }
 
@@ -780,6 +850,179 @@ fn fn_call(
         args,
     );
     ExprType::new(expr, ret_ty)
+}
+
+/// `arrtype [size] of init`
+///  Will be converted as follows.
+/// ```tiger
+/// let
+///     var arr := initArray(size);
+///     var idx := 0;
+/// in
+///    while (idx < size) do (
+///        arr[idx] := init;
+///        idx := idx + 1;
+///    );
+///    arr
+/// end
+/// ```
+///
+/// (local $size i32) (local $arr i32) (local $init (typeof `init`)) (local $idx i32)
+///     local.set $size `size`
+///     local.set $arr (call $initArray
+///         (i32.mul (local.get $size) (word_size_of `arrtype`)))
+///     local.set $init `init`
+///     local.set $idx (i32.const 0)
+///     while (i32.lt_u (local.get $idx) (local.get $size)) do (
+///         call $store_`type of init` (array_subscript, init)
+///         local.set $idx (i32.add (local.get $idx) (i32.const 1))
+///
+/// The type of `arr` is `&TigerArray`.
+fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType {
+    size.assert_ty(StackType::const_1_i32());
+
+    let mut exprs = Vec::new();
+
+    // initialize `size: i32`
+    let size_ty = size.ty.result[0];
+    let ValType::Num(size_num_ty) = size_ty;
+    let (size_access, store2size) = frame.init_local(false, size);
+    exprs.push(store2size);
+
+    let (word_size_access, store2word_size) = frame.init_local(
+        false,
+        frame.get_access_content(&size_access, Frame::fp(), size_num_ty),
+    );
+    exprs.push(store2word_size);
+
+    // initialize `init`
+    let init_ty @ ValType::Num(init_num_ty) = init.ty.result[0];
+    let init_access = frame.alloc_local(false, init_ty);
+    let store2init = frame.store2access(&init_access, Frame::fp(), init);
+    exprs.push(store2init);
+
+    // initialize `arr: *TigerArray`,
+    let arr = Frame::extern_call(
+        INIT_ARRAY,
+        vec![bin_op(
+            BinOp::Mul,
+            frame.get_access_content(&word_size_access, Frame::fp(), size_num_ty),
+            ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+                size_num_ty,
+                init_num_ty.word_size() as i64,
+            ))),
+        )],
+        vec![ValType::Num(NumType::I32)],
+    );
+    let (arr_access, store2arr) = frame.init_local(false, arr);
+    exprs.push(store2arr);
+
+    // initialize `idx`: i32
+    let idx_num_ty = NumType::I32;
+    let idx_ty = ValType::Num(idx_num_ty);
+    let (idx_access, store2idx) = frame.init_local(
+        false,
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(idx_num_ty, 0))),
+    );
+    exprs.push(store2idx);
+    assert_eq!(idx_num_ty, size_num_ty);
+
+    // idx < size
+    let cond = bin_op(
+        BinOp::LessThanSigned,
+        frame.get_access_content(&idx_access, Frame::fp(), idx_num_ty),
+        frame.get_access_content(&size_access, Frame::fp(), size_num_ty),
+    );
+
+    //     arr[idx] := init;
+    let load_arr = frame.get_access_content(&arr_access, Frame::fp(), NumType::I32);
+    let load_idx = frame.get_access_content(&idx_access, Frame::fp(), idx_num_ty);
+    let ValType::Num(init_ty) = init_ty;
+
+    let store_fn = match init_ty {
+        NumType::I32 => STORE_I32,
+        NumType::I64 => STORE_I64,
+        _ => unimplemented!(),
+    };
+
+    let body1 = Frame::extern_call(
+        store_fn,
+        vec![
+            array_subscript(init_num_ty, load_arr, load_idx),
+            frame.get_access_content(&init_access, Frame::fp(), init_ty),
+        ],
+        vec![],
+    );
+
+    // idx := idx + 1;
+    let body2 = frame.store2access(
+        &idx_access,
+        Frame::fp(),
+        bin_op(
+            BinOp::Add,
+            frame.get_access_content(&idx_access, Frame::fp(), idx_num_ty),
+            ExprType::new_const_1(Expr::Op(Operator::Const(idx_num_ty, 1)), idx_ty),
+        ),
+    );
+
+    let body = ExprType::new(expr_seq(vec![body1, body2]).val, StackType::nop());
+
+    let w = while_expr(cond, body);
+    exprs.push(w);
+
+    let load_arr = frame.get_access_content(&arr_access, Frame::fp(), NumType::I32);
+    exprs.push(load_arr);
+
+    expr_seq(exprs)
+}
+
+/// `arr_content_ty` is type of `arr[idx]`.
+/// `var` is address of array.
+/// `subscript` is index of array.
+/// push address of `arr[idx]` on stack top
+///
+/// pub struct TigerArray {
+///     len: TigerInt,
+///     data: *mut TigerInt,
+/// }
+fn array_subscript(arr_content_ty: NumType, var: ExprType, subscript: ExprType) -> ExprType {
+    var.assert_ty(StackType::const_1_i32());
+    subscript.assert_ty(StackType::const_1_i32());
+
+    // addr of `TigerArray.data`
+    let addr_of_data = bin_op(
+        BinOp::Add,
+        var,
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(NumType::I32, 4))),
+    );
+
+    // `data`: *mut TIgerInt
+    let data = Frame::extern_call(
+        LOAD_I32,
+        vec![addr_of_data],
+        vec![ValType::Num(NumType::I32)],
+    );
+
+    // data + subscript * 8
+
+    let e = Expr::OpExpr(
+        Operator::Bin(NumType::I32, BinOp::Add),
+        vec![
+            data.val,
+            Expr::OpExpr(
+                Operator::Bin(NumType::I32, BinOp::Mul),
+                vec![
+                    subscript.val,
+                    Expr::Op(Operator::Const(
+                        NumType::I32,
+                        8 * arr_content_ty.word_size() as i64,
+                    )),
+                ],
+            ),
+        ],
+    );
+
+    ExprType::new(e, StackType::const_1_i32())
 }
 
 #[cfg(test)]

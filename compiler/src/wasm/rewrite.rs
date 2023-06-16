@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use super::ast::{
-    BlockType, Export, ExportKind, Expr, Func, FuncTypeDef, Index, Instruction, Module, Name,
-    Operator, TypeUse,
+    BlockType, Export, ExportKind, Expr, Func, FuncTypeDef, ImportKind, Index, Instruction, Module,
+    Name, Operator, TypeUse,
 };
 
 pub(super) struct Rewriter {
     types: Vec<FuncTypeDef>,
-    export: Vec<Export>,
+    exports: Vec<Export>,
     // local_name_map: HashMap<Name, Index>,
     global_name_map: HashMap<Name, Index>,
     func_name_map: HashMap<Name, Index>,
@@ -17,7 +17,7 @@ impl Rewriter {
     pub fn new() -> Self {
         Self {
             types: Vec::new(),
-            export: Vec::new(),
+            exports: Vec::new(),
             // local_name_map: HashMap::new(),
             global_name_map: HashMap::new(),
             func_name_map: HashMap::new(),
@@ -28,37 +28,68 @@ impl Rewriter {
         self.types.len() as u32
     }
 
+    fn insert_global_name(&mut self, name: Name) -> Index {
+        let idx = Index::Index(self.global_name_map.len() as u32);
+        let global = self.global_name_map.insert(name, idx.clone());
+        assert!(global.is_none());
+        idx
+    }
+
+    fn insert_func_name(&mut self, name: Name) -> Index {
+        let idx = Index::Index(self.func_name_map.len() as u32);
+        let func = self.func_name_map.insert(name, idx.clone());
+        assert!(func.is_none());
+        idx
+    }
+
     pub fn rewrite(&mut self, module: &mut Module) {
+        self.types.append(&mut module.types);
+        self.exports.append(&mut module.exports);
+
         // firstly, decide global index
-        for (idx, global) in module.globals.iter().enumerate() {
+        for global in module.globals.iter() {
             if let Some(ref name) = global.name {
-                self.global_name_map
-                    .insert(name.clone(), Index::Index(idx as u32));
+                self.insert_global_name(name.clone());
             }
         }
 
-        // secondly, decide func index
-        for (idx, func) in module.funcs.iter().enumerate() {
+        // secondly, decide import func index
+        for func in module.imports.iter_mut() {
+            if let ImportKind::Func(Some(Index::Name(name)), ty_use) = &func.kind {
+                let idx = self.insert_func_name(name.clone());
+
+                func.kind = ImportKind::Func(Some(idx), ty_use.clone());
+            }
+
+            if let ImportKind::Func(ref name, TypeUse::Inline(ref t)) = func.kind {
+                let idx = self.fn_type_idx();
+                self.types.push(FuncTypeDef {
+                    name: None,
+                    ty: t.clone(),
+                });
+
+                func.kind = ImportKind::Func(name.clone(), TypeUse::Index(Index::Index(idx)));
+            }
+        }
+
+        // thirdly, decide func index
+        for func in module.funcs.iter() {
             if let Some(ref name) = func.name {
-                self.func_name_map
-                    .insert(name.clone(), Index::Index(idx as u32));
+                self.insert_func_name(name.clone());
             }
         }
 
-        std::mem::swap(&mut self.types, &mut module.types);
-        std::mem::swap(&mut self.export, &mut module.exports);
-
-        for (idx, func) in module.funcs.iter_mut().enumerate() {
-            self.rewrite_func(func, idx);
+        for func in module.funcs.iter_mut() {
+            self.rewrite_func(func);
         }
 
         module.types.append(&mut self.types);
-        module.exports.append(&mut self.export);
+        module.exports.append(&mut self.exports);
     }
 
-    fn rewrite_func(&mut self, func: &mut Func, fn_idx: usize) {
-        match func.ty {
-            TypeUse::Index(_) => (),
+    fn rewrite_func(&mut self, func: &mut Func) {
+        let func_ty_indx = match func.ty {
+            TypeUse::Index(ref n) => n.clone(),
             TypeUse::Inline(ref ty) => {
                 let idx = self.fn_type_idx();
                 self.types.push(FuncTypeDef {
@@ -66,13 +97,14 @@ impl Rewriter {
                     ty: ty.clone(),
                 });
                 func.ty = TypeUse::Index(Index::Index(idx));
+                Index::Index(idx)
             }
-        }
+        };
 
         if let Some(ref export) = func.export {
-            self.export.push(Export {
+            self.exports.push(Export {
                 name: export.name.clone(),
-                kind: ExportKind::Func(Index::Index(fn_idx as u32)),
+                kind: ExportKind::Func(func_ty_indx),
             });
         }
 

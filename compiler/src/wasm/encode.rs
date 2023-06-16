@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use super::{
     ast::{
         BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Index, Instruction, Limits, Local, Memory, Module, Mut, Name, NumType,
-        Operator, Param, TestOp, TypeUse, ValType, WasmResult,
+        GlobalType, Import, ImportKind, Index, Instruction, Limits, Local, Memory, Module, Mut,
+        Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -422,6 +422,25 @@ impl Encode for ExportKind {
     }
 }
 
+impl Encode for Import {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.module.encode(sink);
+        self.name.encode(sink);
+        self.kind.encode(sink);
+    }
+}
+
+impl Encode for ImportKind {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        match self {
+            ImportKind::Func(_, ty) => {
+                sink.push(0x00);
+                ty.encode(sink);
+            }
+        }
+    }
+}
+
 impl Encode for Global {
     fn encode(&self, sink: &mut Vec<u8>) {
         self.ty.encode(sink);
@@ -511,6 +530,7 @@ impl Module {
 impl Encode for Module {
     fn encode(&self, sink: &mut Vec<u8>) {
         Module::section_list(SectionId::Type, self.types.as_slice(), sink);
+        Module::section_list(SectionId::Import, self.imports.as_slice(), sink);
 
         let func_tys = self.funcs.iter().map(|f| &f.ty).collect::<Vec<_>>();
         Module::section_list(SectionId::Function, func_tys.as_slice(), sink);

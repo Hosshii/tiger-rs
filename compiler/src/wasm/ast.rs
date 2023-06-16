@@ -17,7 +17,7 @@ impl<T: Into<String>> From<T> for Name {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub enum NumType {
     I32,
     I64,
@@ -25,15 +25,15 @@ pub enum NumType {
     F64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub enum ValType {
     Num(NumType),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BlockType(pub TypeUse<FuncType>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FuncType {
     pub params: Vec<Param>,
     pub result: Vec<WasmResult>,
@@ -45,7 +45,7 @@ impl FuncType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOp {
     Add,
     Sub,
@@ -80,23 +80,23 @@ impl TryFrom<HirOperator> for BinOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Sign {
     Singed,
     Unsigned,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CvtOp {
     Wrap,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TestOp {
     Eqz,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     Comment(String, Box<Expr>),
     Op(Operator),
@@ -118,13 +118,13 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Instruction {
     Expr(Expr),
     Op(Operator),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Operator {
     Br(Index),
     BrIf(Index),
@@ -143,7 +143,7 @@ pub enum Operator {
     Drop,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Index {
     Index(IndexNumber),
     Name(Name),
@@ -155,16 +155,16 @@ impl From<IndexNumber> for Index {
     }
 }
 
-type IndexNumber = u32;
+pub type IndexNumber = u32;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 
 pub enum TypeUse<T> {
     Index(Index),
     Inline(T),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InlineFuncExport {
     pub name: Name,
 }
@@ -175,7 +175,7 @@ impl InlineFuncExport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Func {
     pub name: Option<Name>,
     pub ty: TypeUse<FuncType>,
@@ -202,7 +202,7 @@ impl Func {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
     pub type_: ValType,
     pub name: Option<Name>,
@@ -223,7 +223,7 @@ impl From<ValType> for Param {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WasmResult(pub ValType);
 
 impl WasmResult {
@@ -238,61 +238,61 @@ impl From<ValType> for WasmResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
     pub type_: ValType,
     pub name: Option<Name>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FuncTypeDef {
     pub name: Option<Name>,
     pub ty: FuncType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Import {
-    pub str1: String,
-    pub str2: String,
+    pub module: String,
+    pub name: String,
     pub kind: ImportKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ImportKind {
-    Func(Option<Name>, FuncType),
+    Func(Option<Index>, TypeUse<FuncType>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Export {
     pub name: Name,
     pub kind: ExportKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExportKind {
     Func(Index),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Global {
     pub name: Option<Name>,
     pub ty: GlobalType,
     pub init: Expr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GlobalType {
     pub ty: ValType,
     pub m: Mut,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mut {
     Const,
     Var,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Memory {
     pub name: Option<Name>,
     pub ty: MemoryType,
@@ -300,13 +300,13 @@ pub struct Memory {
 
 pub type MemoryType = Limits;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Limits {
     pub min: u32,
     pub max: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Module {
     pub types: Vec<FuncTypeDef>,
     pub funcs: Vec<Func>,
@@ -361,6 +361,11 @@ impl ModuleBuilder {
 
     pub fn add_memory(mut self, memory: Memory) -> Self {
         self.module.memories.push(memory);
+        self
+    }
+
+    pub fn add_imports(mut self, imports: Vec<Import>) -> Self {
+        self.module.imports.extend(imports);
         self
     }
 }

@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use super::{
     ast::{
         BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Import, Index, InlineFuncExport, Instruction, Limits, Local, Memory, Module,
-        Mut, Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
+        GlobalType, Import, ImportKind, Index, InlineFuncExport, Instruction, Limits, Local,
+        Memory, Module, Mut, Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -324,7 +324,7 @@ impl Encode for Expr {
                     sink.push(' ');
                 }
                 block_ty.encode(sink);
-                sink.block(|sink| instr.encode(sink));
+                sink.block(|sink| MultiLine::new(instr).encode(sink));
             }
         }
         sink.push(')');
@@ -418,21 +418,26 @@ impl Encode for Index {
     fn encode(&self, sink: &mut Line) {
         match self {
             Index::Index(index) => index.encode(sink),
-            Index::Name(name) => panic!("unresolved name {}", name.0),
+            Index::Name(name) => {
+                sink.push('$');
+                name.encode(sink)
+            }
         }
     }
 }
 
-impl<T: Debug> Encode for TypeUse<T> {
+impl<T: Debug + Encode> Encode for TypeUse<T> {
     fn encode(&self, sink: &mut Line) {
-        sink.push_str("(type ");
         match self {
-            TypeUse::Index(index) => index.encode(sink),
+            TypeUse::Index(index) => {
+                sink.push_str("(type ");
+                index.encode(sink);
+                sink.push(')');
+            }
             TypeUse::Inline(type_) => {
-                panic!("unresolved type: {:?}", type_);
+                type_.encode(sink);
             }
         }
-        sink.push(')');
     }
 }
 
@@ -447,6 +452,12 @@ impl Encode for InlineFuncExport {
 impl Encode for Func {
     fn encode(&self, sink: &mut Line) {
         sink.push_str("(func ");
+        if let Some(ref name) = self.name {
+            sink.push('$');
+            name.encode(sink);
+            sink.push(' ');
+        }
+
         if let Some(ref export) = self.export {
             export.encode(sink);
         }
@@ -466,6 +477,7 @@ impl Encode for Param {
         if let Some(ref name) = self.name {
             sink.push('$');
             name.encode(sink);
+            sink.push(' ');
         }
         self.type_.encode(sink);
         sink.push(')');
@@ -506,8 +518,26 @@ impl Encode for FuncTypeDef {
 }
 
 impl Encode for Import {
-    fn encode(&self, _sink: &mut Line) {
-        todo!()
+    fn encode(&self, sink: &mut Line) {
+        sink.push_str("(import \"");
+        self.module.encode(sink);
+        sink.push_str("\" \"");
+        self.name.encode(sink);
+        sink.push_str("\" ");
+        self.kind.encode(sink);
+        sink.push(')');
+    }
+}
+
+impl Encode for ImportKind {
+    fn encode(&self, sink: &mut Line) {
+        match self {
+            ImportKind::Func(_, index) => {
+                sink.push_str("(func ");
+                index.encode(sink);
+                sink.push(')');
+            }
+        }
     }
 }
 
@@ -515,7 +545,7 @@ impl Encode for Export {
     fn encode(&self, sink: &mut Line) {
         sink.push_str("(export \"");
         self.name.encode(sink);
-        sink.push('"');
+        sink.push_str("\" ");
         self.kind.encode(sink);
         sink.push(')');
     }
@@ -593,18 +623,20 @@ impl Encode for Memory {
 impl Encode for Module {
     fn encode(&self, sink: &mut Line) {
         sink.push_str("(module");
+        sink.block(|sink| {
+            MultiLine::from(self.types.as_slice()).encode(sink);
+            sink.newline();
+            MultiLine::from(self.imports.as_slice()).encode(sink);
+            sink.newline();
+            MultiLine::from(self.funcs.as_slice()).encode(sink);
+            sink.newline();
+            MultiLine::from(self.exports.as_slice()).encode(sink);
+            sink.newline();
+            MultiLine::from(self.globals.as_slice()).encode(sink);
+            sink.newline();
+            MultiLine::from(self.memories.as_slice()).encode(sink);
+        });
         sink.newline();
-        MultiLine::from(self.types.as_slice()).encode(sink);
-        sink.newline();
-        MultiLine::from(self.funcs.as_slice()).encode(sink);
-        sink.newline();
-        MultiLine::from(self.imports.as_slice()).encode(sink);
-        sink.newline();
-        MultiLine::from(self.exports.as_slice()).encode(sink);
-        sink.newline();
-        MultiLine::from(self.globals.as_slice()).encode(sink);
-        sink.newline();
-        MultiLine::from(self.memories.as_slice()).encode(sink);
         sink.push(')');
     }
 }

@@ -31,12 +31,13 @@ assert_wasm(){
     local tmp_wasm="${script_dir}/wasm/test.wasm"
     local tmp_wat="${script_dir}/wasm/test.wat" # for debug
     local test_js="${script_dir}/wasm/test.js"
+    local rust_lib="${root_dir}/target/wasm32-unknown-unknown/release/cdylib.wasm"
 
     local bin="${root_dir}/target/release/tiger"
 
     $bin "$file" --arch wasm32-unknown-unknown > $tmp_wasm
     $bin "$file" --arch wasm32-unknown-unknown --wat > $tmp_wat
-    node ${test_js} $tmp_wasm $expected
+    node ${test_js} $tmp_wasm $rust_lib $expected
     if [ "$?" = "0" ]; then
         echo "$2: success!!"
     else
