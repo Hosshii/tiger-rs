@@ -18,15 +18,17 @@ use thiserror::Error;
 
 use crate::{
     codegen::{
-        aarch64_apple_darwin::ARM64 as ARM64Codegen, reg_alloc,
-        x86_64_apple_darwin::X86_64 as X86_64Codegen, Codegen,
+        aarch64_apple_darwin::ARM64 as ARM64AppleDarwinCodegen, reg_alloc,
+        x86_64_apple_darwin::X86_64 as X86_64AppleDarwinCodegen,
+        x86_64_linux_gnu::X86_64 as X86_64LinuxGnuCodegen, Codegen,
     },
     frame::{Fragment, Frame as _},
     semant::Semant,
 };
 
-pub const AARCH64_APPLE_DARWIN: PhantomData<ARM64Codegen> = PhantomData;
-pub const X86_64_APPLE_DARWIN: PhantomData<X86_64Codegen> = PhantomData;
+pub const AARCH64_APPLE_DARWIN: PhantomData<ARM64AppleDarwinCodegen> = PhantomData;
+pub const X86_64_APPLE_DARWIN: PhantomData<X86_64AppleDarwinCodegen> = PhantomData;
+pub const X86_64_LINUX_GNU: PhantomData<X86_64LinuxGnuCodegen> = PhantomData;
 
 pub fn compile<C, N, R, O>(
     filename: N,
