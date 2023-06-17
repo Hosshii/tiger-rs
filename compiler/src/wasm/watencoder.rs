@@ -408,7 +408,7 @@ impl Encode for Operator {
                 todo!()
             }
             Operator::Drop => {
-                todo!()
+                sink.push_str("drop");
             }
         }
     }

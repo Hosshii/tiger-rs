@@ -163,6 +163,10 @@ impl StackType {
     pub fn is_const_1(&self) -> bool {
         self.arg.is_empty() && self.result.len() == 1
     }
+
+    pub fn is_nop(&self) -> bool {
+        self.arg.is_empty() && self.result.is_empty()
+    }
 }
 
 impl From<StackType> for FuncType {
@@ -329,7 +333,7 @@ impl<'tcx> Wasm<'tcx> {
                     .iter()
                     .map(|expr| self.trans_expr(expr, level.clone()))
                     .collect();
-                expr_seq(exprs).add_comment("seq")
+                sequence(exprs).add_comment("seq")
             }
             ExprKind::Int(v, _) => num_i64(*v as i64).add_comment("int"),
             ExprKind::Str(_, _) => todo!(),
@@ -394,14 +398,15 @@ impl<'tcx> Wasm<'tcx> {
                     .flat_map(|v| self.trans_decl(v, level.clone()))
                     .collect::<Vec<_>>();
 
-                let mut exprs = exprs
+                let exprs = exprs
                     .iter()
                     .map(|v| self.trans_expr(v, level.clone()))
                     .collect::<Vec<_>>();
+                let exprs = sequence(exprs);
 
-                decls.append(&mut exprs);
+                decls.push(exprs);
 
-                expr_seq(decls).add_comment("expr seq")
+                concat_exprs(decls).add_comment("expr seq")
             }
         }
     }
@@ -655,7 +660,7 @@ fn _store_i64(addr: ExprType, val: ExprType) -> ExprType {
     )
 }
 
-fn expr_seq(exprs: Vec<ExprType>) -> ExprType {
+fn concat_exprs(exprs: Vec<ExprType>) -> ExprType {
     let len = exprs.len();
     let mut iter = exprs.into_iter();
     let Some(first) = iter.next() else {
@@ -737,6 +742,35 @@ fn while_expr(cond: ExprType, body: ExprType) -> ExprType {
     ExprType::new(body, stack_type)
 }
 
+/// discard result of exprs except last one.
+fn sequence(mut exprs: Vec<ExprType>) -> ExprType {
+    if exprs.is_empty() {
+        return nop();
+    }
+
+    let last = exprs.pop().unwrap();
+    let mut exprs = exprs
+        .into_iter()
+        .map(|expr| {
+            if expr.ty.is_const_1() {
+                drop_(expr)
+            } else if expr.ty.is_nop() {
+                expr
+            } else {
+                unimplemented!()
+            }
+        })
+        .collect::<Vec<_>>();
+    exprs.push(last);
+
+    concat_exprs(exprs)
+}
+
+fn drop_(expr: ExprType) -> ExprType {
+    let expr = Expr::OpExpr(Operator::Drop, vec![expr.val]);
+    ExprType::new(expr, StackType::nop())
+}
+
 fn i64_2_i32(expr: ExprType) -> ExprType {
     expr.assert_ty(StackType::const_1_i64());
 
@@ -787,7 +821,7 @@ fn push(expr: ExprType) -> ExprType {
     );
     let store_expr = ExprType::new(store_expr, StackType::nop());
 
-    expr_seq(vec![sub_stack_ptr, store_expr])
+    concat_exprs(vec![sub_stack_ptr, store_expr])
 }
 
 fn pop(ty: NumType) -> ExprType {
@@ -805,7 +839,7 @@ fn pop(ty: NumType) -> ExprType {
         BinOp::Add,
     );
 
-    expr_seq(vec![load_expr, add_stack_ptr])
+    concat_exprs(vec![load_expr, add_stack_ptr])
 }
 
 // $sp <- $sp `op` expr
@@ -965,7 +999,7 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
         ),
     );
 
-    let body = ExprType::new(expr_seq(vec![body1, body2]).val, StackType::nop());
+    let body = ExprType::new(concat_exprs(vec![body1, body2]).val, StackType::nop());
 
     let w = while_expr(cond, body);
     exprs.push(w);
@@ -973,7 +1007,7 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
     let load_arr = frame.get_access_content(&arr_access, Frame::fp(), NumType::I32);
     exprs.push(load_arr);
 
-    expr_seq(exprs)
+    concat_exprs(exprs)
 }
 
 /// `arr_content_ty` is type of `arr[idx]`.

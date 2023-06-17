@@ -246,12 +246,12 @@ impl Frame {
             })
             .chain([expr.add_comment("proc_entry_exit1 body")])
             .collect();
-        super::expr_seq(exprs).add_comment("proc_entry_exit1")
+        super::concat_exprs(exprs).add_comment("proc_entry_exit1")
     }
 
     /// prologue and epilogue
     pub(super) fn proc_entry_exit3(&self, expr: ExprType) -> ExprType {
-        super::expr_seq(vec![
+        super::concat_exprs(vec![
             // prologue
             // push rpb
             super::push(Self::fp()).add_comment("prologue start"),
