@@ -420,7 +420,35 @@ impl<'tcx> Wasm<'tcx> {
                 frame.store2access(access, env, expr)
             }
             HirLValue::RecordField { .. } => todo!(),
-            HirLValue::Array { .. } => todo!(),
+            HirLValue::Array {
+                array,
+                index,
+                array_type,
+                ..
+            } => {
+                let Type::Array { ty, ..} = self.tcx.type_(*array_type) else {
+                    unreachable!("not array");
+                };
+                let ty = self.tcx.type_(*ty);
+                let ValType::Num(num_ty) = convert_ty(ty);
+
+                let var = self.load_lvalue(array, level.clone());
+                let subscript = self.trans_expr(index, level);
+                let subscript = i64_2_i32(subscript);
+
+                let store_fn = match num_ty {
+                    NumType::I32 => STORE_I32,
+                    NumType::I64 => STORE_I64,
+                    _ => unimplemented!(),
+                };
+
+                assert_eq!(expr.ty.result[0], ValType::Num(num_ty));
+                Frame::extern_call(
+                    store_fn,
+                    vec![array_subscript(num_ty, var, subscript), expr],
+                    vec![],
+                )
+            }
         }
     }
 
