@@ -133,41 +133,26 @@ impl Frame {
         Index::Index(param.0 as u32)
     }
 
-    pub(super) fn get_access_content(
-        &self,
-        access: &Access,
-        base_addr: ExprType,
-        ret_ty: NumType,
-    ) -> ExprType {
+    pub(super) fn get_access_content(&self, access: &Access, base_addr: ExprType) -> ExprType {
         base_addr.assert_ty(StackType::const_1_i32());
 
         let expr = match access {
-            Access::Frame(val, ValType::Num(ty)) => {
-                assert_eq!(ty, &ret_ty);
-
-                Expr::OpExpr(
-                    Operator::Load(ret_ty),
-                    vec![Expr::OpExpr(
-                        Operator::Bin(NumType::I32, BinOp::Sub),
-                        vec![
-                            base_addr.val,
-                            Expr::Op(Operator::Const(NumType::I32, *val as i64)),
-                        ],
-                    )],
-                )
-            }
-            Access::Local(local) => {
-                assert_eq!(local.1, ValType::Num(ret_ty));
-                Expr::Op(Operator::LocalGet(self.local_as_index(local)))
-            }
-            Access::Param(param) => {
-                assert_eq!(param.1, ValType::Num(ret_ty));
-                Expr::Op(Operator::LocalGet(self.param_as_index(param)))
-            }
+            Access::Frame(val, ValType::Num(ty)) => Expr::OpExpr(
+                Operator::Load(*ty),
+                vec![Expr::OpExpr(
+                    Operator::Bin(NumType::I32, BinOp::Sub),
+                    vec![
+                        base_addr.val,
+                        Expr::Op(Operator::Const(NumType::I32, *val as i64)),
+                    ],
+                )],
+            ),
+            Access::Local(local) => Expr::Op(Operator::LocalGet(self.local_as_index(local))),
+            Access::Param(param) => Expr::Op(Operator::LocalGet(self.param_as_index(param))),
         }
         .add_comment("get_access_content");
 
-        ExprType::new_const_(expr, vec![ValType::Num(ret_ty)])
+        ExprType::new_const_(expr, vec![access.type_()])
     }
 
     pub(super) fn store2access(
@@ -321,6 +306,16 @@ pub enum Access {
     Param(Param),
 }
 
+impl Access {
+    pub fn type_(&self) -> ValType {
+        match self {
+            Access::Frame(_, ty) => *ty,
+            Access::Local(local) => local.1,
+            Access::Param(param) => param.1,
+        }
+    }
+}
+
 pub trait Size {
     fn byte_size(&self) -> usize;
     fn word_size(&self) -> usize {
@@ -335,6 +330,14 @@ impl Size for NumType {
             NumType::I32 => 4,
             NumType::I64 => 8,
             _ => unimplemented!(),
+        }
+    }
+}
+
+impl Size for ValType {
+    fn byte_size(&self) -> usize {
+        match self {
+            ValType::Num(ty) => ty.byte_size(),
         }
     }
 }

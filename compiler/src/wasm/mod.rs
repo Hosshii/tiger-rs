@@ -39,7 +39,7 @@ use self::{
         Index, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator,
         Param, TestOp, ValType,
     },
-    builtin::{BUILTIN_FUNCS, INIT_ARRAY, LOAD_I32, LOAD_I64},
+    builtin::{ALLOC_RECORD, BUILTIN_FUNCS, BUILTIN_FUNC_NAMES, INIT_ARRAY, LOAD_I32, LOAD_I64},
     frame::{Access as FrameAccess, Frame, Size},
 };
 
@@ -219,7 +219,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
         ty: Limits { min: 16, max: None },
     };
 
-    let builtin = [INIT_ARRAY, LOAD_I32, LOAD_I64, STORE_I32, STORE_I64];
+    let builtin = BUILTIN_FUNC_NAMES;
 
     let imports = builtin
         .map(|name| Import {
@@ -361,7 +361,13 @@ impl<'tcx> Wasm<'tcx> {
             }
 
             ExprKind::Neg(_, _) => todo!(),
-            ExprKind::RecordCreation(_, _, _) => todo!(),
+            ExprKind::RecordCreation(_, field, _) => {
+                let exprs = field
+                    .iter()
+                    .map(|v| self.trans_expr(&v.expr, level.clone()))
+                    .collect::<Vec<_>>();
+                record_creation(&mut level.frame_mut(), exprs)
+            }
             ExprKind::ArrayCreation { size, init, .. } => {
                 let size = self.trans_expr(size, level.clone());
                 let size = i64_2_i32(size);
@@ -419,7 +425,20 @@ impl<'tcx> Wasm<'tcx> {
                 let frame = level.frame();
                 frame.store2access(access, env, expr)
             }
-            HirLValue::RecordField { .. } => todo!(),
+            HirLValue::RecordField {
+                record,
+                field_index,
+                ..
+            } => {
+                let var = self.load_lvalue(record, level);
+                expr.assert_ty(StackType::const_1_i64());
+
+                Frame::extern_call(
+                    STORE_I64,
+                    vec![record_field(var, *field_index), expr],
+                    vec![],
+                )
+            }
             HirLValue::Array {
                 array,
                 index,
@@ -454,15 +473,25 @@ impl<'tcx> Wasm<'tcx> {
 
     fn load_lvalue(&mut self, lvalue: &HirLValue, level: Level) -> ExprType {
         match lvalue {
-            HirLValue::Var(_, var_id, type_id, _) => {
+            HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
                 let env = calc_static_link(level.clone(), ancestor_level.clone());
                 let frame = level.frame();
-                let ty = self.tcx.type_(*type_id);
-                let ValType::Num(ty) = convert_ty(ty);
-                frame.get_access_content(access, env, ty)
+
+                frame.get_access_content(access, env)
             }
-            HirLValue::RecordField { .. } => todo!(),
+            HirLValue::RecordField {
+                record,
+                field_index,
+                ..
+            } => {
+                let var = self.load_lvalue(record, level);
+                Frame::extern_call(
+                    LOAD_I64,
+                    vec![record_field(var, *field_index)],
+                    vec![ValType::Num(NumType::I64)],
+                )
+            }
             HirLValue::Array {
                 array,
                 index,
@@ -629,7 +658,7 @@ fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
     while cur_level != ancestor_level {
         let frame = cur_level.frame();
         let link_access = frame.env();
-        link = frame.get_access_content(link_access, link, NumType::I32);
+        link = frame.get_access_content(link_access, link);
         let parent = cur_level
             .0
             .borrow()
@@ -946,16 +975,9 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
     let mut exprs = Vec::new();
 
     // initialize `size: i32`
-    let size_ty = size.ty.result[0];
-    let ValType::Num(size_num_ty) = size_ty;
+    let size_num_ty = NumType::I32;
     let (size_access, store2size) = frame.init_local(false, size);
     exprs.push(store2size);
-
-    let (word_size_access, store2word_size) = frame.init_local(
-        false,
-        frame.get_access_content(&size_access, Frame::fp(), size_num_ty),
-    );
-    exprs.push(store2word_size);
 
     // initialize `init`
     let init_ty @ ValType::Num(init_num_ty) = init.ty.result[0];
@@ -963,16 +985,24 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
     let store2init = frame.store2access(&init_access, Frame::fp(), init);
     exprs.push(store2init);
 
+    // initialize `word_size: i32`
+    // word size of `init`
+    let (word_size_access, store2word_size) = frame.init_local(
+        false,
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+            NumType::I32,
+            init_ty.word_size() as i64,
+        ))),
+    );
+    exprs.push(store2word_size);
+
     // initialize `arr: *TigerArray`,
     let arr = Frame::extern_call(
         INIT_ARRAY,
         vec![bin_op(
             BinOp::Mul,
-            frame.get_access_content(&word_size_access, Frame::fp(), size_num_ty),
-            ExprType::new_const_1_i32(Expr::Op(Operator::Const(
-                size_num_ty,
-                init_num_ty.word_size() as i64,
-            ))),
+            frame.get_access_content(&word_size_access, Frame::fp()),
+            frame.get_access_content(&size_access, Frame::fp()),
         )],
         vec![ValType::Num(NumType::I32)],
     );
@@ -992,13 +1022,13 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
     // idx < size
     let cond = bin_op(
         BinOp::LessThanSigned,
-        frame.get_access_content(&idx_access, Frame::fp(), idx_num_ty),
-        frame.get_access_content(&size_access, Frame::fp(), size_num_ty),
+        frame.get_access_content(&idx_access, Frame::fp()),
+        frame.get_access_content(&size_access, Frame::fp()),
     );
 
     //     arr[idx] := init;
-    let load_arr = frame.get_access_content(&arr_access, Frame::fp(), NumType::I32);
-    let load_idx = frame.get_access_content(&idx_access, Frame::fp(), idx_num_ty);
+    let load_arr = frame.get_access_content(&arr_access, Frame::fp());
+    let load_idx = frame.get_access_content(&idx_access, Frame::fp());
     let ValType::Num(init_ty) = init_ty;
 
     let store_fn = match init_ty {
@@ -1011,7 +1041,7 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
         store_fn,
         vec![
             array_subscript(init_num_ty, load_arr, load_idx),
-            frame.get_access_content(&init_access, Frame::fp(), init_ty),
+            frame.get_access_content(&init_access, Frame::fp()),
         ],
         vec![],
     );
@@ -1022,7 +1052,7 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
         Frame::fp(),
         bin_op(
             BinOp::Add,
-            frame.get_access_content(&idx_access, Frame::fp(), idx_num_ty),
+            frame.get_access_content(&idx_access, Frame::fp()),
             ExprType::new_const_1(Expr::Op(Operator::Const(idx_num_ty, 1)), idx_ty),
         ),
     );
@@ -1032,7 +1062,7 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
     let w = while_expr(cond, body);
     exprs.push(w);
 
-    let load_arr = frame.get_access_content(&arr_access, Frame::fp(), NumType::I32);
+    let load_arr = frame.get_access_content(&arr_access, Frame::fp());
     exprs.push(load_arr);
 
     concat_exprs(exprs)
@@ -1041,7 +1071,7 @@ fn array_creation(frame: &mut Frame, size: ExprType, init: ExprType) -> ExprType
 /// `arr_content_ty` is type of `arr[idx]`.
 /// `var` is address of array.
 /// `subscript` is index of array.
-/// push address of `arr[idx]` on stack top
+/// return address of `arr[idx]` on stack top
 ///
 /// pub struct TigerArray {
 ///     len: TigerInt,
@@ -1065,7 +1095,8 @@ fn array_subscript(arr_content_ty: NumType, var: ExprType, subscript: ExprType) 
         vec![ValType::Num(NumType::I32)],
     );
 
-    // data + subscript * 8
+    // data + subscript * WORD_SIZE * data_word_size
+    // ex) data + subscript * 4 * 2 // i64
 
     let e = Expr::OpExpr(
         Operator::Bin(NumType::I32, BinOp::Add),
@@ -1077,7 +1108,7 @@ fn array_subscript(arr_content_ty: NumType, var: ExprType, subscript: ExprType) 
                     subscript.val,
                     Expr::Op(Operator::Const(
                         NumType::I32,
-                        8 * arr_content_ty.word_size() as i64,
+                        (Frame::WORD_SIZE * arr_content_ty.word_size()) as i64,
                     )),
                 ],
             ),
@@ -1085,6 +1116,69 @@ fn array_subscript(arr_content_ty: NumType, var: ExprType, subscript: ExprType) 
     );
 
     ExprType::new(e, StackType::const_1_i32())
+}
+
+/// `exprs` is address of record fields.
+/// for simplicity, all fields are i64.
+/// return address of record
+fn record_creation(frame: &mut Frame, exprs: Vec<ExprType>) -> ExprType {
+    let record_size: usize = exprs
+        .iter()
+        .map(|v| {
+            assert!(v.ty.is_const_1_i64());
+            v.ty.result[0].word_size()
+        })
+        .sum();
+    let record_size =
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(NumType::I32, record_size as i64)));
+
+    // TODO: ret_tyをBUILTIN[ALLOC_RECORD]とかにしたい
+    let record = Frame::extern_call(
+        ALLOC_RECORD,
+        vec![record_size],
+        vec![ValType::Num(NumType::I32)],
+    );
+
+    let (record_access, store2record) = frame.init_local(false, record);
+
+    let mut result = vec![store2record];
+
+    let init = exprs.into_iter().enumerate().map(|(idx, e)| {
+        let field_addr = record_field(frame.get_access_content(&record_access, Frame::fp()), idx);
+        Frame::extern_call(STORE_I64, vec![field_addr, e], vec![])
+    });
+    result.extend(init);
+
+    let load_record = frame.get_access_content(&record_access, Frame::fp());
+    result.push(load_record);
+
+    concat_exprs(result)
+}
+
+/// `var` is address of record.
+/// returns addr of `var.field_index`
+/// for simplicity, all fields are i64.
+fn record_field(var: ExprType, field_index: usize) -> ExprType {
+    var.assert_ty(StackType::const_1_i32());
+
+    // addr of `TigerArray.data`
+    let addr_of_data = bin_op(
+        BinOp::Add,
+        var,
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+            NumType::I32,
+            Frame::WORD_SIZE as i64,
+        ))),
+    );
+
+    bin_op(
+        BinOp::Add,
+        addr_of_data,
+        ExprType::new_const_1_i32(Expr::Op(Operator::Const(
+            NumType::I32,
+            (Frame::WORD_SIZE * NumType::I64.word_size() * field_index) as i64,
+        ))),
+    )
 }
 
 #[cfg(test)]
