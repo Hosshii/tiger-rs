@@ -1,6 +1,6 @@
 use std::{env, fs::File, io};
 
-use tiger::{AARCH64_APPLE_DARWIN, X86_64_APPLE_DARWIN};
+use tiger::{AARCH64_APPLE_DARWIN, X86_64_APPLE_DARWIN, X86_64_LINUX_GNU};
 
 fn main() {
     let mut args = env::args();
@@ -19,6 +19,7 @@ fn main() {
             tiger::compile(filename, file, io::stdout(), AARCH64_APPLE_DARWIN)
         }
         "x86_64-apple-darwin" => tiger::compile(filename, file, io::stdout(), X86_64_APPLE_DARWIN),
+        "x86_64-linux-gnu" => tiger::compile(filename, file, io::stdout(), X86_64_LINUX_GNU),
         x => panic!("unknown arch {}", x),
     };
 

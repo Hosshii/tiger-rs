@@ -2,6 +2,7 @@ use crate::{asm::Instruction, common::Label, frame::Frame, ir::Stmt};
 
 pub mod aarch64_apple_darwin;
 pub mod x86_64_apple_darwin;
+pub mod x86_64_linux_gnu;
 
 pub(super) mod color;
 pub(super) mod flow;
