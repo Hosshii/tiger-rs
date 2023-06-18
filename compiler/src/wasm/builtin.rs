@@ -17,6 +17,8 @@ pub const STORE_I32: &str = "storei32";
 pub const STORE_I64: &str = "storei64";
 pub const ALLOC_RECORD: &str = "allocRecord";
 pub const ALLOC_STRING: &str = "allocString";
+pub const STRING_ORD: &str = "stringOrd";
+pub const STRING_EQ: &str = "stringEqual";
 
 pub static BUILTIN_FUNCS: Lazy<HashMap<&'static str, FuncType>> = Lazy::new(|| {
     let builtin_funcs = [
@@ -72,6 +74,27 @@ pub static BUILTIN_FUNCS: Lazy<HashMap<&'static str, FuncType>> = Lazy::new(|| {
             ALLOC_STRING,
             FuncType {
                 params: vec![Param::new(ValType::Num(NumType::I32), None)],
+                result: vec![ValType::Num(NumType::I32).into()],
+            },
+        ),
+        (
+            STRING_ORD,
+            FuncType {
+                params: vec![
+                    Param::new(ValType::Num(NumType::I32), None),
+                    Param::new(ValType::Num(NumType::I32), None),
+                    Param::new(ValType::Num(NumType::I32), None),
+                ],
+                result: vec![ValType::Num(NumType::I32).into()],
+            },
+        ),
+        (
+            STRING_EQ,
+            FuncType {
+                params: vec![
+                    Param::new(ValType::Num(NumType::I32), None),
+                    Param::new(ValType::Num(NumType::I32), None),
+                ],
                 result: vec![ValType::Num(NumType::I32).into()],
             },
         ),

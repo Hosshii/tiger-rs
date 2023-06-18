@@ -24,7 +24,8 @@ use crate::{
         builtin::{IsBuiltin, BUILTIN_FUNCS as SEMANT_BUILDIN_FUNCS},
         ctx::{FnId, TyCtx, VarId},
         hir::{
-            Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram, VarDecl,
+            Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Operator as HirOperator,
+            Program as HirProgram, VarDecl,
         },
         types::{Type, TypeId},
     },
@@ -40,7 +41,10 @@ use self::{
         Index, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator,
         Param, TestOp, ValType,
     },
-    builtin::{ALLOC_RECORD, ALLOC_STRING, BUILTIN_FUNCS, INIT_ARRAY, LOAD_I32, LOAD_I64},
+    builtin::{
+        ALLOC_RECORD, ALLOC_STRING, BUILTIN_FUNCS, INIT_ARRAY, LOAD_I32, LOAD_I64, STRING_EQ,
+        STRING_ORD,
+    },
     frame::{Access as FrameAccess, Frame, Size},
 };
 
@@ -380,10 +384,48 @@ impl<'tcx> Wasm<'tcx> {
                 fn_call(entry.label(), fn_level.clone(), level, ret_ty, args_expr)
                     .add_comment("fn call")
             }
-            ExprKind::Op(op, lhs, rhs, _) => {
+            ExprKind::Op(
+                op @ (HirOperator::Plus
+                | HirOperator::Minus
+                | HirOperator::Mul
+                | HirOperator::Div
+                | HirOperator::And
+                | HirOperator::Or),
+                lhs,
+                rhs,
+                _,
+            ) => {
                 let lhs = self.trans_expr(lhs, level.clone());
                 let rhs = self.trans_expr(rhs, level);
                 bin_op((*op).try_into().unwrap(), lhs, rhs).add_comment("bin op")
+            }
+            // int and string
+            ExprKind::Op(
+                op @ (HirOperator::Le | HirOperator::Lt | HirOperator::Ge | HirOperator::Gt),
+                lhs,
+                rhs,
+                _,
+            ) => {
+                let lhs_ty = self.tcx.type_(lhs.ty);
+                let rhs_ty = self.tcx.type_(rhs.ty);
+                let lhs = self.trans_expr(lhs, level.clone());
+                let rhs = self.trans_expr(rhs, level);
+                match (lhs_ty, rhs_ty) {
+                    (Type::Int, Type::Int) => bin_op((*op).try_into().unwrap(), lhs, rhs),
+                    (Type::String, Type::String) => string_ord((*op).try_into().unwrap(), lhs, rhs),
+                    _ => unreachable!("ICE"),
+                }
+            }
+            // compare two type
+            ExprKind::Op(op @ (HirOperator::Eq | HirOperator::Neq), lhs, rhs, _) => {
+                let ty = lhs.ty;
+                let lhs = self.trans_expr(lhs, level.clone());
+                let rhs = self.trans_expr(rhs, level);
+                if ty == TypeId::STRING {
+                    string_eq((*op).try_into().unwrap(), lhs, rhs)
+                } else {
+                    bin_op((*op).try_into().unwrap(), lhs, rhs)
+                }
             }
 
             ExprKind::Neg(_, _) => todo!(),
@@ -725,6 +767,31 @@ fn bin_op(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
         Expr::OpExpr(Operator::Bin(operand_ty, op), vec![lhs.val, rhs.val]),
         vec![ValType::Num(result_ty)],
     )
+}
+
+fn string_ord(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
+    let n = match op {
+        BinOp::LessOrEqualSigned => 1,
+        BinOp::LessThanSigned => 2,
+        BinOp::GreaterOrEqualSigned => 3,
+        BinOp::GreaterThanSigned => 4,
+        _ => panic!("unexpected op"),
+    };
+
+    Frame::extern_call(
+        STRING_ORD,
+        vec![num(n, NumType::I32), lhs, rhs],
+        vec![ValType::Num(NumType::I32)],
+    )
+}
+
+fn string_eq(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
+    let call = Frame::extern_call(STRING_EQ, vec![lhs, rhs], vec![ValType::Num(NumType::I32)]);
+    match op {
+        BinOp::Eq => call,
+        BinOp::Ne => bin_op(BinOp::Sub, num(1, NumType::I32), call),
+        _ => unreachable!("ICE"),
+    }
 }
 
 fn nop() -> ExprType {
