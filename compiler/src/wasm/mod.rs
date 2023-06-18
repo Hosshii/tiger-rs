@@ -21,6 +21,7 @@ use std::{
 use crate::{
     common::Label,
     semant::{
+        builtin::{IsBuiltin, BUILTIN_FUNCS as SEMANT_BUILDIN_FUNCS},
         ctx::{FnId, TyCtx, VarId},
         hir::{
             Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram, VarDecl,
@@ -264,6 +265,10 @@ impl Level {
         ))))
     }
 
+    fn outermost() -> Self {
+        Level(Rc::new(RefCell::new(LevelInner::outermost())))
+    }
+
     fn outermost_with_name(name: impl Into<String>) -> Self {
         Level(Rc::new(RefCell::new(LevelInner::outermost_with_name(name))))
     }
@@ -293,6 +298,13 @@ struct LevelInner {
 }
 
 impl LevelInner {
+    fn outermost() -> Self {
+        Self {
+            frame: Frame::new(Label::new(), vec![]),
+            parent: None,
+        }
+    }
+
     fn outermost_with_name(name: impl Into<String>) -> Self {
         Self {
             frame: Frame::new(Label::NamedFn(name.into()), vec![]),
@@ -324,9 +336,15 @@ struct Wasm<'tcx> {
 
 impl<'tcx> Wasm<'tcx> {
     pub fn new(tcx: &'tcx TyCtx) -> Self {
+        let mut fn_env = HashMap::new();
+        // TODO
+        for (_, id, _, _) in SEMANT_BUILDIN_FUNCS {
+            fn_env.insert(*id, Level::outermost());
+        }
+
         Self {
             var_env: HashMap::new(),
-            fn_env: HashMap::new(),
+            fn_env,
             tcx,
             funcs: Vec::new(),
         }
@@ -351,7 +369,8 @@ impl<'tcx> Wasm<'tcx> {
             ExprKind::FuncCall(_, fn_id, args, _) => {
                 let entry = self.tcx.fn_(*fn_id);
                 let ret_ty = self.tcx.type_(entry.result());
-                let ret_ty = StackType::new(vec![], vec![convert_ty(ret_ty)]);
+                let ret_ty = convert_ty(ret_ty).into_iter().collect();
+                let ret_ty = StackType::new(vec![], ret_ty);
 
                 let args_expr = args
                     .iter()
@@ -460,7 +479,7 @@ impl<'tcx> Wasm<'tcx> {
                     unreachable!("not array");
                 };
                 let ty = self.tcx.type_(*ty);
-                let ValType::Num(num_ty) = convert_ty(ty);
+                let ValType::Num(num_ty) = convert_ty(ty).unwrap();
 
                 let var = self.load_lvalue(array, level.clone());
                 let subscript = self.trans_expr(index, level);
@@ -513,7 +532,7 @@ impl<'tcx> Wasm<'tcx> {
                     unreachable!("not array");
                 };
                 let ty = self.tcx.type_(*ty);
-                let val_type @ ValType::Num(num_ty) = convert_ty(ty);
+                let val_type @ ValType::Num(num_ty) = convert_ty(ty).unwrap();
 
                 let var = self.load_lvalue(array, level.clone());
                 let subscript = self.trans_expr(index, level);
@@ -541,7 +560,7 @@ impl<'tcx> Wasm<'tcx> {
 
                 let mut frame = parent_level.frame_mut();
                 let ty = self.tcx.type_(*ty_id);
-                let access = frame.alloc_local(*is_escape, convert_ty(ty));
+                let access = frame.alloc_local(*is_escape, convert_ty(ty).unwrap());
 
                 let base_addr = Frame::fp();
                 let store_expr = frame.store2access(&access, base_addr, expr);
@@ -558,7 +577,7 @@ impl<'tcx> Wasm<'tcx> {
                         .map(|p| {
                             let ty = self.tcx.type_(p.type_id);
                             let is_escape = p.is_escape;
-                            (is_escape, convert_ty(ty))
+                            (is_escape, convert_ty(ty).unwrap())
                         })
                         .collect();
                     let entry = self.tcx.fn_(decl.fn_id);
@@ -590,7 +609,7 @@ impl<'tcx> Wasm<'tcx> {
                     let mut args_ty: Vec<_> = decl
                         .params
                         .iter()
-                        .map(|p| convert_ty(self.tcx.type_(p.type_id)))
+                        .map(|p| convert_ty(self.tcx.type_(p.type_id)).unwrap())
                         .collect();
                     // add static link
                     args_ty.insert(0, ValType::Num(NumType::I32));
@@ -849,14 +868,13 @@ fn i64_2_i32(expr: ExprType) -> ExprType {
     ExprType::new_const_1_i32(expr)
 }
 
-fn convert_ty(ty: &Type) -> ValType {
+fn convert_ty(ty: &Type) -> Option<ValType> {
     match ty {
-        Type::Int => ValType::Num(NumType::I64),
+        Type::Int => Some(ValType::Num(NumType::I64)),
         Type::String | Type::Record { .. } | Type::Array { .. } | Type::Nil => {
-            ValType::Num(NumType::I32)
+            Some(ValType::Num(NumType::I32))
         }
-        // TODO: unit の扱い
-        Type::Unit => todo!(),
+        Type::Unit => None,
     }
 }
 
@@ -934,19 +952,21 @@ fn fn_call(
     ret_ty: StackType,
     mut args: Vec<Expr>,
 ) -> ExprType {
-    // 関数には、その関数の親のフレームへのポインタが渡される。
-    // 関数の宣言されたレベル(fn_level)の親のレベルを渡す。
-    // 一番外側だったら、自分自身のレベルを渡す。
-    let parent_level = fn_level
-        .0
-        .borrow()
-        .parent
-        .clone()
-        .unwrap_or(cur_level.clone());
-    let link = calc_static_link(cur_level, parent_level);
-    link.assert_ty(StackType::const_1_i32());
+    if !label.is_builtin() {
+        // 関数には、その関数の親のフレームへのポインタが渡される。
+        // 関数の宣言されたレベル(fn_level)の親のレベルを渡す。
+        // 一番外側だったら、自分自身のレベルを渡す。
+        let parent_level = fn_level
+            .0
+            .borrow()
+            .parent
+            .clone()
+            .unwrap_or(cur_level.clone());
+        let link = calc_static_link(cur_level, parent_level);
+        link.assert_ty(StackType::const_1_i32());
+        args.insert(0, link.val);
+    }
 
-    args.insert(0, link.val);
     let expr = Expr::OpExpr(
         Operator::Call(Index::Name(format_label(label).into())),
         args,

@@ -1,4 +1,4 @@
-mod builtin;
+pub(crate) mod builtin;
 pub(crate) mod ctx;
 mod env;
 mod escape;

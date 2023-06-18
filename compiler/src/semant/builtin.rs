@@ -167,3 +167,22 @@ impl<'tcx, F: Frame> Builtin for Translator<'tcx, F> {
         self
     }
 }
+
+pub trait IsBuiltin {
+    fn is_builtin(&self) -> bool;
+}
+
+impl IsBuiltin for Label {
+    fn is_builtin(&self) -> bool {
+        match self {
+            Label::NamedFn(name) => BUILTIN_FUNCS.iter().any(|(n, _, _, _)| n == name),
+            _ => false,
+        }
+    }
+}
+
+impl<T: IsBuiltin> IsBuiltin for &T {
+    fn is_builtin(&self) -> bool {
+        (*self).is_builtin()
+    }
+}
