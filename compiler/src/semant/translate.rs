@@ -516,7 +516,7 @@ pub fn translate<F: Frame>(tcx: &TyCtx, expr: &HirExpr, main_name: &str) -> Vec<
     let mut main_level = Level::outermost_with_name(Label::with_named_fn(main_name.to_string()));
 
     let body = translator.trans_expr(expr, &mut main_level, None);
-    let expr = if expr.ty == TypeId::int() {
+    let expr = if expr.ty == TypeId::INT {
         body
     } else {
         let seq = vec![body, num(0)];
@@ -639,7 +639,7 @@ impl<'tcx, F: Frame> Translator<'tcx, F> {
                 let ty = lhs.ty;
                 let lhs = self.trans_expr(lhs, level, break_label);
                 let rhs = self.trans_expr(rhs, level, break_label);
-                if ty == TypeId::string() {
+                if ty == TypeId::STRING {
                     string_eq::<F>((*op).try_into().unwrap(), lhs, rhs)
                 } else {
                     rel_op((*op).try_into().unwrap(), lhs, rhs)

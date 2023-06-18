@@ -40,10 +40,7 @@ use self::{
         Index, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator,
         Param, TestOp, ValType,
     },
-    builtin::{
-        ALLOC_RECORD, ALLOC_STRING, BUILTIN_FUNCS, BUILTIN_FUNC_NAMES, INIT_ARRAY, LOAD_I32,
-        LOAD_I64,
-    },
+    builtin::{ALLOC_RECORD, ALLOC_STRING, BUILTIN_FUNCS, INIT_ARRAY, LOAD_I32, LOAD_I64},
     frame::{Access as FrameAccess, Frame, Size},
 };
 
@@ -196,7 +193,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new(tcx);
     let outermost_level = Level::outermost_with_name(MAIN_SYMBOL);
     let expr = wasm.trans_expr(hir, outermost_level.clone());
-    let expr = if hir.ty == TypeId::int() {
+    let expr = if hir.ty == TypeId::INT {
         expr
     } else {
         sequence(vec![expr, num(0, NumType::I64)])
@@ -228,10 +225,9 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
         ty: Limits { min: 16, max: None },
     };
 
-    let builtin = BUILTIN_FUNC_NAMES;
-
-    let imports = builtin
-        .map(|name| Import {
+    let imports = BUILTIN_FUNCS
+        .keys()
+        .map(|&name| Import {
             module: JS_OBJECT_NAME.to_string(),
             name: name.to_string(),
             kind: ImportKind::Func(
@@ -239,7 +235,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
                 TypeUse::Inline(BUILTIN_FUNCS[name].clone()),
             ),
         })
-        .to_vec();
+        .collect();
 
     let builder = ModuleBuilder::new();
 

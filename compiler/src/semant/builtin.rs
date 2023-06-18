@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use once_cell::sync::Lazy;
+
 use crate::{
     common::{Label, Symbol},
     frame::Frame,
@@ -15,107 +19,89 @@ pub(super) trait Builtin: Sized {
     fn with_builtin(self) -> Self;
 }
 
+pub const UNIT: &str = "unit";
+pub const NIL: &str = "nil";
+pub const INT: &str = "int";
+pub const STRING: &str = "string";
+
 pub const BUILTIN_TYPES: &[(&str, TypeId, Type)] = &[
-    ("unit", TypeId::unit(), Type::Unit),
-    ("nil", TypeId::nil(), Type::Nil),
-    ("int", TypeId::int(), Type::Int),
-    ("string", TypeId::string(), Type::String),
+    (UNIT, TypeId::UNIT, Type::Unit),
+    (NIL, TypeId::NIL, Type::Nil),
+    (INT, TypeId::INT, Type::Int),
+    (STRING, TypeId::STRING, Type::String),
 ];
+
+pub const PRINT: &str = "print";
+pub const FLUSH: &str = "flush";
+pub const GETCHAR: &str = "getchar";
+pub const ORD: &str = "ord";
+pub const CHR: &str = "chr";
+pub const SIZE: &str = "size";
+pub const SUBSTRING: &str = "substring";
+pub const CONCAT: &str = "concat";
+pub const NOT: &str = "not";
+pub const EXIT: &str = "exit";
 
 pub const BUILTIN_FUNCS: &[(&str, FnId, &[TypeId], TypeId)] = &[
-    ("print", FnId::print(), &[TypeId::string()], TypeId::unit()),
-    ("flush", FnId::flush(), &[], TypeId::unit()),
-    ("getchar", FnId::getchar(), &[], TypeId::string()),
-    ("ord", FnId::ord(), &[TypeId::string()], TypeId::int()),
-    ("chr", FnId::chr(), &[TypeId::int()], TypeId::string()),
-    ("size", FnId::size(), &[TypeId::string()], TypeId::int()),
+    (PRINT, FnId::PRINT, &[TypeId::STRING], TypeId::UNIT),
+    (FLUSH, FnId::FLUSH, &[], TypeId::UNIT),
+    (GETCHAR, FnId::GETCHAR, &[], TypeId::STRING),
+    (ORD, FnId::ORD, &[TypeId::STRING], TypeId::INT),
+    (CHR, FnId::CHR, &[TypeId::INT], TypeId::STRING),
+    (SIZE, FnId::SIZE, &[TypeId::STRING], TypeId::INT),
     (
-        "substring",
-        FnId::substring(),
-        &[TypeId::string(), TypeId::int(), TypeId::int()],
-        TypeId::string(),
+        SUBSTRING,
+        FnId::SUBSTRING,
+        &[TypeId::STRING, TypeId::INT, TypeId::INT],
+        TypeId::STRING,
     ),
     (
-        "concat",
-        FnId::concat(),
-        &[TypeId::string(), TypeId::string()],
-        TypeId::string(),
+        CONCAT,
+        FnId::CONCAT,
+        &[TypeId::STRING, TypeId::STRING],
+        TypeId::STRING,
     ),
-    ("not", FnId::not(), &[TypeId::int()], TypeId::int()),
-    ("exit", FnId::exit(), &[TypeId::int()], TypeId::unit()),
+    (NOT, FnId::NOT, &[TypeId::INT], TypeId::INT),
+    (EXIT, FnId::EXIT, &[TypeId::INT], TypeId::UNIT),
 ];
 
+pub static BUILTIN_FUNC_NAME_MAP: Lazy<HashMap<&str, &str>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+    for (name, _, _, _) in BUILTIN_FUNCS {
+        if *name == EXIT {
+            map.insert(EXIT, "tiger_exit");
+            continue;
+        }
+        map.insert(*name, *name);
+    }
+    map
+});
+
 impl TypeId {
-    pub fn dummy() -> Self {
-        Self::new(0)
-    }
-
-    pub const fn unit() -> Self {
-        Self::new(1)
-    }
-
-    pub const fn nil() -> Self {
-        Self::new(2)
-    }
-
-    pub const fn int() -> Self {
-        Self::new(3)
-    }
-
-    pub const fn string() -> Self {
-        Self::new(4)
-    }
+    pub const DUMMY: Self = Self::new(0);
+    pub const UNIT: Self = Self::new(1);
+    pub const NIL: Self = Self::new(2);
+    pub const INT: Self = Self::new(3);
+    pub const STRING: Self = Self::new(4);
 }
 
 impl FnId {
-    pub(super) const fn _dummy() -> Self {
-        Self::new(0)
-    }
-
-    pub(super) const fn print() -> Self {
-        Self::new(1)
-    }
-
-    pub(super) const fn flush() -> Self {
-        Self::new(2)
-    }
-
-    pub(super) const fn getchar() -> Self {
-        Self::new(3)
-    }
-
-    pub(super) const fn ord() -> Self {
-        Self::new(4)
-    }
-
-    pub(super) const fn chr() -> Self {
-        Self::new(5)
-    }
-
-    pub(super) const fn size() -> Self {
-        Self::new(6)
-    }
-
-    pub(super) const fn substring() -> Self {
-        Self::new(7)
-    }
-
-    pub(super) const fn concat() -> Self {
-        Self::new(8)
-    }
-
-    pub(super) const fn not() -> Self {
-        Self::new(9)
-    }
-
-    pub(super) const fn exit() -> Self {
-        Self::new(10)
-    }
+    pub const DUMMY: Self = Self::new(0);
+    pub const PRINT: Self = Self::new(1);
+    pub const FLUSH: Self = Self::new(2);
+    pub const GETCHAR: Self = Self::new(3);
+    pub const ORD: Self = Self::new(4);
+    pub const CHR: Self = Self::new(5);
+    pub const SIZE: Self = Self::new(6);
+    pub const SUBSTRING: Self = Self::new(7);
+    pub const CONCAT: Self = Self::new(8);
+    pub const NOT: Self = Self::new(9);
+    pub const EXIT: Self = Self::new(10);
 }
 
 impl Builtin for Env<TypeId> {
     fn with_builtin(mut self) -> Self {
-        let base_types = vec![("int", TypeId::int()), ("string", TypeId::string())];
+        let base_types = vec![("int", TypeId::INT), ("string", TypeId::STRING)];
 
         for (sym, type_id) in base_types {
             let sym = Symbol::new(sym);

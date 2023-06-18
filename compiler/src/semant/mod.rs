@@ -415,13 +415,13 @@ impl Semant {
                 } else {
                     // initializing nil expressions not constrained by record type is invalid
                     // see test45.tig
-                    if expr.ty == TypeId::nil() {
+                    if expr.ty == TypeId::NIL {
                         return Err(Error::new_unconstrained_nil_initialize(pos));
                     }
 
                     // initializing with unit is invalid
                     // see test43.tig
-                    if expr.ty == TypeId::unit() {
+                    if expr.ty == TypeId::UNIT {
                         return Err(Error::new_unit_initialize(pos));
                     }
                 }
@@ -459,7 +459,7 @@ impl Semant {
                             let ty_sym = Symbol::from(type_id);
                             self.type_id(ty_sym, func_decl.pos).copied()?
                         }
-                        None => TypeId::unit(),
+                        None => TypeId::UNIT,
                     };
 
                     let label = Label::new_fn(func_name.name().as_ref());
@@ -539,7 +539,7 @@ impl Semant {
 
             AstExpr::Nil(pos) => Ok(HirExpr {
                 kind: ExprKind::Nil(pos),
-                ty: TypeId::nil(),
+                ty: TypeId::NIL,
             }),
 
             // exprs.len() may be 0.
@@ -553,7 +553,7 @@ impl Semant {
                 let expr_type = match transed.len() {
                     0 => HirExpr {
                         kind: ExprKind::Int(0, pos),
-                        ty: TypeId::unit(),
+                        ty: TypeId::UNIT,
                     },
                     1 => transed.pop().unwrap(),
                     _ => {
@@ -571,12 +571,12 @@ impl Semant {
 
             AstExpr::Int(num, pos) => Ok(HirExpr {
                 kind: ExprKind::Int(num, pos),
-                ty: TypeId::int(),
+                ty: TypeId::INT,
             }),
 
             AstExpr::Str(lit, pos) => Ok(HirExpr {
                 kind: ExprKind::Str(lit, pos),
-                ty: TypeId::string(),
+                ty: TypeId::STRING,
             }),
 
             AstExpr::FuncCall(ident, args, pos) => {
@@ -641,11 +641,11 @@ impl Semant {
             ) => {
                 let lhs = self.trans_expr(*lhs)?;
                 let rhs = self.trans_expr(*rhs)?;
-                self.check_type(lhs.ty, &[TypeId::int()], pos)?;
-                self.check_type(rhs.ty, &[TypeId::int()], pos)?;
+                self.check_type(lhs.ty, &[TypeId::INT], pos)?;
+                self.check_type(rhs.ty, &[TypeId::INT], pos)?;
                 Ok(HirExpr {
                     kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
-                    ty: TypeId::int(),
+                    ty: TypeId::INT,
                 })
             }
 
@@ -662,7 +662,7 @@ impl Semant {
                 match (self.type_(lhs.ty), self.type_(rhs.ty)) {
                     (Type::Int, Type::Int) | (Type::String, Type::String) => Ok(HirExpr {
                         kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
-                        ty: TypeId::int(),
+                        ty: TypeId::INT,
                     }),
                     other => Err(Error::new_unexpected_type(
                         pos,
@@ -679,7 +679,7 @@ impl Semant {
                 if self.assignable(lhs.ty, rhs.ty) {
                     Ok(HirExpr {
                         kind: ExprKind::Op(op.into(), Box::new(lhs), Box::new(rhs), pos),
-                        ty: TypeId::int(),
+                        ty: TypeId::INT,
                     })
                 } else {
                     Err(Error::new_unexpected_type(
@@ -692,7 +692,7 @@ impl Semant {
 
             AstExpr::Neg(e, pos) => {
                 let expr = self.trans_expr(*e)?;
-                self.check_type(expr.ty, &[TypeId::int()], pos)?;
+                self.check_type(expr.ty, &[TypeId::INT], pos)?;
 
                 let ty = expr.ty;
                 Ok(HirExpr {
@@ -788,7 +788,7 @@ impl Semant {
                             Type::Array { ty: elem_ty, .. } => {
                                 let size_pos = size.pos();
                                 let size = self.trans_expr(*size)?;
-                                self.check_type(size.ty, &[TypeId::int()], size_pos)?;
+                                self.check_type(size.ty, &[TypeId::INT], size_pos)?;
 
                                 let init_pos = init.pos();
                                 let init = self.trans_expr(*init)?;
@@ -822,7 +822,7 @@ impl Semant {
                 self.check_type(rhs.ty, &[type_id], pos)?;
                 Ok(HirExpr {
                     kind: ExprKind::Assign(lvalue, Box::new(rhs), pos),
-                    ty: TypeId::unit(),
+                    ty: TypeId::UNIT,
                 })
             }
 
@@ -834,7 +834,7 @@ impl Semant {
             } => {
                 let cond_pos = cond.pos();
                 let cond = self.trans_expr(*cond)?;
-                self.check_type(cond.ty, &[TypeId::int()], cond_pos)?;
+                self.check_type(cond.ty, &[TypeId::INT], cond_pos)?;
 
                 let then = self.trans_expr(*then)?;
                 match els {
@@ -861,7 +861,7 @@ impl Semant {
                         }
                     }
                     None => {
-                        self.check_type(then.ty, &[TypeId::unit()], pos)?;
+                        self.check_type(then.ty, &[TypeId::UNIT], pos)?;
                         Ok(HirExpr {
                             kind: ExprKind::If {
                                 cond: Box::new(cond),
@@ -869,7 +869,7 @@ impl Semant {
                                 els: None,
                                 pos,
                             },
-                            ty: TypeId::unit(),
+                            ty: TypeId::UNIT,
                         })
                     }
                 }
@@ -878,15 +878,15 @@ impl Semant {
             AstExpr::While(cond, then, pos) => self.new_break_scope(|_self| {
                 let cond_pos = cond.pos();
                 let cond = _self.trans_expr(*cond)?;
-                _self.check_type(cond.ty, &[TypeId::int()], cond_pos)?;
+                _self.check_type(cond.ty, &[TypeId::INT], cond_pos)?;
 
                 let then_pos = then.pos();
                 let then = _self.trans_expr(*then)?;
-                _self.check_type(then.ty, &[TypeId::unit()], then_pos)?;
+                _self.check_type(then.ty, &[TypeId::UNIT], then_pos)?;
 
                 Ok(HirExpr {
                     kind: ExprKind::While(Box::new(cond), Box::new(then), pos),
-                    ty: TypeId::unit(),
+                    ty: TypeId::UNIT,
                 })
             }),
 
@@ -954,7 +954,7 @@ impl Semant {
                 if self.is_brekable() {
                     Ok(HirExpr {
                         kind: ExprKind::Break(pos),
-                        ty: TypeId::unit(),
+                        ty: TypeId::UNIT,
                     })
                 } else {
                     Err(Error::new_invalid_break(pos))
@@ -975,7 +975,7 @@ impl Semant {
                 let ty = if let Some(e) = converted_exprs.last() {
                     e.ty
                 } else {
-                    TypeId::unit()
+                    TypeId::UNIT
                 };
                 Ok(HirExpr {
                     kind: ExprKind::Let(converted_decls, converted_exprs, pos),
@@ -1039,7 +1039,7 @@ impl Semant {
             }
             AstLValue::Array(lvar, expr, pos) => {
                 let index_expr = self.trans_expr(*expr)?;
-                if index_expr.ty != TypeId::int() {
+                if index_expr.ty != TypeId::INT {
                     return Err(Error::new_unexpected_type(
                         pos,
                         vec![Type::Int],
