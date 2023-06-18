@@ -79,10 +79,6 @@ impl ExprType {
         Self::new_const_(expr, vec![ValType::Num(NumType::I32)])
     }
 
-    pub fn _new_const_1_i64(expr: Expr) -> Self {
-        Self::new_const_(expr, vec![ValType::Num(NumType::I64)])
-    }
-
     pub fn assert_ty(&self, ty: StackType) {
         assert_eq!(self.ty, ty);
     }
@@ -157,6 +153,10 @@ impl StackType {
         StackType::new(vec![], vec![ValType::Num(NumType::I32)])
     }
 
+    pub fn is_const_1_i32(&self) -> bool {
+        self.is_const_1() && self.result[0] == ValType::Num(NumType::I32)
+    }
+
     pub fn is_const_1_i64(&self) -> bool {
         self.is_const_1() && self.result[0] == ValType::Num(NumType::I64)
     }
@@ -200,7 +200,7 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let expr = if hir.ty == TypeId::INT {
         expr
     } else {
-        sequence(vec![expr, num(0, NumType::I64)])
+        sequence(vec![expr, num(0, NumType::I32)])
     };
     wasm.proc_entry_exit(outermost_level, StackType::nop(), expr);
 
@@ -361,7 +361,7 @@ impl<'tcx> Wasm<'tcx> {
                     .collect();
                 sequence(exprs).add_comment("seq")
             }
-            ExprKind::Int(v, _) => num(*v as i64, NumType::I64).add_comment("int"),
+            ExprKind::Int(v, _) => num(*v as i64, NumType::I32).add_comment("int"),
             ExprKind::Str(s, _) => {
                 let mut frame = level.frame_mut();
                 string_literal(&mut frame, s.as_str())
@@ -438,7 +438,6 @@ impl<'tcx> Wasm<'tcx> {
             }
             ExprKind::ArrayCreation { size, init, .. } => {
                 let size = self.trans_expr(size, level.clone());
-                let size = i64_2_i32(size);
                 let init = self.trans_expr(init, level.clone());
                 let mut frame = level.frame_mut();
                 array_creation(&mut frame, size, init).add_comment("array creation")
@@ -499,10 +498,10 @@ impl<'tcx> Wasm<'tcx> {
                 ..
             } => {
                 let var = self.load_lvalue(record, level);
-                expr.assert_ty(StackType::const_1_i64());
+                expr.assert_ty(StackType::const_1_i32());
 
                 Frame::extern_call(
-                    STORE_I64,
+                    STORE_I32,
                     vec![record_field(var, *field_index), expr],
                     vec![],
                 )
@@ -521,7 +520,6 @@ impl<'tcx> Wasm<'tcx> {
 
                 let var = self.load_lvalue(array, level.clone());
                 let subscript = self.trans_expr(index, level);
-                let subscript = i64_2_i32(subscript);
 
                 let store_fn = match num_ty {
                     NumType::I32 => STORE_I32,
@@ -555,9 +553,9 @@ impl<'tcx> Wasm<'tcx> {
             } => {
                 let var = self.load_lvalue(record, level);
                 Frame::extern_call(
-                    LOAD_I64,
+                    LOAD_I32,
                     vec![record_field(var, *field_index)],
-                    vec![ValType::Num(NumType::I64)],
+                    vec![ValType::Num(NumType::I32)],
                 )
             }
             HirLValue::Array {
@@ -574,7 +572,6 @@ impl<'tcx> Wasm<'tcx> {
 
                 let var = self.load_lvalue(array, level.clone());
                 let subscript = self.trans_expr(index, level);
-                let subscript = i64_2_i32(subscript);
 
                 let load_fn = match num_ty {
                     NumType::I32 => LOAD_I32,
@@ -698,23 +695,12 @@ fn format_label(label: &Label) -> String {
             // Calling function named `exit` is not working correctry.
             // So rename it to `tiger_exit`.
             if s == "exit" {
-                "_tiger_exit".to_string()
+                "tiger_exit".to_string()
             } else {
                 format!("{}", label)
             }
         }
     }
-}
-
-fn _load_i64(addr: ExprType) -> ExprType {
-    addr.assert_ty(StackType::const_1_i32());
-    let expr = Expr::OpExpr(Operator::Load(NumType::I64), vec![addr.val]);
-
-    let ty = StackType::new(
-        vec![ValType::Num(NumType::I32)],
-        vec![ValType::Num(NumType::I64)],
-    );
-    ExprType::new(expr, ty)
 }
 
 fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
@@ -796,18 +782,6 @@ fn string_eq(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
 
 fn nop() -> ExprType {
     ExprType::new(Expr::Op(Operator::Nop), StackType::nop())
-}
-
-fn _store_i64(addr: ExprType, val: ExprType) -> ExprType {
-    addr.assert_ty(StackType::const_1_i32());
-    val.assert_ty(StackType::const_1_i64());
-    ExprType::new(
-        Expr::OpExpr(Operator::Store(NumType::I64), vec![addr.val, val.val]),
-        StackType::new(
-            vec![ValType::Num(NumType::I32), ValType::Num(NumType::I64)],
-            vec![],
-        ),
-    )
 }
 
 fn concat_exprs(exprs: Vec<ExprType>) -> ExprType {
@@ -933,8 +907,7 @@ fn i64_2_i32(expr: ExprType) -> ExprType {
 
 fn convert_ty(ty: &Type) -> Option<ValType> {
     match ty {
-        Type::Int => Some(ValType::Num(NumType::I64)),
-        Type::String | Type::Record { .. } | Type::Array { .. } | Type::Nil => {
+        Type::String | Type::Record { .. } | Type::Array { .. } | Type::Nil | Type::Int => {
             Some(ValType::Num(NumType::I32))
         }
         Type::Unit => None,
@@ -1213,13 +1186,13 @@ fn array_subscript(arr_content_ty: NumType, var: ExprType, subscript: ExprType) 
 }
 
 /// `exprs` is address of record fields.
-/// for simplicity, all fields are i64.
+/// for simplicity, all fields are i32.
 /// return address of record
 fn record_creation(frame: &mut Frame, exprs: Vec<ExprType>) -> ExprType {
     let record_size: usize = exprs
         .iter()
         .map(|v| {
-            assert!(v.ty.is_const_1_i64());
+            assert!(v.ty.is_const_1_i32());
             v.ty.result[0].word_size()
         })
         .sum();
@@ -1239,7 +1212,7 @@ fn record_creation(frame: &mut Frame, exprs: Vec<ExprType>) -> ExprType {
 
     let init = exprs.into_iter().enumerate().map(|(idx, e)| {
         let field_addr = record_field(frame.get_access_content(&record_access, Frame::fp()), idx);
-        Frame::extern_call(STORE_I64, vec![field_addr, e], vec![])
+        Frame::extern_call(STORE_I32, vec![field_addr, e], vec![])
     });
     result.extend(init);
 
@@ -1251,7 +1224,7 @@ fn record_creation(frame: &mut Frame, exprs: Vec<ExprType>) -> ExprType {
 
 /// `var` is address of record.
 /// returns addr of `var.field_index`
-/// for simplicity, all fields are i64.
+/// for simplicity, all fields are i32.
 fn record_field(var: ExprType, field_index: usize) -> ExprType {
     var.assert_ty(StackType::const_1_i32());
 
@@ -1270,7 +1243,7 @@ fn record_field(var: ExprType, field_index: usize) -> ExprType {
         addr_of_data,
         ExprType::new_const_1_i32(Expr::Op(Operator::Const(
             NumType::I32,
-            (Frame::WORD_SIZE * NumType::I64.word_size() * field_index) as i64,
+            (Frame::WORD_SIZE * NumType::I32.word_size() * field_index) as i64,
         ))),
     )
 }
