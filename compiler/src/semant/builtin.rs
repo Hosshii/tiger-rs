@@ -50,19 +50,19 @@ impl TypeId {
         Self::new(0)
     }
 
-    pub(super) const fn unit() -> Self {
+    pub const fn unit() -> Self {
         Self::new(1)
     }
 
-    pub(super) const fn nil() -> Self {
+    pub const fn nil() -> Self {
         Self::new(2)
     }
 
-    pub(super) const fn int() -> Self {
+    pub const fn int() -> Self {
         Self::new(3)
     }
 
-    pub(super) const fn string() -> Self {
+    pub const fn string() -> Self {
         Self::new(4)
     }
 }

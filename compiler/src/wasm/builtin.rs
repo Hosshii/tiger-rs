@@ -10,14 +10,16 @@ pub const LOAD_I64: &str = "loadi64";
 pub const STORE_I32: &str = "storei32";
 pub const STORE_I64: &str = "storei64";
 pub const ALLOC_RECORD: &str = "allocRecord";
+pub const ALLOC_STRING: &str = "allocString";
 
-pub const BUILTIN_FUNC_NAMES: [&str; 6] = [
+pub const BUILTIN_FUNC_NAMES: [&str; 7] = [
     INIT_ARRAY,
     LOAD_I32,
     LOAD_I64,
     STORE_I32,
     STORE_I64,
     ALLOC_RECORD,
+    ALLOC_STRING,
 ];
 
 pub static BUILTIN_FUNCS: Lazy<HashMap<&'static str, FuncType>> = Lazy::new(|| {
@@ -65,6 +67,13 @@ pub static BUILTIN_FUNCS: Lazy<HashMap<&'static str, FuncType>> = Lazy::new(|| {
         ),
         (
             ALLOC_RECORD,
+            FuncType {
+                params: vec![Param::new(ValType::Num(NumType::I32), None)],
+                result: vec![ValType::Num(NumType::I32).into()],
+            },
+        ),
+        (
+            ALLOC_STRING,
             FuncType {
                 params: vec![Param::new(ValType::Num(NumType::I32), None)],
                 result: vec![ValType::Num(NumType::I32).into()],

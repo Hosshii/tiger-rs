@@ -307,6 +307,16 @@ pub struct Limits {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DataString(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Data {
+    pub name: Option<Name>,
+    pub offset: Expr,
+    pub init: DataString,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Module {
     pub types: Vec<FuncTypeDef>,
     pub funcs: Vec<Func>,
@@ -314,6 +324,7 @@ pub struct Module {
     pub exports: Vec<Export>,
     pub globals: Vec<Global>,
     pub memories: Vec<Memory>,
+    pub data: Vec<Data>,
 }
 
 impl Module {
@@ -325,6 +336,7 @@ impl Module {
             exports: vec![],
             globals: vec![],
             memories: vec![],
+            data: vec![],
         }
     }
 }

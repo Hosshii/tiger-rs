@@ -2,9 +2,10 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Import, ImportKind, Index, InlineFuncExport, Instruction, Limits, Local,
-        Memory, Module, Mut, Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
+        BinOp, BlockType, CvtOp, Data, DataString, Export, ExportKind, Expr, Func, FuncType,
+        FuncTypeDef, Global, GlobalType, Import, ImportKind, Index, InlineFuncExport, Instruction,
+        Limits, Local, Memory, Module, Mut, Name, NumType, Operator, Param, TestOp, TypeUse,
+        ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -620,6 +621,29 @@ impl Encode for Memory {
     }
 }
 
+impl Encode for Data {
+    fn encode(&self, sink: &mut Line) {
+        sink.push_str("(data ");
+        if let Some(name) = &self.name {
+            sink.push('$');
+            name.encode(sink);
+        }
+        sink.push(' ');
+        self.offset.encode(sink);
+        sink.push(' ');
+        self.init.encode(sink);
+        sink.push(')');
+    }
+}
+
+impl Encode for DataString {
+    fn encode(&self, sink: &mut Line) {
+        sink.push_str("\"");
+        self.0.encode(sink);
+        sink.push_str("\"");
+    }
+}
+
 impl Encode for Module {
     fn encode(&self, sink: &mut Line) {
         sink.push_str("(module");
@@ -635,6 +659,7 @@ impl Encode for Module {
             MultiLine::from(self.globals.as_slice()).encode(sink);
             sink.newline();
             MultiLine::from(self.memories.as_slice()).encode(sink);
+            MultiLine::from(self.data.as_slice()).encode(sink);
         });
         sink.newline();
         sink.push(')');

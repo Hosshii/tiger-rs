@@ -190,6 +190,7 @@ fn fn_call<F: Frame>(
         fn_level.inner.parent.as_deref().unwrap_or(cur_level),
     );
     let mut args: Vec<_> = args.into_iter().map(|v| v.unwrap_ex()).collect();
+    // link is ignored if this is extern call.
     args.push(link);
     Expr::Ex(IrExpr::Call(Box::new(IrExpr::Name(fn_label)), args))
 }

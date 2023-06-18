@@ -109,6 +109,10 @@ impl StringLiteral {
     pub fn new(v: impl Into<String>) -> Self {
         Self(v.into())
     }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 impl Display for StringLiteral {

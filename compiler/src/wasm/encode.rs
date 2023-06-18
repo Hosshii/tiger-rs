@@ -2,9 +2,9 @@ use std::fmt::Debug;
 
 use super::{
     ast::{
-        BinOp, BlockType, CvtOp, Export, ExportKind, Expr, Func, FuncType, FuncTypeDef, Global,
-        GlobalType, Import, ImportKind, Index, Instruction, Limits, Local, Memory, Module, Mut,
-        Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
+        BinOp, BlockType, CvtOp, Data, DataString, Export, ExportKind, Expr, Func, FuncType,
+        FuncTypeDef, Global, GlobalType, Import, ImportKind, Index, Instruction, Limits, Local,
+        Memory, Module, Mut, Name, NumType, Operator, Param, TestOp, TypeUse, ValType, WasmResult,
     },
     rewrite::Rewriter,
 };
@@ -487,6 +487,21 @@ impl Encode for Memory {
     }
 }
 
+impl Encode for Data {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        // TODO
+        0u32.encode(sink);
+        self.offset.encode(sink);
+        self.init.encode(sink);
+    }
+}
+
+impl Encode for DataString {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        self.0.as_bytes().encode(sink);
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum SectionId {
     Type = 1,
@@ -537,8 +552,8 @@ impl Encode for Module {
         Module::section_list(SectionId::Memory, self.memories.as_slice(), sink);
         Module::section_list(SectionId::Global, self.globals.as_slice(), sink);
         Module::section_list(SectionId::Export, self.exports.as_slice(), sink);
-
         Module::section_list(SectionId::Code, self.funcs.as_slice(), sink);
+        Module::section_list(SectionId::Data, self.data.as_slice(), sink);
     }
 }
 

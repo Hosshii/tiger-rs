@@ -25,7 +25,7 @@ use crate::{
         hir::{
             Decl, Expr as HirExpr, ExprKind, LValue as HirLValue, Program as HirProgram, VarDecl,
         },
-        types::Type,
+        types::{Type, TypeId},
     },
     wasm::{
         ast::{InlineFuncExport, TypeUse},
@@ -39,7 +39,10 @@ use self::{
         Index, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator,
         Param, TestOp, ValType,
     },
-    builtin::{ALLOC_RECORD, BUILTIN_FUNCS, BUILTIN_FUNC_NAMES, INIT_ARRAY, LOAD_I32, LOAD_I64},
+    builtin::{
+        ALLOC_RECORD, ALLOC_STRING, BUILTIN_FUNCS, BUILTIN_FUNC_NAMES, INIT_ARRAY, LOAD_I32,
+        LOAD_I64,
+    },
     frame::{Access as FrameAccess, Frame, Size},
 };
 
@@ -74,7 +77,7 @@ impl ExprType {
         Self::new_const_(expr, vec![ValType::Num(NumType::I32)])
     }
 
-    pub fn new_const_1_i64(expr: Expr) -> Self {
+    pub fn _new_const_1_i64(expr: Expr) -> Self {
         Self::new_const_(expr, vec![ValType::Num(NumType::I64)])
     }
 
@@ -192,6 +195,11 @@ pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new(tcx);
     let outermost_level = Level::outermost_with_name(MAIN_SYMBOL);
     let expr = wasm.trans_expr(hir, outermost_level.clone());
+    let expr = if hir.ty == TypeId::int() {
+        expr
+    } else {
+        sequence(vec![expr, num(0, NumType::I64)])
+    };
     wasm.proc_entry_exit(outermost_level, StackType::nop(), expr);
 
     let funcs = wasm.funcs;
@@ -335,8 +343,11 @@ impl<'tcx> Wasm<'tcx> {
                     .collect();
                 sequence(exprs).add_comment("seq")
             }
-            ExprKind::Int(v, _) => num_i64(*v as i64).add_comment("int"),
-            ExprKind::Str(_, _) => todo!(),
+            ExprKind::Int(v, _) => num(*v as i64, NumType::I64).add_comment("int"),
+            ExprKind::Str(s, _) => {
+                let mut frame = level.frame_mut();
+                string_literal(&mut frame, s.as_str())
+            }
             ExprKind::FuncCall(_, fn_id, args, _) => {
                 let entry = self.tcx.fn_(*fn_id);
                 let ret_ty = self.tcx.type_(entry.result());
@@ -674,8 +685,8 @@ fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
     link
 }
 
-fn num_i64(v: i64) -> ExprType {
-    ExprType::new_const_1_i64(Expr::Op(Operator::Const(NumType::I64, v)))
+fn num(v: i64, ty: NumType) -> ExprType {
+    ExprType::new_const_1(Expr::Op(Operator::Const(ty, v)), ValType::Num(ty))
 }
 
 fn bin_op(op: BinOp, lhs: ExprType, rhs: ExprType) -> ExprType {
@@ -1179,6 +1190,72 @@ fn record_field(var: ExprType, field_index: usize) -> ExprType {
             (Frame::WORD_SIZE * NumType::I64.word_size() * field_index) as i64,
         ))),
     )
+}
+
+/// addr of string
+/// pub struct TigerSting {
+///     len: TigerInt,
+///     data: *mut u8,
+/// }
+fn string_literal(frame: &mut Frame, s: &str) -> ExprType {
+    let mut exprs = Vec::new();
+
+    // *TigerString
+    let addr = Frame::extern_call(
+        ALLOC_STRING,
+        vec![num(s.as_bytes().len() as i64, NumType::I32)],
+        vec![ValType::Num(NumType::I32)],
+    );
+    let (addr_access, store) = frame.init_local(false, addr);
+    exprs.push(store);
+
+    // TigerString.len = s.len()
+    let store_len = Frame::extern_call(
+        STORE_I32,
+        vec![
+            frame.get_access_content(&addr_access, Frame::fp()),
+            num(s.chars().count() as i64, NumType::I32),
+        ],
+        vec![],
+    );
+    exprs.push(store_len);
+
+    // `(*TigerString).data`
+    let addr_of_data = bin_op(
+        BinOp::Add,
+        frame.get_access_content(&addr_access, Frame::fp()),
+        num(Frame::WORD_SIZE as i64, NumType::I32),
+    );
+
+    // `data`: *mut TIgerInt
+    let data = Frame::extern_call(
+        LOAD_I32,
+        vec![addr_of_data],
+        vec![ValType::Num(NumType::I32)],
+    );
+    let (data_access, store) = frame.init_local(false, data);
+    exprs.push(store);
+
+    let inits = s.as_bytes().iter().enumerate().map(|(idx, v)| {
+        // TigerString.data[i] = s[i]
+        Frame::extern_call(
+            STORE_I32,
+            vec![
+                bin_op(
+                    BinOp::Add,
+                    frame.get_access_content(&data_access, Frame::fp()),
+                    num(idx as i64, NumType::I32),
+                ),
+                num(*v as i64, NumType::I32),
+            ],
+            vec![],
+        )
+    });
+
+    exprs.extend(inits);
+    exprs.push(frame.get_access_content(&addr_access, Frame::fp()));
+
+    concat_exprs(exprs)
 }
 
 #[cfg(test)]
