@@ -1,0 +1,33 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+        matrix:
+            os: [ubuntu-latest, macos-latest]
+            
+    name: test
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+            components: clippy
+            targets: wasm32-unknown-unknown
+
+      - name: Cache cargo dir
+        uses: Swatinem/rust-cache@v1
+
+      - name: Build for wasm
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Test
+        run: cargo test --release
