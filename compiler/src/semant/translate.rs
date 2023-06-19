@@ -190,6 +190,7 @@ fn fn_call<F: Frame>(
         fn_level.inner.parent.as_deref().unwrap_or(cur_level),
     );
     let mut args: Vec<_> = args.into_iter().map(|v| v.unwrap_ex()).collect();
+    // link is ignored if this is extern call.
     args.push(link);
     Expr::Ex(IrExpr::Call(Box::new(IrExpr::Name(fn_label)), args))
 }
@@ -515,7 +516,7 @@ pub fn translate<F: Frame>(tcx: &TyCtx, expr: &HirExpr, main_name: &str) -> Vec<
     let mut main_level = Level::outermost_with_name(Label::with_named_fn(main_name.to_string()));
 
     let body = translator.trans_expr(expr, &mut main_level, None);
-    let expr = if expr.ty == TypeId::int() {
+    let expr = if expr.ty == TypeId::INT {
         body
     } else {
         let seq = vec![body, num(0)];
@@ -638,7 +639,7 @@ impl<'tcx, F: Frame> Translator<'tcx, F> {
                 let ty = lhs.ty;
                 let lhs = self.trans_expr(lhs, level, break_label);
                 let rhs = self.trans_expr(rhs, level, break_label);
-                if ty == TypeId::string() {
+                if ty == TypeId::STRING {
                     string_eq::<F>((*op).try_into().unwrap(), lhs, rhs)
                 } else {
                     rel_op((*op).try_into().unwrap(), lhs, rhs)
@@ -757,8 +758,8 @@ impl<'tcx, F: Frame> Translator<'tcx, F> {
                         .get(&decl.fn_id)
                         .expect("fn level not found")
                         .clone();
-                    for (param, level) in decl.params.iter().zip(level.formals()) {
-                        self.var_env.insert(param.var_id, level);
+                    for (param, access) in decl.params.iter().zip(level.formals()) {
+                        self.var_env.insert(param.var_id, access);
                     }
 
                     let body = self.trans_expr(&decl.body, &mut level, break_label);

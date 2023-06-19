@@ -5,7 +5,14 @@ use tiger::{AARCH64_APPLE_DARWIN, X86_64_APPLE_DARWIN, X86_64_LINUX_GNU};
 fn main() {
     let mut args = env::args();
     let filename = args.nth(1).expect("expect filename");
-    let file = File::open(filename.as_str()).unwrap();
+    let file = match File::open(filename.as_str()) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("cannot open file {}", filename);
+            eprintln!("{}", e);
+            return;
+        }
+    };
 
     let arch = if let Some(x) = args.next() {
         assert_eq!(x, "--arch");
@@ -20,10 +27,18 @@ fn main() {
         }
         "x86_64-apple-darwin" => tiger::compile(filename, file, io::stdout(), X86_64_APPLE_DARWIN),
         "x86_64-linux-gnu" => tiger::compile(filename, file, io::stdout(), X86_64_LINUX_GNU),
+        "wasm32-unknown-unknown" => {
+            let is_wat = args.next().map_or(false, |x| x == "--wat");
+            if is_wat {
+                tiger::compile_wat(filename, file, io::stdout())
+            } else {
+                tiger::compile_wasm(filename, file, io::stdout())
+            }
+        }
         x => panic!("unknown arch {}", x),
     };
 
     if let Err(err) = result {
-        println!("{}", err)
+        eprintln!("{}", err)
     }
 }

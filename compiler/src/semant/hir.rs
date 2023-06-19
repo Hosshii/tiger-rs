@@ -68,6 +68,7 @@ pub struct FuncDecl {
     pub params: Params,
     pub ret_type: Option<TypeIdent>,
     pub re_type_id: TypeId,
+    pub locals: Vec<VarId>,
     pub body: Expr,
     pub pos: Positions,
 }

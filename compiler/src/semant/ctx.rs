@@ -168,3 +168,9 @@ impl TyCtx {
         self.ty.get(&id).expect("type not found")
     }
 }
+
+impl Default for TyCtx {
+    fn default() -> Self {
+        Self::new()
+    }
+}

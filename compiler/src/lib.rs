@@ -7,6 +7,7 @@ mod semant;
 mod asm;
 mod common;
 mod frame;
+pub mod wasm;
 
 use std::{
     io::{self, Read, Write},
@@ -15,16 +16,18 @@ use std::{
 
 use semant::translate;
 use thiserror::Error;
+use wasm::{WasmEncoder, WatEncoder};
 
 use crate::{
     codegen::{
         aarch64_apple_darwin::ARM64 as ARM64AppleDarwinCodegen, reg_alloc,
         x86_64_apple_darwin::X86_64 as X86_64AppleDarwinCodegen,
-        x86_64_linux_gnu::X86_64 as X86_64LinuxGnuCodegen, Codegen,
+        x86_64_linux_gnu::X86_64 as X86_64LinuxGnuCodegen,
     },
     frame::{Fragment, Frame as _},
     semant::Semant,
 };
+pub use codegen::Codegen;
 
 pub const AARCH64_APPLE_DARWIN: PhantomData<ARM64AppleDarwinCodegen> = PhantomData;
 pub const X86_64_APPLE_DARWIN: PhantomData<X86_64AppleDarwinCodegen> = PhantomData;
@@ -90,6 +93,48 @@ where
             }
         }
     }
+
+    Ok(())
+}
+
+pub fn compile_wasm<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
+where
+    N: Into<String>,
+    R: Read,
+    O: Write,
+{
+    let ast = parser::parse(filename, r)?;
+
+    let semantic_analyzer = Semant::new_with_base();
+
+    let (hir, tcx) = semantic_analyzer.analyze(ast)?;
+    let mut module = wasm::translate(&tcx, &hir);
+
+    let mut encoder = WasmEncoder::new();
+    encoder.rewrite_module(&mut module);
+
+    o.write_all(&encoder.encode_module(&module))?;
+
+    Ok(())
+}
+
+pub fn compile_wat<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
+where
+    N: Into<String>,
+    R: Read,
+    O: Write,
+{
+    let ast = parser::parse(filename, r)?;
+
+    let semantic_analyzer = Semant::new_with_base();
+
+    let (hir, tcx) = semantic_analyzer.analyze(ast)?;
+    let mut module = wasm::translate(&tcx, &hir);
+
+    let mut encoder = WatEncoder::new();
+    encoder.rewrite_module(&mut module);
+
+    o.write_all(WatEncoder::encode_module(&module).as_bytes())?;
 
     Ok(())
 }

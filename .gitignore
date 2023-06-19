@@ -1,6 +1,7 @@
 target
-testcases
 *.s
 *.c
 *.out
+*.wat
+*.wasm
 .vscode

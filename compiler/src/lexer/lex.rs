@@ -1,8 +1,8 @@
 use std::{
     io::{Bytes, Read},
     iter::Peekable,
-    rc::Rc,
     str::{self, FromStr},
+    sync::Arc,
 };
 
 use crate::{
@@ -31,7 +31,7 @@ impl State {
 
 pub(crate) struct LexerInner<R: Read> {
     ipt: Peekable<Bytes<R>>,
-    filename: Rc<String>,
+    filename: Arc<String>,
     state: State,
 }
 
@@ -44,7 +44,7 @@ where
     pub fn new(filename: impl Into<String>, ipt: R) -> Self {
         Self {
             ipt: ipt.bytes().peekable(),
-            filename: Rc::new(filename.into()),
+            filename: Arc::new(filename.into()),
             state: State::default(),
         }
     }
@@ -158,7 +158,7 @@ where
         let len = kind.len();
         Token::new(
             kind,
-            Meta::new(Rc::clone(&self.filename), self.state.cursor, len),
+            Meta::new(Arc::clone(&self.filename), self.state.cursor, len),
         )
     }
 
@@ -345,7 +345,6 @@ mod tests {
 
         for (ipt, expected) in test_case {
             let actual = Lexer::new("", ipt.as_bytes())
-                .into_iter()
                 .map(|v| v.unwrap().1)
                 .inspect(|v| println!("{:?}", v));
 

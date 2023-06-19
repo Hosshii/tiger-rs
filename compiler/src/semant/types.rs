@@ -13,8 +13,6 @@ impl TypeId {
 }
 
 /// `Type` represents tiger language's type.
-/// `Complete` can determine the type just by looking at it and it never changes.
-/// `InComplete` may be incomplete due to mutual recursion etc. And may be changed later.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
     Int,
@@ -35,14 +33,14 @@ impl Type {
     pub fn dummy_record() -> Self {
         Self::Record {
             fields: Vec::new(),
-            unique: Unique::dummy(),
+            unique: Unique::DUMMY,
         }
     }
 
     pub fn dummy_array() -> Self {
         Self::Array {
-            ty: TypeId::dummy(),
-            unique: Unique::dummy(),
+            ty: TypeId::DUMMY,
+            unique: Unique::DUMMY,
         }
     }
 
@@ -71,12 +69,9 @@ static UNIQUE_INDEX: AtomicU32 = AtomicU32::new(1);
 pub struct Unique(u32);
 
 impl Unique {
+    pub const DUMMY: Self = Self(0);
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Unique(UNIQUE_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
-    }
-
-    pub fn dummy() -> Self {
-        Self(0)
     }
 }
