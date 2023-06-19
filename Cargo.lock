@@ -701,6 +701,7 @@ name = "tiger"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cfg-if",
  "itertools",
  "lalrpop",
  "lalrpop-util",

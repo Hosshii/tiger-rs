@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     process::Command,
 };
-use tiger::{Codegen, X86_64_APPLE_DARWIN};
+use tiger::Codegen;
 
 const TEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/", "tests");
 
@@ -70,29 +70,42 @@ fn test_wasm() {
     });
 }
 
-#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[cfg(any(
+    all(target_arch = "x86_64", target_os = "linux"),
+    all(target_arch = "x86_64", target_os = "macos"),
+    all(target_arch = "aarch64", target_os = "macos"),
+))]
 #[test]
-fn test_x86_64() {
-    TEST_FILES.iter().for_each(|(expected, file_name)| {
+fn test_unixlike() {
+    cfg_if::cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
+            use tiger::X86_64_LINUX_GNU as ARCH;
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
+            use tiger::X86_64_APPLE_DARWIN as ARCH;
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
+            use tiger::AARCH64_APPLE_DARWIN as ARCH;
+        }
+    }
+
+    TEST_FILES.par_iter().for_each(|(expected, file_name)| {
         let tiger_file = PathBuf::from(TIGER_FILE_DIR).join(file_name);
-        test_on_unixlike(*expected, &tiger_file, CDYLIB_FILE, X86_64_APPLE_DARWIN).unwrap();
+        test_on_unixlike(*expected, &tiger_file, CDYLIB_FILE, ARCH).unwrap();
     });
 }
 
-#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-const CDYLIB_FILE: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../target/release/libcdylib.so"
-);
-
-#[cfg(all(
-    any(target_arch = "x86_64", target_arch = "aarch64"),
-    target_os = "macos"
-))]
-const CDYLIB_FILE: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../target/release/libcdylib.dylib"
-);
+cfg_if::cfg_if! {
+    if #[cfg(target_os = "linux")] {
+        const CDYLIB_FILE: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../target/release/libcdylib.so"
+        );
+    } else if #[cfg(target_os = "macos")] {
+        const CDYLIB_FILE: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../target/release/libcdylib.dylib"
+        );
+    }
+}
 
 fn test_on_unixlike<C: Codegen>(
     expected: i32,
@@ -119,6 +132,7 @@ fn test_on_unixlike<C: Codegen>(
     let mut clang = Command::new("clang")
         .arg("-o")
         .arg(exe_path.display().to_string())
+        .arg("-no-pie")
         .arg(library_file)
         .arg(asm_path.display().to_string())
         .spawn()
