@@ -96,4 +96,9 @@ assert 0 test41.tig
 assert 1 test42.tig
 # assert 1 test43.tig # in wasm, ignore this
 assert 3 test44.tig
+assert 2 test45.tig
+assert 0 test46.tig
+assert 5 test47.tig
+assert 10 test48.tig
+assert 65 test49.tig
 

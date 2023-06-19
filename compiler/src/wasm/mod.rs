@@ -38,8 +38,8 @@ use crate::{
 use self::{
     ast::{
         BinOp, BlockType, CvtOp, Expr, Func, FuncType, Global, GlobalType, Import, ImportKind,
-        Index, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType, Operator,
-        Param, TestOp, ValType,
+        Index, IndexNumber, Instruction, Limits, Memory, Module, ModuleBuilder, Mut, Name, NumType,
+        Operator, Param, TestOp, ValType,
     },
     builtin::{
         ALLOC_RECORD, ALLOC_STRING, BUILTIN_FUNCS, INIT_ARRAY, LOAD_I32, LOAD_I64, STRING_EQ,
@@ -196,7 +196,7 @@ const JS_OBJECT_NAME: &str = "env";
 pub fn translate(tcx: &TyCtx, hir: &HirProgram) -> Module {
     let mut wasm = Wasm::new(tcx);
     let outermost_level = Level::outermost_with_name(MAIN_SYMBOL);
-    let expr = wasm.trans_expr(hir, outermost_level.clone());
+    let expr = wasm.trans_expr(hir, outermost_level.clone(), BreakContext::new().entered());
     let expr = if hir.ty == TypeId::INT {
         expr
     } else {
@@ -326,6 +326,31 @@ impl LevelInner {
 
 type Access = (FrameAccess, Level);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BreakContext {
+    depth: IndexNumber,
+}
+
+impl BreakContext {
+    fn new() -> Self {
+        Self { depth: 0 }
+    }
+
+    // Op::Blockがある時はこれを呼ぶ
+    fn entered(self) -> Self {
+        Self {
+            depth: self.depth + 1,
+        }
+    }
+
+    fn into_expr(self) -> ExprType {
+        ExprType::new(
+            Expr::Op(Operator::Br(Index::Index(self.depth as IndexNumber))),
+            StackType::nop(),
+        )
+    }
+}
+
 struct Wasm<'tcx> {
     var_env: HashMap<VarId, Access>,
     fn_env: HashMap<FnId, Level>,
@@ -350,14 +375,14 @@ impl<'tcx> Wasm<'tcx> {
         }
     }
 
-    fn trans_expr(&mut self, expr: &HirExpr, level: Level) -> ExprType {
+    fn trans_expr(&mut self, expr: &HirExpr, level: Level, bcx: BreakContext) -> ExprType {
         match &expr.kind {
-            ExprKind::LValue(lvalue, _) => self.load_lvalue(lvalue, level),
-            ExprKind::Nil(_) => todo!(),
+            ExprKind::LValue(lvalue, _) => self.load_lvalue(lvalue, level, bcx),
+            ExprKind::Nil(_) => num(0, NumType::I32).add_comment("mil"),
             ExprKind::Sequence(exprs, _) => {
                 let exprs = exprs
                     .iter()
-                    .map(|expr| self.trans_expr(expr, level.clone()))
+                    .map(|expr| self.trans_expr(expr, level.clone(), bcx.entered()))
                     .collect();
                 sequence(exprs).add_comment("seq")
             }
@@ -375,7 +400,7 @@ impl<'tcx> Wasm<'tcx> {
                 let args_expr = args
                     .iter()
                     .map(|a| {
-                        let e = self.trans_expr(a, level.clone());
+                        let e = self.trans_expr(a, level.clone(), bcx);
                         e.val
                     })
                     .collect();
@@ -395,8 +420,8 @@ impl<'tcx> Wasm<'tcx> {
                 rhs,
                 _,
             ) => {
-                let lhs = self.trans_expr(lhs, level.clone());
-                let rhs = self.trans_expr(rhs, level);
+                let lhs = self.trans_expr(lhs, level.clone(), bcx);
+                let rhs = self.trans_expr(rhs, level, bcx);
                 bin_op((*op).try_into().unwrap(), lhs, rhs).add_comment("bin op")
             }
             // int and string
@@ -408,8 +433,8 @@ impl<'tcx> Wasm<'tcx> {
             ) => {
                 let lhs_ty = self.tcx.type_(lhs.ty);
                 let rhs_ty = self.tcx.type_(rhs.ty);
-                let lhs = self.trans_expr(lhs, level.clone());
-                let rhs = self.trans_expr(rhs, level);
+                let lhs = self.trans_expr(lhs, level.clone(), bcx);
+                let rhs = self.trans_expr(rhs, level, bcx);
                 match (lhs_ty, rhs_ty) {
                     (Type::Int, Type::Int) => bin_op((*op).try_into().unwrap(), lhs, rhs),
                     (Type::String, Type::String) => string_ord((*op).try_into().unwrap(), lhs, rhs),
@@ -419,8 +444,8 @@ impl<'tcx> Wasm<'tcx> {
             // compare two type
             ExprKind::Op(op @ (HirOperator::Eq | HirOperator::Neq), lhs, rhs, _) => {
                 let ty = lhs.ty;
-                let lhs = self.trans_expr(lhs, level.clone());
-                let rhs = self.trans_expr(rhs, level);
+                let lhs = self.trans_expr(lhs, level.clone(), bcx);
+                let rhs = self.trans_expr(rhs, level, bcx);
                 if ty == TypeId::STRING {
                     string_eq((*op).try_into().unwrap(), lhs, rhs)
                 } else {
@@ -428,30 +453,38 @@ impl<'tcx> Wasm<'tcx> {
                 }
             }
 
-            ExprKind::Neg(_, _) => todo!(),
+            ExprKind::Neg(expr, _) => {
+                let expr = self.trans_expr(expr, level, bcx);
+                assert!(expr.ty.is_const_1());
+                let ValType::Num(ty) = expr.ty.result[0];
+                bin_op(BinOp::Sub, num(0, ty), expr)
+            }
             ExprKind::RecordCreation(_, field, _) => {
                 let exprs = field
                     .iter()
-                    .map(|v| self.trans_expr(&v.expr, level.clone()))
+                    .map(|v| self.trans_expr(&v.expr, level.clone(), bcx))
                     .collect::<Vec<_>>();
                 record_creation(&mut level.frame_mut(), exprs)
             }
             ExprKind::ArrayCreation { size, init, .. } => {
-                let size = self.trans_expr(size, level.clone());
-                let init = self.trans_expr(init, level.clone());
+                let size = self.trans_expr(size, level.clone(), bcx);
+                let init = self.trans_expr(init, level.clone(), bcx);
                 let mut frame = level.frame_mut();
                 array_creation(&mut frame, size, init).add_comment("array creation")
             }
             ExprKind::Assign(lvalue, expr, _) => {
-                let expr = self.trans_expr(expr, level.clone());
-                self.store_lvalue(lvalue, level, expr).add_comment("assign")
+                let expr = self.trans_expr(expr, level.clone(), bcx);
+                self.store_lvalue(lvalue, level, expr, bcx)
+                    .add_comment("assign")
             }
             ExprKind::If {
                 cond, then, els, ..
             } => {
-                let mut cond = self.trans_expr(cond, level.clone());
-                let then = self.trans_expr(then, level.clone());
-                let els = els.as_deref().map(|els| self.trans_expr(els, level));
+                let mut cond = self.trans_expr(cond, level.clone(), bcx);
+                let then = self.trans_expr(then, level.clone(), bcx.entered());
+                let els = els
+                    .as_deref()
+                    .map(|els| self.trans_expr(els, level, bcx.entered()));
 
                 if cond.ty.is_const_1_i64() {
                     cond = i64_2_i32(cond);
@@ -460,20 +493,20 @@ impl<'tcx> Wasm<'tcx> {
                 if_expr(cond, then, els).add_comment("if expr")
             }
             ExprKind::While(cond, instr, _) => {
-                let cond = self.trans_expr(cond, level.clone());
-                let body = self.trans_expr(instr, level);
+                let cond = self.trans_expr(cond, level.clone(), bcx);
+                let body = self.trans_expr(instr, level, BreakContext::new().entered());
                 while_expr(cond, body).add_comment("while expr")
             }
-            ExprKind::Break(_) => todo!(),
+            ExprKind::Break(_) => bcx.into_expr().add_comment("break"),
             ExprKind::Let(decls, exprs, _) => {
                 let mut decls = decls
                     .iter()
-                    .flat_map(|v| self.trans_decl(v, level.clone()))
+                    .flat_map(|v| self.trans_decl(v, level.clone(), bcx.entered()))
                     .collect::<Vec<_>>();
 
                 let exprs = exprs
                     .iter()
-                    .map(|v| self.trans_expr(v, level.clone()))
+                    .map(|v| self.trans_expr(v, level.clone(), bcx.entered()))
                     .collect::<Vec<_>>();
                 let exprs = sequence(exprs);
 
@@ -484,7 +517,13 @@ impl<'tcx> Wasm<'tcx> {
         }
     }
 
-    fn store_lvalue(&mut self, lvalue: &HirLValue, level: Level, expr: ExprType) -> ExprType {
+    fn store_lvalue(
+        &mut self,
+        lvalue: &HirLValue,
+        level: Level,
+        expr: ExprType,
+        bcx: BreakContext,
+    ) -> ExprType {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
@@ -497,7 +536,7 @@ impl<'tcx> Wasm<'tcx> {
                 field_index,
                 ..
             } => {
-                let var = self.load_lvalue(record, level);
+                let var = self.load_lvalue(record, level, bcx);
                 expr.assert_ty(StackType::const_1_i32());
 
                 Frame::extern_call(
@@ -518,8 +557,8 @@ impl<'tcx> Wasm<'tcx> {
                 let ty = self.tcx.type_(*ty);
                 let ValType::Num(num_ty) = convert_ty(ty).unwrap();
 
-                let var = self.load_lvalue(array, level.clone());
-                let subscript = self.trans_expr(index, level);
+                let var = self.load_lvalue(array, level.clone(), bcx);
+                let subscript = self.trans_expr(index, level, bcx);
 
                 let store_fn = match num_ty {
                     NumType::I32 => STORE_I32,
@@ -537,7 +576,7 @@ impl<'tcx> Wasm<'tcx> {
         }
     }
 
-    fn load_lvalue(&mut self, lvalue: &HirLValue, level: Level) -> ExprType {
+    fn load_lvalue(&mut self, lvalue: &HirLValue, level: Level, bcx: BreakContext) -> ExprType {
         match lvalue {
             HirLValue::Var(_, var_id, _, _) => {
                 let (access, ancestor_level) = self.var_env.get(var_id).expect("access not found");
@@ -551,7 +590,7 @@ impl<'tcx> Wasm<'tcx> {
                 field_index,
                 ..
             } => {
-                let var = self.load_lvalue(record, level);
+                let var = self.load_lvalue(record, level, bcx);
                 Frame::extern_call(
                     LOAD_I32,
                     vec![record_field(var, *field_index)],
@@ -570,8 +609,8 @@ impl<'tcx> Wasm<'tcx> {
                 let ty = self.tcx.type_(*ty);
                 let val_type @ ValType::Num(num_ty) = convert_ty(ty).unwrap();
 
-                let var = self.load_lvalue(array, level.clone());
-                let subscript = self.trans_expr(index, level);
+                let var = self.load_lvalue(array, level.clone(), bcx);
+                let subscript = self.trans_expr(index, level, bcx);
 
                 let load_fn = match num_ty {
                     NumType::I32 => LOAD_I32,
@@ -587,11 +626,16 @@ impl<'tcx> Wasm<'tcx> {
         }
     }
 
-    fn trans_decl(&mut self, decl: &Decl, parent_level: Level) -> Option<ExprType> {
+    fn trans_decl(
+        &mut self,
+        decl: &Decl,
+        parent_level: Level,
+        bcx: BreakContext,
+    ) -> Option<ExprType> {
         match decl {
             Decl::Type(_) => None,
             Decl::Var(VarDecl(_, var_id, is_escape, _, ty_id, expr, _)) => {
-                let expr = self.trans_expr(expr, parent_level.clone());
+                let expr = self.trans_expr(expr, parent_level.clone(), bcx);
 
                 let mut frame = parent_level.frame_mut();
                 let ty = self.tcx.type_(*ty_id);
@@ -639,7 +683,7 @@ impl<'tcx> Wasm<'tcx> {
                         self.var_env.insert(param.var_id, access);
                     }
 
-                    let body = self.trans_expr(&decl.body, level.clone());
+                    let body = self.trans_expr(&decl.body, level.clone(), bcx);
 
                     let mut args_ty: Vec<_> = decl
                         .params

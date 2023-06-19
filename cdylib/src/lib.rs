@@ -21,38 +21,6 @@ pub extern "C" fn initArray(size: TigerInt) -> *mut TigerArray {
     }))
 }
 
-#[cfg(target_arch = "wasm32")]
-#[no_mangle]
-/// # Safety
-/// addr must be valid
-pub unsafe extern "C" fn loadi32(addr: *const i32) -> i32 {
-    unsafe { core::ptr::read_unaligned(addr) }
-}
-
-#[cfg(target_arch = "wasm32")]
-#[no_mangle]
-/// # Safety
-/// addr must be valid
-pub unsafe extern "C" fn loadi64(addr: *const i64) -> i64 {
-    unsafe { core::ptr::read_unaligned(addr) }
-}
-
-#[cfg(target_arch = "wasm32")]
-#[no_mangle]
-/// # Safety
-/// addr must be valid
-pub unsafe extern "C" fn storei32(addr: *mut i32, val: i32) {
-    unsafe { core::ptr::write_unaligned(addr, val) }
-}
-
-#[cfg(target_arch = "wasm32")]
-#[no_mangle]
-/// # Safety
-/// addr must be valid
-pub unsafe extern "C" fn storei64(addr: *mut i64, val: i64) {
-    unsafe { core::ptr::write_unaligned(addr, val) }
-}
-
 #[repr(C)]
 pub struct TigerRecord {
     len: TigerInt,
@@ -74,18 +42,6 @@ pub extern "C" fn allocRecord(size: TigerInt) -> *mut TigerRecord {
 pub struct TigerSting {
     len: TigerInt,
     data: *mut u8,
-}
-
-#[cfg(target_arch = "wasm32")]
-#[no_mangle]
-pub extern "C" fn allocString(byte_size: TigerInt) -> *mut TigerSting {
-    let v: Vec<u8> = vec![0; byte_size as usize];
-    let v = Box::leak(Box::new(v));
-
-    Box::leak(Box::new(TigerSting {
-        len: v.len() as TigerInt,
-        data: v.as_mut_ptr(),
-    }))
 }
 
 /// # Safety
@@ -250,4 +206,55 @@ pub extern "C" fn not(i: TigerInt) -> TigerInt {
 #[no_mangle]
 pub extern "C" fn tiger_exit(i: TigerInt) -> ! {
     std::process::exit(i as i32)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use super::*;
+
+    #[no_mangle]
+    pub extern "C" fn allocString(byte_size: TigerInt) -> *mut TigerSting {
+        let v: Vec<u8> = vec![0; byte_size as usize];
+        let v = Box::leak(Box::new(v));
+
+        Box::leak(Box::new(TigerSting {
+            len: v.len() as TigerInt,
+            data: v.as_mut_ptr(),
+        }))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[no_mangle]
+    /// # Safety
+    /// addr must be valid
+    pub unsafe extern "C" fn loadi32(addr: *const i32) -> i32 {
+        unsafe { core::ptr::read_unaligned(addr) }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[no_mangle]
+    /// # Safety
+    /// addr must be valid
+    pub unsafe extern "C" fn loadi64(addr: *const i64) -> i64 {
+        unsafe { core::ptr::read_unaligned(addr) }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[no_mangle]
+    /// # Safety
+    /// addr must be valid
+    pub unsafe extern "C" fn storei32(addr: *mut i32, val: i32) {
+        unsafe { core::ptr::write_unaligned(addr, val) }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[no_mangle]
+    /// # Safety
+    /// addr must be valid
+    pub unsafe extern "C" fn storei64(addr: *mut i64, val: i64) {
+        unsafe { core::ptr::write_unaligned(addr, val) }
+    }
 }
