@@ -7,7 +7,7 @@ use crate::{
 };
 use frame::X86 as X86_64Frame;
 
-use super::{Codegen, Frame as _};
+use super::{sealed::Sealed, Codegen, Frame as _};
 
 pub struct X86_64 {
     instructions: Vec<Instruction>,
@@ -271,6 +271,8 @@ impl X86_64 {
         self.instructions.push(instr)
     }
 }
+
+impl Sealed for X86_64 {}
 
 impl Codegen for X86_64 {
     type Frame = X86_64Frame;

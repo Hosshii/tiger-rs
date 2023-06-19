@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Position {
@@ -24,13 +24,13 @@ pub type Positions = (Position, Position);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Meta {
-    pub(crate) filename: Rc<String>,
+    pub(crate) filename: Arc<String>,
     pub(crate) cursor: Position,
     pub(crate) length: usize,
 }
 
 impl Meta {
-    pub fn new(filename: Rc<String>, cursor: Position, length: usize) -> Self {
+    pub fn new(filename: Arc<String>, cursor: Position, length: usize) -> Self {
         Self {
             filename,
             cursor,

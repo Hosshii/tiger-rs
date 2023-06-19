@@ -18,3 +18,9 @@ macros = { path = "../macros" }
 
 [build-dependencies] 
 lalrpop = "0.20.0"
+
+# standard crate data is left out
+[dev-dependencies]
+anyhow = "1.0.71"
+rayon = "1.7.0"
+rand = "0.8.5"

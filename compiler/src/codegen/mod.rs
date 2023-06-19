@@ -9,7 +9,7 @@ mod graph;
 pub(super) mod liveness;
 pub mod reg_alloc;
 
-pub trait Codegen {
+pub trait Codegen: sealed::Sealed {
     type Frame: Frame;
     const MAIN_SYMBOL: &'static str;
 
@@ -19,4 +19,8 @@ pub trait Codegen {
     fn string(label: &Label, s: &str) -> String;
 
     fn header() -> String;
+}
+
+mod sealed {
+    pub trait Sealed {}
 }

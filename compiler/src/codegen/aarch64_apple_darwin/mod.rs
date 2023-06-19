@@ -7,7 +7,7 @@ use crate::{
 };
 use frame::ARM64 as ARM64Frame;
 
-use super::{Codegen, Frame as _};
+use super::{sealed::Sealed, Codegen, Frame as _};
 
 pub struct ARM64 {
     instructions: Vec<Instruction>,
@@ -253,6 +253,8 @@ impl ARM64 {
         self.instructions.push(instr)
     }
 }
+
+impl Sealed for ARM64 {}
 
 impl Codegen for ARM64 {
     type Frame = ARM64Frame;
