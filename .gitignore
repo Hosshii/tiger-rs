@@ -1,5 +1,4 @@
 target
-testcases
 *.s
 *.c
 *.out
