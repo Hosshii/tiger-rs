@@ -53,7 +53,7 @@ impl<T: Encode + ?Sized> Encode for &'_ T {
     }
 }
 
-/// https://webassembly.github.io/spec/core/binary/conventions.html#vectors
+/// <https://webassembly.github.io/spec/core/binary/conventions.html#vectors>
 impl<T: Encode> Encode for [T] {
     fn encode(&self, sink: &mut Vec<u8>) {
         let len = self.len();

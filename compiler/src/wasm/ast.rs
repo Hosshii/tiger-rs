@@ -223,7 +223,13 @@ impl From<ValType> for Param {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl From<Param> for ValType {
+    fn from(param: Param) -> Self {
+        param.type_
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct WasmResult(pub ValType);
 
 impl WasmResult {
@@ -235,6 +241,12 @@ impl WasmResult {
 impl From<ValType> for WasmResult {
     fn from(val_type: ValType) -> Self {
         Self(val_type)
+    }
+}
+
+impl From<WasmResult> for ValType {
+    fn from(result: WasmResult) -> Self {
+        result.0
     }
 }
 

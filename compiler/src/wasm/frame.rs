@@ -55,7 +55,7 @@ impl Frame {
 
     pub fn alloc_local(&mut self, is_escape: bool, ty: ValType) -> Access {
         if is_escape {
-            self.pointer += super::size(&ty);
+            self.pointer += ty.byte_size();
             Access::Frame(self.pointer, ty)
         } else {
             let count = self.locals.len();
@@ -67,7 +67,7 @@ impl Frame {
 
     pub fn alloc_param(&mut self, index: usize, is_escape: bool, ty: ValType) -> Access {
         if is_escape {
-            self.pointer += super::size(&ty);
+            self.pointer += &ty.byte_size();
             Access::Frame(self.pointer, ty)
         } else {
             Access::Param(Param::new(index, ty))
@@ -75,7 +75,7 @@ impl Frame {
     }
 
     pub(super) fn init_local(&mut self, is_escape: bool, expr: ExprType) -> (Access, ExprType) {
-        let access = self.alloc_local(is_escape, expr.ty.result[0]);
+        let access = self.alloc_local(is_escape, expr.ty.result()[0]);
         let expr = self.store2access(&access, Self::fp(), expr);
         (access, expr)
     }
@@ -182,14 +182,14 @@ impl Frame {
                 )
             }
             Access::Local(local) => {
-                assert_eq!(local.1, expr.ty.result[0]);
+                assert_eq!(local.1, expr.ty.result()[0]);
                 Expr::OpExpr(
                     Operator::LocalSet(self.local_as_index(local)),
                     vec![expr.val],
                 )
             }
             Access::Param(param) => {
-                assert_eq!(param.1, expr.ty.result[0]);
+                assert_eq!(param.1, expr.ty.result()[0]);
                 Expr::OpExpr(
                     Operator::LocalSet(self.param_as_index(param)),
                     vec![expr.val],
