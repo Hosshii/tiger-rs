@@ -21,7 +21,7 @@ jobs:
             targets: wasm32-unknown-unknown
 
       - name: Cache cargo dir
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
 
       - name: Build for wasm
         run: cargo build --release --target wasm32-unknown-unknown
