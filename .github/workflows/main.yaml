@@ -23,16 +23,10 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@v2
         with:
-          tool: wasm-pack
+          tool: wasm-pack, cargo-make
 
       - name: Cache cargo dir
         uses: Swatinem/rust-cache@v2
 
-      - name: Build for wasm
-        run: cargo build --release --target wasm32-unknown-unknown
-
-      - name: Build
-        run: cargo build --release
-
       - name: Test
-        run: cargo test --release
+        run: cargo make test-release
