@@ -28,11 +28,17 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "20.x"
+          cache: "npm"
+          cache-dependency-path: "**/package-lock.json"
+
       - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-make
+          tool: cargo-make, wasm-pack
 
       - name: Build app
         run: cargo make build-release

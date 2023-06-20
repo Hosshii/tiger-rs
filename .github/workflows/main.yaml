@@ -28,5 +28,8 @@ jobs:
       - name: Cache cargo dir
         uses: Swatinem/rust-cache@v2
 
+      - name: Build
+        run: cargo make build-release
+
       - name: Test
-        run: cargo make test-release
+        run: cargo make test

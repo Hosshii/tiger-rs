@@ -155,8 +155,6 @@ fn test_on_unixlike<C: Codegen>(
 
 const TIGER_FILE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testfiles");
 const JS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test.js");
-const CDYLIB_CRATE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../cdylib/");
-const CDYLIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/pkg");
 
 fn test_on_wasm(expected: i32, tiger_file: &PathBuf, js_file: &str) -> Result<()> {
     let name = tiger_file
