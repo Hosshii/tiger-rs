@@ -64,9 +64,11 @@ const TEST_FILES: [(i32, &str); 47] = [
 
 #[test]
 fn test_wasm() {
+    compile_cdylib().unwrap();
+
     TEST_FILES.par_iter().for_each(|(expected, file_name)| {
         let tiger_file = PathBuf::from(TIGER_FILE_DIR).join(file_name);
-        test_on_wasm(*expected, &tiger_file, WASM_LIBRARY_FILE, JS_FILE).unwrap();
+        test_on_wasm(*expected, &tiger_file, JS_FILE).unwrap();
     });
 }
 
@@ -152,20 +154,12 @@ fn test_on_unixlike<C: Codegen>(
     Ok(())
 }
 
-const WASM_LIBRARY_FILE: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/..",
-    "/target/wasm32-unknown-unknown/release/cdylib.wasm"
-);
 const TIGER_FILE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testfiles");
-const JS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testfiles/test.js");
+const JS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test.js");
+const CDYLIB_CRATE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../cdylib/");
+const CDYLIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/pkg");
 
-fn test_on_wasm(
-    expected: i32,
-    tiger_file: &PathBuf,
-    library_file: &str,
-    js_file: &str,
-) -> Result<()> {
+fn test_on_wasm(expected: i32, tiger_file: &PathBuf, js_file: &str) -> Result<()> {
     let name = tiger_file
         .file_name()
         .context("tiger_file has no filename")?;
@@ -182,7 +176,6 @@ fn test_on_wasm(
     let mut cmd = Command::new("node")
         .arg(js_file)
         .arg(out_path.display().to_string())
-        .arg(library_file)
         .arg(expected.to_string())
         .spawn()
         .context("cannot spawn clang")?;
@@ -192,6 +185,20 @@ fn test_on_wasm(
     fs::remove_file(out_path).context("cannot remove file")?;
 
     assert!(status.success());
+    Ok(())
+}
+
+fn compile_cdylib() -> Result<()> {
+    let mut cmd = Command::new("wasm-pack")
+        .arg("build")
+        .arg("--target")
+        .arg("nodejs")
+        .arg("--out-dir")
+        .arg(CDYLIB_DIR)
+        .current_dir(CDYLIB_CRATE_DIR)
+        .spawn()
+        .context("cannot spawn wasm-pack")?;
+    cmd.wait().context("wasm-pack terminated with an error")?;
     Ok(())
 }
 

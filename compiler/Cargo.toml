@@ -23,4 +23,4 @@ lalrpop = "0.20.0"
 [dev-dependencies]
 rayon = "1.7.0"
 rand = "0.8.5"
-cfg-if = "1.0.0"
+cfg-if = { workspace = true }
