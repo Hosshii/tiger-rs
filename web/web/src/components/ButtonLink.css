@@ -1,0 +1,19 @@
+.button, .button-link {
+    transition: background-color 0.3s;
+    color: white;
+    background-color: rgb(170, 68, 34);
+
+    border-radius: 4px;
+    border: 1px solid transparent;
+    padding: 0.6em 1.2em;
+    font-size: 1em;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+}
+  
+.button-link:hover, .button-link:focus, .button:hover, .button:focus {
+    color: white; /* ホバーまたはフォーカスしたときも色を変えない */
+    background-color: rgb(136, 54, 27);
+}
+  

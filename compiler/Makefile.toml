@@ -1,0 +1,37 @@
+[tasks.prepare-integration-test]
+description = "Build cdylib for compiler integration test"
+cwd = "../cdylib"
+install_crate = "wasm-pack"
+command = "wasm-pack"
+args = ["build", "--target", "nodejs", "--out-dir", "../compiler/tests/pkg"]
+
+[tasks.prepare-integration-test-release]
+description = "Build cdylib for compiler integration test (release)"
+extend = "prepare-integration-test"
+args = ["build", "--target", "nodejs", "--release", "--out-dir", "../compiler/tests/pkg"]
+
+[tasks.test]
+description = "Run tests"
+dependencies = ["prepare-integration-test"]
+command = "cargo"
+args = ["test"]
+
+[tasks.test-release]
+description = "Run tests (release)"
+dependencies = ["prepare-integration-test-release"]
+command = "cargo"
+args = ["test", "--release"]
+
+[tasks.clean-dylib]
+description = "Clean rust artifacts"
+command = "rm"
+args = ["-rf", "./tests/pkg"]
+
+[tasks.clean-rust]
+description = "Clean rust artifacts"
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean]
+description = "Clean"
+dependencies = ["clean-dylib", "clean-rust"]

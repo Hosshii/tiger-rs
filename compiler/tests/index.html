@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <script type="module">
+      import init_cdylib, { read_stdout, write_stdin } from "./pkg/cdylib.js";
+
+      const cdylib = await init_cdylib();
+      const importObj = {
+        env: cdylib,
+      };
+      WebAssembly.instantiateStreaming(fetch("./test.wasm"), importObj).then(
+        (obj) => {
+          console.log(obj.instance.exports._start());
+          console.log(read_stdout());
+        }
+      );
+    </script>
+  </body>
+</html>

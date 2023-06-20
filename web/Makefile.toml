@@ -1,0 +1,59 @@
+[tasks.build]
+description = "Build the web app"
+cwd = "./web"
+dependencies = ["build-cdylib", "build-compiler", "install-node-deps"]
+command = "npm"
+args = ["run", "build"]
+env = { "NODE_ENV" = "${CARGO_MAKE_PROFILE}" }
+
+[tasks.build-release]
+description = "Build the web app (release)"
+cwd = "./web"
+dependencies = ["build-cdylib-release", "build-compiler-release", "install-node-deps"]
+command = "npm"
+args = ["run", "build"]
+env = { "NODE_ENV" = "${CARGO_MAKE_PROFILE}" }
+
+[tasks.install-node-deps]
+description = "Install node dependencies"
+cwd = "./web"
+command = "npm"
+args = ["install"]
+
+[tasks.build-cdylib]
+description = "Build the cdylib"
+cwd = "../cdylib"
+install_crate = "wasm-pack"
+command = "wasm-pack"
+args = ["build", "--target", "web", "--out-dir", "../web/web/src/pkg_cdylib"]
+
+[tasks.build-cdylib-release]
+description = "Build the cdylib (release)"
+extend = "build-cdylib"
+args = ["build","--release", "--target", "web", "--out-dir", "../web/web/src/pkg_cdylib"]
+
+[tasks.build-compiler]
+description = "Build the compiler"
+install_crate = "wasm-pack"
+command = "wasm-pack"
+args = ["build", "--target", "web", "--out-dir", "./web/src/pkg_compiler"]
+
+[tasks.build-compiler-release]
+description = "Build the compiler (release)"
+extend = "build-compiler"
+args = ["build", "--release", "--target", "web", "--out-dir", "./web/src/pkg_compiler"]
+
+[tasks.clean_web]
+description = "Clean the web app"
+command = "rm"
+args = ["-rf", "./web/dist", "./web/node_modules", "./web/src/pkg_cdylib", "./web/src/pkg_compiler"]
+
+[tasks.clean_rust]
+description = "Clean the rust app"
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean]
+description = "Clean the rust and web apps"
+dependencies = ["clean_web", "clean_rust"]
+

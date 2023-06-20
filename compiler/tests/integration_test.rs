@@ -10,7 +10,7 @@ use tiger::Codegen;
 
 const TEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/", "tests");
 
-const TEST_FILES: [(i32, &str); 47] = [
+const TEST_FILES: [(i32, &str); 48] = [
     (1, "test1.tig"),
     (10, "test2.tig"),
     (10, "test3.tig"),
@@ -29,7 +29,7 @@ const TEST_FILES: [(i32, &str); 47] = [
     (0, "test16.tig"),
     (0, "test17.tig"),
     (0, "test18.tig"),
-    //  0 test16.tig
+    //  0 test19.tig
     (1, "test20.tig"),
     (0, "test21.tig"),
     (0, "test22.tig"),
@@ -60,13 +60,14 @@ const TEST_FILES: [(i32, &str); 47] = [
     (5, "test47.tig"),
     (10, "test48.tig"),
     (65, "test49.tig"),
+    (31, "test50.tig"),
 ];
 
 #[test]
 fn test_wasm() {
     TEST_FILES.par_iter().for_each(|(expected, file_name)| {
         let tiger_file = PathBuf::from(TIGER_FILE_DIR).join(file_name);
-        test_on_wasm(*expected, &tiger_file, WASM_LIBRARY_FILE, JS_FILE).unwrap();
+        test_on_wasm(*expected, &tiger_file, JS_FILE).unwrap();
     });
 }
 
@@ -152,20 +153,12 @@ fn test_on_unixlike<C: Codegen>(
     Ok(())
 }
 
-const WASM_LIBRARY_FILE: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/..",
-    "/target/wasm32-unknown-unknown/release/cdylib.wasm"
-);
 const TIGER_FILE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testfiles");
-const JS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testfiles/test.js");
+const JS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test.js");
+const CDYLIB_CRATE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../cdylib/");
+const CDYLIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/pkg");
 
-fn test_on_wasm(
-    expected: i32,
-    tiger_file: &PathBuf,
-    library_file: &str,
-    js_file: &str,
-) -> Result<()> {
+fn test_on_wasm(expected: i32, tiger_file: &PathBuf, js_file: &str) -> Result<()> {
     let name = tiger_file
         .file_name()
         .context("tiger_file has no filename")?;
@@ -182,7 +175,6 @@ fn test_on_wasm(
     let mut cmd = Command::new("node")
         .arg(js_file)
         .arg(out_path.display().to_string())
-        .arg(library_file)
         .arg(expected.to_string())
         .spawn()
         .context("cannot spawn clang")?;

@@ -10,7 +10,7 @@ default-run = "tiger"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.40"
 lalrpop-util = "0.20.0"
-anyhow = "1.0.71"
+anyhow = { workspace = true }
 once_cell = "1.18.0"
 itertools = "0.10.5"
 leb128 = "0.2.5"
@@ -21,7 +21,6 @@ lalrpop = "0.20.0"
 
 # standard crate data is left out
 [dev-dependencies]
-anyhow = "1.0.71"
 rayon = "1.7.0"
 rand = "0.8.5"
-cfg-if = "1.0.0"
+cfg-if = { workspace = true }

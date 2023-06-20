@@ -29,7 +29,7 @@ pub struct Frame {
     pointer: usize,
     locals: Vec<Local>,
     formals: Vec<Access>,
-    env: Access,
+    env: Option<Access>,
 }
 
 impl Frame {
@@ -42,13 +42,18 @@ impl Frame {
             pointer: 0,
             locals: Vec::new(),
             formals: vec![],
-            env: Access::Param(Param::new(0, ValType::Num(NumType::I32))),
+            env: None, // rewrite after
         };
         let formals = formals
             .into_iter()
             .enumerate()
             .map(|(idx, (is_escape, ty))| frame.alloc_param(idx, is_escape, ty))
-            .collect();
+            .collect::<Vec<_>>();
+
+        if let Some(access) = formals.get(0) {
+            frame.env = Some(access.clone());
+        }
+
         frame.formals = formals;
         frame
     }
@@ -90,8 +95,8 @@ impl Frame {
         self.formals.len()
     }
 
-    pub fn env(&self) -> &Access {
-        &self.env
+    pub fn env(&self) -> Option<&Access> {
+        self.env.as_ref()
     }
 
     pub fn formals(&self) -> &[Access] {
