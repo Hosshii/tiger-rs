@@ -3,4 +3,8 @@ members = [
     "compiler",
     "cdylib",
     "macros",
+    "web",
 ]
+
+[workspace.dependencies]
+anyhow = "1.0.71"
