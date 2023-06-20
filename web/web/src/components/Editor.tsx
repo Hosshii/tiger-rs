@@ -3,9 +3,20 @@ import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import "./Editor.css";
 
 export const Editor: React.FC<{
-  value: string;
-  onChange: (text: string) => void;
-}> = ({ value, onChange }) => {
+  initialValue?: string;
+  value?: string;
+  onChange?: (text: string) => void;
+  readOnly?: boolean;
+  lineNumbers?: monaco.editor.LineNumbersType;
+  renderLineHighlight?: "none" | "gutter" | "line" | "all";
+}> = ({
+  initialValue = "",
+  value,
+  onChange,
+  readOnly = false,
+  lineNumbers = "on",
+  renderLineHighlight,
+}) => {
   const [editor, setEditor] =
     useState<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoEl = useRef(null);
@@ -16,18 +27,19 @@ export const Editor: React.FC<{
         if (editor) return editor;
 
         const newEditor = monaco.editor.create(monacoEl.current!, {
-          value: value,
+          value: initialValue,
           language: "",
-          lineNumbers: "on", // テキストエディタの行番号を表示するかどうか
+          lineNumbers: lineNumbers, // テキストエディタの行番号を表示するかどうか
           roundedSelection: true, // 選択範囲を角丸にするかどうか
           scrollBeyondLastLine: false, // テキストエディタの最後の行を超えてスクロールするかどうか
-          readOnly: false, // テキストエディタを読み取り専用にするかどうか
+          readOnly: readOnly, // テキストエディタを読み取り専用にするかどうか
           // theme: "vs-dark", // テキストエディタのテーマ
           automaticLayout: true,
+          renderLineHighlight: renderLineHighlight,
         });
 
         newEditor.getModel()?.onDidChangeContent(() => {
-          onChange(newEditor.getValue());
+          onChange?.(newEditor.getValue());
         });
 
         return newEditor;
@@ -36,6 +48,10 @@ export const Editor: React.FC<{
 
     return () => editor?.dispose();
   }, [monacoEl.current]);
+
+  useEffect(() => {
+    editor?.getModel()?.setValue(value ?? initialValue);
+  }, [editor, value, initialValue]);
 
   return <div className="editor" ref={monacoEl}></div>;
 };

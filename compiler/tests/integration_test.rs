@@ -29,7 +29,7 @@ const TEST_FILES: [(i32, &str); 47] = [
     (0, "test16.tig"),
     (0, "test17.tig"),
     (0, "test18.tig"),
-    //  0 test16.tig
+    //  0 test19.tig
     (1, "test20.tig"),
     (0, "test21.tig"),
     (0, "test22.tig"),
