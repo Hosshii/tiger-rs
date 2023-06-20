@@ -1,0 +1,17 @@
+let
+  var a := 1
+  function capture1(): int = 
+    let 
+      function capture2(): int = (
+        a := a + 10;
+        a
+      )
+    in
+      a := a + 20;
+      capture2()
+    end
+in
+  capture1();
+  print(chr(a + 48));
+  a
+end

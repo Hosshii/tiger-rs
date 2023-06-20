@@ -10,7 +10,7 @@ use tiger::Codegen;
 
 const TEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/", "tests");
 
-const TEST_FILES: [(i32, &str); 47] = [
+const TEST_FILES: [(i32, &str); 48] = [
     (1, "test1.tig"),
     (10, "test2.tig"),
     (10, "test3.tig"),
@@ -60,6 +60,7 @@ const TEST_FILES: [(i32, &str); 47] = [
     (5, "test47.tig"),
     (10, "test48.tig"),
     (65, "test49.tig"),
+    (31, "test50.tig"),
 ];
 
 #[test]

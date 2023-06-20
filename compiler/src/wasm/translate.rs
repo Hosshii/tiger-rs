@@ -600,7 +600,7 @@ fn calc_static_link(mut cur_level: Level, ancestor_level: Level) -> ExprType {
     while cur_level != ancestor_level {
         let frame = cur_level.frame();
         let link_access = frame.env();
-        link = frame.get_access_content(link_access, link);
+        link = frame.get_access_content(link_access.expect("cur_level is outer most"), link);
         let parent = cur_level
             .0
             .borrow()
