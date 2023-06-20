@@ -1,0 +1,18 @@
+[tasks.prepare_integration_test]
+description = "Build cdylib for compiler integration test"
+cwd = "../cdylib"
+install_crate = "wasm-pack"
+command = "wasm-pack"
+args = ["build", "--target", "nodejs", "--release", "--out-dir", "../compiler/tests/pkg"]
+
+[tasks.test_integration]
+description = "Run compiler integration test"
+dependencies = ["prepare_integration_test"]
+command = "cargo"
+args = ["test"]
+
+[tasks.test]
+description = "Run all tests"
+dependencies = ["prepare_integration_test"]
+command = "cargo"
+args = ["test"]

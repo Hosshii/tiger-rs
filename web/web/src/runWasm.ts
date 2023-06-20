@@ -10,10 +10,11 @@ async function runWasm(
   try {
     wasm = compile(src);
   } catch (e) {
-    return { exitCode: 1, stdout: e };
+    return { exitCode: 1, stdout: e as string };
   }
 
-  const cdylib = await init_cdylib();
+  // TODO
+  const cdylib = (await init_cdylib()) as any as WebAssembly.ModuleImports;
 
   const importObj = {
     env: cdylib,
@@ -21,11 +22,14 @@ async function runWasm(
 
   const { instance } = await WebAssembly.instantiate(wasm, importObj);
   write_stdin(stdin);
-  const exitCode = Number(instance.exports._start());
 
-  const stdout = read_stdout();
-
-  return { exitCode, stdout };
+  if (instance.exports._start instanceof Function) {
+    const exitCode = Number(instance.exports._start());
+    const stdout = read_stdout();
+    return { exitCode, stdout };
+  } else {
+    return Promise.reject("No _start function");
+  }
 }
 
 export { runWasm };

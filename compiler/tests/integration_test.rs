@@ -65,8 +65,6 @@ const TEST_FILES: [(i32, &str); 48] = [
 
 #[test]
 fn test_wasm() {
-    compile_cdylib().unwrap();
-
     TEST_FILES.par_iter().for_each(|(expected, file_name)| {
         let tiger_file = PathBuf::from(TIGER_FILE_DIR).join(file_name);
         test_on_wasm(*expected, &tiger_file, JS_FILE).unwrap();
@@ -186,20 +184,6 @@ fn test_on_wasm(expected: i32, tiger_file: &PathBuf, js_file: &str) -> Result<()
     fs::remove_file(out_path).context("cannot remove file")?;
 
     assert!(status.success());
-    Ok(())
-}
-
-fn compile_cdylib() -> Result<()> {
-    let mut cmd = Command::new("wasm-pack")
-        .arg("build")
-        .arg("--target")
-        .arg("nodejs")
-        .arg("--out-dir")
-        .arg(CDYLIB_DIR)
-        .current_dir(CDYLIB_CRATE_DIR)
-        .spawn()
-        .context("cannot spawn wasm-pack")?;
-    cmd.wait().context("wasm-pack terminated with an error")?;
     Ok(())
 }
 
