@@ -2,18 +2,29 @@
 
 ## Build
 
+### Prerequirement
+
+- cargo-make
+- node
+
 ### Build compiler.
 
+```sh
+cargo build
 ```
-cargo build --release
+
+or
+
+```sh
+cargo make build
 ```
 
 ### Build tiger source code
 
 1. Compile tiger source code.
 
-```
-./target/release/tiger /path/to/src > tiger.s
+```sh
+./target/release/tiger /path/to/tiger-src > tiger.s
 ```
 
 You can specify [target](#supported-platform) by adding `--arch <target>` argument.
@@ -22,9 +33,21 @@ ex. `./target/release/tiger main.tig --arch x86_64-apple-darwin`
 
 2. Link it with runtime.
 
+#### Linux
+
+```sh
+clang -no-pie tiger.s ./target/release/libcdylib.so
 ```
-gcc tiger.s ./target/release/libcdylib.dylib
+
+#### Macos
+
+```sh
+clang -no-pie tiger.s ./target/release/libcdylib.dylib
 ```
+
+#### Wasm
+
+see [Makefile.toml](./web/Makefile.toml), [index.html](./compiler/tests/index.html), [test.js](./compiler/tests/test.js)
 
 ### Supported platform
 
@@ -35,8 +58,6 @@ gcc tiger.s ./target/release/libcdylib.dylib
 
 ### Run test.
 
-`clang`, `wasm-pack`, `node` is required.
-
-```
-cargo test
+```sh
+cargo make test
 ```

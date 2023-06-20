@@ -36,7 +36,7 @@ function App() {
         <div className="grid-container">
           <div className="button-wrapper">
             <Button onClick={onClickRun}>Run</Button>
-            <ButtonLink href="https://github.com/Hosshii/tiger-rs/tree/04decd9a1f4573f94f23937efb87387c4532d35a/compiler/tests/testfiles">
+            <ButtonLink href="https://github.com/Hosshii/tiger-rs/tree/main/compiler/tests/testfiles">
               Examples
             </ButtonLink>
           </div>
@@ -51,7 +51,7 @@ function App() {
               onContentChange={handleStdinChange}
             />
           </div>
-          <div className="stdout-title">Stout</div>
+          <div className="stdout-title">Stdout</div>
           <div className="stdout-wrapper">
             <TextArea content={result} readonly={true} />
           </div>
