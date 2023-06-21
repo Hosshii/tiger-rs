@@ -1,50 +1,75 @@
-use std::{env, fs::File, io};
+use std::{env, fs::File, io, path::PathBuf, str::FromStr};
 
-use tiger::{
+use anyhow::{Context, Result};
+use clap::Parser;
+use tiger_lib::{
     Aarch64AppleDarwin, Compiler, Wasm32UnknownUnknown, WasmCompilerOption, X86_64AppleDarwin,
     X86_64LinuxGnu,
 };
 
-fn main() {
-    let mut args = env::args();
-    let filename = args.nth(1).expect("expect filename");
-    let file = match File::open(filename.as_str()) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("cannot open file {}", filename);
-            eprintln!("{}", e);
-            return;
-        }
-    };
+#[derive(Parser)]
+struct Args {
+    #[arg(short, long, default_value = env!("TARGET_TRIPLE"))]
+    arch: Arch,
+    #[clap(short, long, requires_if("arch", "wasm32-unknown-unknown"))]
+    wat: bool,
+    #[arg(short, long, value_name = "FILE")]
+    src: PathBuf,
+}
 
-    let arch = if let Some(x) = args.next() {
-        assert_eq!(x, "--arch");
-        args.next().expect("expect arch")
-    } else {
-        "aarch64-apple-darwin".to_string()
-    };
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Arch {
+    Aarch64AppleDarwin,
+    X86_64AppleDarwin,
+    X86_64LinuxGnu,
+    Wasm32UnknownUnknown,
+}
 
-    let result = match arch.as_str() {
-        "aarch64-apple-darwin" => {
-            Compiler::new::<Aarch64AppleDarwin>(filename, file, io::stdout()).compile()
+impl FromStr for Arch {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "aarch64-apple-darwin" => Ok(Arch::Aarch64AppleDarwin),
+            "x86_64-apple-darwin" => Ok(Arch::X86_64AppleDarwin),
+            "x86_64-linux-gnu" => Ok(Arch::X86_64LinuxGnu),
+            "wasm32-unknown-unknown" => Ok(Arch::Wasm32UnknownUnknown),
+            _ => Err(format!("unknown arch {}", s)),
         }
-        "x86_64-apple-darwin" => {
-            Compiler::new::<X86_64AppleDarwin>(filename, file, io::stdout()).compile()
+    }
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let filepath = args.src;
+    let file = File::open(filepath.as_path())
+        .with_context(|| format!("failed to open file {}", filepath.display()))?;
+
+    let filename = filepath
+        .file_name()
+        .with_context(|| format!("failed to get filename from path {}", filepath.display()))?;
+    let filename = filename
+        .to_str()
+        .with_context(|| format!("failed to convert filename {:?} to str", filename))?
+        .to_string();
+
+    match args.arch {
+        Arch::Aarch64AppleDarwin => {
+            Compiler::new::<Aarch64AppleDarwin>(&filename, file, io::stdout()).compile()
         }
-        "x86_64-linux-gnu" => {
-            Compiler::new::<X86_64LinuxGnu>(filename, file, io::stdout()).compile()
+        Arch::X86_64AppleDarwin => {
+            Compiler::new::<X86_64AppleDarwin>(&filename, file, io::stdout()).compile()
         }
-        "wasm32-unknown-unknown" => {
-            let is_wat = args.next().map_or(false, |x| x == "--wat");
-            let options = WasmCompilerOption::new().wat(is_wat);
-            Compiler::new::<Wasm32UnknownUnknown>(filename, file, io::stdout())
+        Arch::X86_64LinuxGnu => {
+            Compiler::new::<X86_64LinuxGnu>(&filename, file, io::stdout()).compile()
+        }
+        Arch::Wasm32UnknownUnknown => {
+            let options = WasmCompilerOption::new().wat(args.wat);
+            Compiler::new::<Wasm32UnknownUnknown>(&filename, file, io::stdout())
                 .with_options(options)
                 .compile()
         }
-        x => panic!("unknown arch {}", x),
-    };
-
-    if let Err(err) = result {
-        eprintln!("{}", err)
     }
+    .with_context(|| format!("failed to compile {}", filename))
 }
