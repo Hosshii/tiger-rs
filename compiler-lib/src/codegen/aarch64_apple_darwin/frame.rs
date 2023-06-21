@@ -11,118 +11,176 @@ use crate::{
 
 const PTR_SIZE: i64 = 8;
 static REGISTERS_GLOBAL: Lazy<Registers> = Lazy::new(|| Registers {
-    rbp: Temp::new(),
-    rsp: Temp::new(),
-    rax: Temp::new(),
-    rbx: Temp::new(),
-    rcx: Temp::new(),
-    rdx: Temp::new(),
-    rsi: Temp::new(),
-    rdi: Temp::new(),
-    r8: Temp::new(),
-    r9: Temp::new(),
-    r10: Temp::new(),
-    r11: Temp::new(),
-    r12: Temp::new(),
-    r13: Temp::new(),
-    r14: Temp::new(),
-    r15: Temp::new(),
+    sp: Temp::new(),
+    xzr: Temp::new(),
+    // pc: Temp::new(),
+    x0: Temp::new(),
+    x1: Temp::new(),
+    x2: Temp::new(),
+    x3: Temp::new(),
+    x4: Temp::new(),
+    x5: Temp::new(),
+    x6: Temp::new(),
+    x7: Temp::new(),
+    x8: Temp::new(),
+    x9: Temp::new(),
+    x10: Temp::new(),
+    x11: Temp::new(),
+    x12: Temp::new(),
+    x13: Temp::new(),
+    x14: Temp::new(),
+    x15: Temp::new(),
+    x16: Temp::new(),
+    x17: Temp::new(),
+    x18: Temp::new(),
+    x19: Temp::new(),
+    x20: Temp::new(),
+    x21: Temp::new(),
+    x22: Temp::new(),
+    x23: Temp::new(),
+    x24: Temp::new(),
+    x25: Temp::new(),
+    x26: Temp::new(),
+    x27: Temp::new(),
+    x28: Temp::new(),
+    x29: Temp::new(),
+    x30: Temp::new(),
 });
 
-static REGISTERS_STR: [&str; 16] = [
-    "rbp", "rsp", "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13",
-    "r14", "r15",
+static REGISTERS_STR: [&str; 33] = [
+    "sp", "xzr", // "pc",
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14",
+    "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27",
+    "x28", "x29", "x30",
 ];
 
 static SPECIAL_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
     vec![
-        REGISTERS_GLOBAL.rsp,
-        REGISTERS_GLOBAL.rbp,
-        REGISTERS_GLOBAL.rax,
+        REGISTERS_GLOBAL.sp,
+        REGISTERS_GLOBAL.xzr,
+        // REGISTERS_GLOBAL.pc,
+        REGISTERS_GLOBAL.x0, // TODO: Duplicate with ARG_REGS.
+        REGISTERS_GLOBAL.x8,
+        REGISTERS_GLOBAL.x16,
+        REGISTERS_GLOBAL.x17,
+        REGISTERS_GLOBAL.x18,
+        REGISTERS_GLOBAL.x29,
+        REGISTERS_GLOBAL.x30,
     ]
 });
 
 static ARG_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
     vec![
-        REGISTERS_GLOBAL.rdi,
-        REGISTERS_GLOBAL.rsi,
-        REGISTERS_GLOBAL.rdx,
-        REGISTERS_GLOBAL.rcx,
-        REGISTERS_GLOBAL.r8,
-        REGISTERS_GLOBAL.r9,
+        REGISTERS_GLOBAL.x0,
+        REGISTERS_GLOBAL.x1,
+        REGISTERS_GLOBAL.x2,
+        REGISTERS_GLOBAL.x3,
+        REGISTERS_GLOBAL.x4,
+        REGISTERS_GLOBAL.x5,
+        REGISTERS_GLOBAL.x6,
+        REGISTERS_GLOBAL.x7,
     ]
 });
 
 static CALEE_SAVE_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
     vec![
-        REGISTERS_GLOBAL.rbx,
-        REGISTERS_GLOBAL.r12,
-        REGISTERS_GLOBAL.r13,
-        REGISTERS_GLOBAL.r14,
-        REGISTERS_GLOBAL.r15,
+        REGISTERS_GLOBAL.x19,
+        REGISTERS_GLOBAL.x20,
+        REGISTERS_GLOBAL.x21,
+        REGISTERS_GLOBAL.x22,
+        REGISTERS_GLOBAL.x23,
+        REGISTERS_GLOBAL.x24,
+        REGISTERS_GLOBAL.x25,
+        REGISTERS_GLOBAL.x26,
+        REGISTERS_GLOBAL.x27,
+        REGISTERS_GLOBAL.x28,
+        // REGISTERS_GLOBAL.x29, // in special regs
     ]
 });
 
-static CALLER_SAVE_REGS: Lazy<Vec<Temp>> =
-    Lazy::new(|| vec![REGISTERS_GLOBAL.r10, REGISTERS_GLOBAL.r11]);
+static CALLER_SAVE_REGS: Lazy<Vec<Temp>> = Lazy::new(|| {
+    vec![
+        REGISTERS_GLOBAL.x9,
+        REGISTERS_GLOBAL.x10,
+        REGISTERS_GLOBAL.x11,
+        REGISTERS_GLOBAL.x12,
+        REGISTERS_GLOBAL.x13,
+        REGISTERS_GLOBAL.x14,
+        REGISTERS_GLOBAL.x15,
+    ]
+});
 
 static CALL_DEFS: Lazy<Vec<Temp>> = Lazy::new(|| {
     let mut v = CALLER_SAVE_REGS.clone();
     let mut arg_regs = ARG_REGS.clone();
     v.append(&mut arg_regs);
     // return register
-    v.push(REGISTERS_GLOBAL.rax);
+    v.push(REGISTERS_GLOBAL.x29);
     v
 });
 
 static TEMP_MAP: Lazy<HashMap<Temp, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
-    m.insert(REGISTERS_GLOBAL.rbp, REGISTERS_STR[0]);
-    m.insert(REGISTERS_GLOBAL.rsp, REGISTERS_STR[1]);
-    m.insert(REGISTERS_GLOBAL.rax, REGISTERS_STR[2]);
-    m.insert(REGISTERS_GLOBAL.rbx, REGISTERS_STR[3]);
-    m.insert(REGISTERS_GLOBAL.rcx, REGISTERS_STR[4]);
-    m.insert(REGISTERS_GLOBAL.rdx, REGISTERS_STR[5]);
-    m.insert(REGISTERS_GLOBAL.rsi, REGISTERS_STR[6]);
-    m.insert(REGISTERS_GLOBAL.rdi, REGISTERS_STR[7]);
-    m.insert(REGISTERS_GLOBAL.r8, REGISTERS_STR[8]);
-    m.insert(REGISTERS_GLOBAL.r9, REGISTERS_STR[9]);
-    m.insert(REGISTERS_GLOBAL.r10, REGISTERS_STR[10]);
-    m.insert(REGISTERS_GLOBAL.r11, REGISTERS_STR[11]);
-    m.insert(REGISTERS_GLOBAL.r12, REGISTERS_STR[12]);
-    m.insert(REGISTERS_GLOBAL.r13, REGISTERS_STR[13]);
-    m.insert(REGISTERS_GLOBAL.r14, REGISTERS_STR[14]);
-    m.insert(REGISTERS_GLOBAL.r15, REGISTERS_STR[15]);
-
+    m.insert(REGISTERS_GLOBAL.sp, REGISTERS_STR[0]);
+    m.insert(REGISTERS_GLOBAL.xzr, REGISTERS_STR[1]);
+    // m.insert(REGISTERS_GLOBAL.pc, REGISTERS[2]);
+    m.insert(REGISTERS_GLOBAL.x0, REGISTERS_STR[2]);
+    m.insert(REGISTERS_GLOBAL.x1, REGISTERS_STR[3]);
+    m.insert(REGISTERS_GLOBAL.x2, REGISTERS_STR[4]);
+    m.insert(REGISTERS_GLOBAL.x3, REGISTERS_STR[5]);
+    m.insert(REGISTERS_GLOBAL.x4, REGISTERS_STR[6]);
+    m.insert(REGISTERS_GLOBAL.x5, REGISTERS_STR[7]);
+    m.insert(REGISTERS_GLOBAL.x6, REGISTERS_STR[8]);
+    m.insert(REGISTERS_GLOBAL.x7, REGISTERS_STR[9]);
+    m.insert(REGISTERS_GLOBAL.x8, REGISTERS_STR[10]);
+    m.insert(REGISTERS_GLOBAL.x9, REGISTERS_STR[11]);
+    m.insert(REGISTERS_GLOBAL.x10, REGISTERS_STR[12]);
+    m.insert(REGISTERS_GLOBAL.x11, REGISTERS_STR[13]);
+    m.insert(REGISTERS_GLOBAL.x12, REGISTERS_STR[14]);
+    m.insert(REGISTERS_GLOBAL.x13, REGISTERS_STR[15]);
+    m.insert(REGISTERS_GLOBAL.x14, REGISTERS_STR[16]);
+    m.insert(REGISTERS_GLOBAL.x15, REGISTERS_STR[17]);
+    m.insert(REGISTERS_GLOBAL.x16, REGISTERS_STR[18]);
+    m.insert(REGISTERS_GLOBAL.x17, REGISTERS_STR[19]);
+    m.insert(REGISTERS_GLOBAL.x18, REGISTERS_STR[20]);
+    m.insert(REGISTERS_GLOBAL.x19, REGISTERS_STR[21]);
+    m.insert(REGISTERS_GLOBAL.x20, REGISTERS_STR[22]);
+    m.insert(REGISTERS_GLOBAL.x21, REGISTERS_STR[23]);
+    m.insert(REGISTERS_GLOBAL.x22, REGISTERS_STR[24]);
+    m.insert(REGISTERS_GLOBAL.x23, REGISTERS_STR[25]);
+    m.insert(REGISTERS_GLOBAL.x24, REGISTERS_STR[26]);
+    m.insert(REGISTERS_GLOBAL.x25, REGISTERS_STR[27]);
+    m.insert(REGISTERS_GLOBAL.x26, REGISTERS_STR[28]);
+    m.insert(REGISTERS_GLOBAL.x27, REGISTERS_STR[29]);
+    m.insert(REGISTERS_GLOBAL.x28, REGISTERS_STR[30]);
+    m.insert(REGISTERS_GLOBAL.x29, REGISTERS_STR[31]);
+    m.insert(REGISTERS_GLOBAL.x30, REGISTERS_STR[32]);
     m
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct X86 {
+pub struct ARM64 {
     name: Label,
     formals: Vec<Access>,
     pointer: i64, // greater than 0
 }
 
-impl X86 {
-    pub(super) fn call_defs() -> &'static [Temp] {
+impl ARM64 {
+    pub fn call_defs() -> &'static [Temp] {
         CALL_DEFS.as_ref()
     }
 
-    pub(super) fn debug_registers() {
+    #[allow(unused)]
+    pub fn debug_registers() {
         dbg!(&REGISTERS_GLOBAL);
     }
 
-    pub(super) fn sp() -> Temp {
-        REGISTERS_GLOBAL.rsp
+    fn lr() -> Temp {
+        REGISTERS_GLOBAL.x30
     }
 
-    pub(super) fn rax() -> Temp {
-        REGISTERS_GLOBAL.rax
-    }
-
-    pub(super) fn rdx() -> Temp {
-        REGISTERS_GLOBAL.rdx
+    fn sp() -> Temp {
+        REGISTERS_GLOBAL.sp
     }
 
     fn aligned_ptr(&self) -> i64 {
@@ -130,7 +188,7 @@ impl X86 {
     }
 }
 
-impl Frame for X86 {
+impl Frame for ARM64 {
     type Access = Access;
     type Register = &'static str; // TODO
 
@@ -203,11 +261,11 @@ impl Frame for X86 {
     }
 
     fn fp() -> Temp {
-        REGISTERS_GLOBAL.rbp
+        REGISTERS_GLOBAL.x29
     }
 
     fn rv() -> Temp {
-        REGISTERS_GLOBAL.rax
+        REGISTERS_GLOBAL.x0
     }
 
     fn extern_call(name: &str, args: Vec<Expr>) -> Expr {
@@ -287,10 +345,11 @@ impl Frame for X86 {
                 assembly: super::format_label_stmt(self.name()),
                 label: self.name.clone(),
             },
+            // save fp and lr
             Instruction::Operand {
-                assembly: "    push 's0".to_string(),
+                assembly: "    stp 's0, 's1, ['s2, #-16]!".to_string(),
                 dst: vec![],
-                src: vec![Self::fp().into()],
+                src: vec![Self::fp().into(), Self::lr().into(), Self::sp().into()],
                 jump: None,
             },
             Instruction::Operand {
@@ -300,9 +359,9 @@ impl Frame for X86 {
                 jump: None,
             },
             Instruction::Operand {
-                assembly: format!("    sub 'd0, {}", self.aligned_ptr()),
-                dst: vec![Self::sp().into()],
-                src: vec![Self::sp().into()],
+                assembly: format!("    sub 'd0, 's0, #{}", self.aligned_ptr()),
+                dst: vec![REGISTERS_GLOBAL.sp.into()],
+                src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
             Instruction::Comment {
@@ -315,15 +374,16 @@ impl Frame for X86 {
                 assembly: "// epilogue start".to_string(),
             },
             Instruction::Operand {
-                assembly: "    mov 'd0, 's0".to_string(),
-                dst: vec![Self::sp().into()],
-                src: vec![Self::fp().into()],
+                assembly: format!("    add 'd0, 's0, #{}", self.aligned_ptr()),
+                dst: vec![REGISTERS_GLOBAL.sp.into()],
+                src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
+            // load fp and lr
             Instruction::Operand {
-                assembly: "    pop 's0".to_string(),
-                dst: vec![],
-                src: vec![Self::fp().into()],
+                assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
+                dst: vec![REGISTERS_GLOBAL.x29.into(), REGISTERS_GLOBAL.x30.into()],
+                src: vec![REGISTERS_GLOBAL.sp.into()],
                 jump: None,
             },
             Instruction::Operand {
@@ -352,21 +412,38 @@ pub enum Access {
 
 #[derive(Debug)]
 struct Registers {
-    rbp: Temp,
-    rsp: Temp,
+    sp: Temp,
+    xzr: Temp,
     // pc: Temp,
-    rax: Temp,
-    rbx: Temp,
-    rcx: Temp,
-    rdx: Temp,
-    rsi: Temp,
-    rdi: Temp,
-    r8: Temp,
-    r9: Temp,
-    r10: Temp,
-    r11: Temp,
-    r12: Temp,
-    r13: Temp,
-    r14: Temp,
-    r15: Temp,
+    x0: Temp,
+    x1: Temp,
+    x2: Temp,
+    x3: Temp,
+    x4: Temp,
+    x5: Temp,
+    x6: Temp,
+    x7: Temp,
+    x8: Temp,
+    x9: Temp,
+    x10: Temp,
+    x11: Temp,
+    x12: Temp,
+    x13: Temp,
+    x14: Temp,
+    x15: Temp,
+    x16: Temp,
+    x17: Temp,
+    x18: Temp,
+    x19: Temp,
+    x20: Temp,
+    x21: Temp,
+    x22: Temp,
+    x23: Temp,
+    x24: Temp,
+    x25: Temp,
+    x26: Temp,
+    x27: Temp,
+    x28: Temp,
+    x29: Temp,
+    x30: Temp,
 }

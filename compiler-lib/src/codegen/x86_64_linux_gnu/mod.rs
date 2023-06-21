@@ -9,17 +9,20 @@ use frame::X86 as X86_64Frame;
 
 use super::{sealed::Sealed, Codegen, Frame as _};
 
-pub struct X86_64 {
+pub struct X86_64<'a> {
+    _frame: &'a X86_64Frame,
     instructions: Vec<Instruction>,
 }
 
-impl X86_64 {
+impl<'a> X86_64<'a> {
+    #[allow(unused)]
     pub fn debug() {
         X86_64Frame::debug_registers()
     }
 
-    fn new() -> Self {
+    fn new(frame: &'a X86_64Frame) -> Self {
         Self {
+            _frame: frame,
             instructions: Vec::new(),
         }
     }
@@ -272,14 +275,14 @@ impl X86_64 {
     }
 }
 
-impl Sealed for X86_64 {}
+impl Sealed for X86_64<'_> {}
 
-impl Codegen for X86_64 {
+impl<'a> Codegen for X86_64<'a> {
     type Frame = X86_64Frame;
     const MAIN_SYMBOL: &'static str = "main";
 
-    fn codegen(_: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
-        let mut codegen = X86_64::new();
+    fn codegen(frame: &Self::Frame, stmt: Stmt) -> Vec<Instruction> {
+        let mut codegen = X86_64::new(frame);
         codegen.munch_stmt(&stmt);
         codegen.instructions
     }
@@ -287,27 +290,18 @@ impl Codegen for X86_64 {
     fn string(label: &Label, s: &str) -> String {
         let label = format_label(label);
 
-        // `.ascii ""` cause linker error. So use `.byte 0` when s is empty.
-        let str_directive = if s.is_empty() {
-            ".byte 0".to_string()
-        } else {
-            format!(".ascii \"{}\"", s)
-        };
-
         format!(
-            r##"    .section    __TEXT,__const
+            r##"    .section    .rodata
 {}.STR:
-    {}
-
-    .section    __DATA,__data
-    .p2align 3
+    .string "{}"
+    
 {}:
-    .quad {}
-    .quad {}.STR
-
-    .section	__TEXT,__text,regular,pure_instructions"##,
+    .quad   {}
+    .quad   {}.STR
+        
+"##,
             label,
-            str_directive,
+            s,
             label,
             s.len(),
             label
@@ -315,22 +309,22 @@ impl Codegen for X86_64 {
     }
 
     fn header() -> String {
-        r##".intel_syntax noprefix"##.to_string()
+        r##"    .intel_syntax noprefix"##.to_string()
     }
 }
 
 fn format_label(label: &Label) -> String {
     match label {
         Label::Num(_) | Label::Fn(_, _) => {
-            format!("L.{}", label)
+            format!(".L.{}", label)
         }
         Label::NamedFn(s) => {
             // Calling function named `exit` is not working correctry.
             // So rename it to `tiger_exit`.
             if s == "exit" {
-                "_tiger_exit".to_string()
+                "tiger_exit".to_string()
             } else {
-                format!("_{}", label)
+                format!("{}", label)
             }
         }
     }
@@ -347,13 +341,26 @@ fn format_label_stmt(label: &Label) -> String {
             format!("{}:", format_label(label))
         }
         Label::Fn(_, _) => {
-            format!("    .p2align 2\n{}:", format_label(label))
+            let s = format_label(label);
+            format!(
+                r##".text
+    .p2align 2
+    .type  {}, @function
+{}:"##,
+                s, s
+            )
         }
-        Label::NamedFn(_) => format!(
-            "    .globl {}\n    .p2align 2\n{}:",
-            format_label(label),
-            format_label(label)
-        ),
+        Label::NamedFn(_) => {
+            let s = format_label(label);
+            format!(
+                r##"    .globl {}
+    .text
+    .p2align 2
+    .type  {}, @function
+{}:"##,
+                s, s, s
+            )
+        }
     }
 }
 
@@ -386,7 +393,8 @@ mod tests {
         ];
 
         for (stmt, expected_dst, expected_src) in cases {
-            let mut codegen = X86_64::new();
+            let frame = X86_64Frame::new(Label::Num(0), vec![]);
+            let mut codegen = X86_64::new(&frame);
             codegen.munch_stmt(&stmt);
             let instructions = codegen.instructions;
             for instruction in instructions {

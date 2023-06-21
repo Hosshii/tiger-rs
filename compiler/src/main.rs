@@ -1,44 +1,84 @@
-use std::{env, fs::File, io};
+use std::{env, fs::File, io, path::PathBuf, str::FromStr};
 
-use tiger::{AARCH64_APPLE_DARWIN, X86_64_APPLE_DARWIN, X86_64_LINUX_GNU};
+use anyhow::{Context, Result};
+use clap::Parser;
+use tiger_lib::{
+    Aarch64AppleDarwin, Compiler, Wasm32UnknownUnknown, WasmCompilerOption, X86_64AppleDarwin,
+    X86_64LinuxGnu,
+};
 
-fn main() {
-    let mut args = env::args();
-    let filename = args.nth(1).expect("expect filename");
-    let file = match File::open(filename.as_str()) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("cannot open file {}", filename);
-            eprintln!("{}", e);
-            return;
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Specify the target architecture for the code generation.
+    /// If not provided, the default is the target architecture of the machine running the compiler.
+    /// Valid options include: 'aarch64-apple-darwin', 'x86_64-apple-darwin', 'x86_64-linux-gnu', and 'wasm32-unknown-unknown'.
+    #[arg(short, long, default_value = env!("TARGET_TRIPLE"))]
+    arch: Arch,
+
+    /// If set, generates '.wat' files instead of '.wasm' files.
+    /// This option is only applicable when 'arch' is set to 'wasm32-unknown-unknown'.
+    #[clap(short, long, requires_if("wasm32-unknown-unknown", "arch"))]
+    wat: bool,
+
+    /// Path to the source code file.
+    #[arg(value_name = "FILE")]
+    src: PathBuf,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Arch {
+    Aarch64AppleDarwin,
+    X86_64AppleDarwin,
+    X86_64LinuxGnu,
+    Wasm32UnknownUnknown,
+}
+
+impl FromStr for Arch {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "aarch64-apple-darwin" => Ok(Arch::Aarch64AppleDarwin),
+            "x86_64-apple-darwin" => Ok(Arch::X86_64AppleDarwin),
+            "x86_64-linux-gnu" => Ok(Arch::X86_64LinuxGnu),
+            "wasm32-unknown-unknown" => Ok(Arch::Wasm32UnknownUnknown),
+            _ => Err(format!("unknown arch {}", s)),
         }
-    };
-
-    let arch = if let Some(x) = args.next() {
-        assert_eq!(x, "--arch");
-        args.next().expect("expect arch")
-    } else {
-        "aarch64-apple-darwin".to_string()
-    };
-
-    let result = match arch.as_str() {
-        "aarch64-apple-darwin" => {
-            tiger::compile(filename, file, io::stdout(), AARCH64_APPLE_DARWIN)
-        }
-        "x86_64-apple-darwin" => tiger::compile(filename, file, io::stdout(), X86_64_APPLE_DARWIN),
-        "x86_64-linux-gnu" => tiger::compile(filename, file, io::stdout(), X86_64_LINUX_GNU),
-        "wasm32-unknown-unknown" => {
-            let is_wat = args.next().map_or(false, |x| x == "--wat");
-            if is_wat {
-                tiger::compile_wat(filename, file, io::stdout())
-            } else {
-                tiger::compile_wasm(filename, file, io::stdout())
-            }
-        }
-        x => panic!("unknown arch {}", x),
-    };
-
-    if let Err(err) = result {
-        eprintln!("{}", err)
     }
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let filepath = args.src;
+    let file = File::open(filepath.as_path())
+        .with_context(|| format!("failed to open file {}", filepath.display()))?;
+
+    let filename = filepath
+        .file_name()
+        .with_context(|| format!("failed to get filename from path {}", filepath.display()))?;
+    let filename = filename
+        .to_str()
+        .with_context(|| format!("failed to convert filename {:?} to str", filename))?
+        .to_string();
+
+    match args.arch {
+        Arch::Aarch64AppleDarwin => {
+            Compiler::new::<Aarch64AppleDarwin>(&filename, file, io::stdout()).compile()
+        }
+        Arch::X86_64AppleDarwin => {
+            Compiler::new::<X86_64AppleDarwin>(&filename, file, io::stdout()).compile()
+        }
+        Arch::X86_64LinuxGnu => {
+            Compiler::new::<X86_64LinuxGnu>(&filename, file, io::stdout()).compile()
+        }
+        Arch::Wasm32UnknownUnknown => {
+            let options = WasmCompilerOption::new().wat(args.wat);
+            Compiler::new::<Wasm32UnknownUnknown>(&filename, file, io::stdout())
+                .with_options(options)
+                .compile()
+        }
+    }
+    .with_context(|| format!("failed to compile {}", filename))
 }

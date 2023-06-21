@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "compiler",
+    "compiler-lib",
     "cdylib",
     "macros",
     "web",

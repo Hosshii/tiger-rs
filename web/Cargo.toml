@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 [dependencies]
 wasm-bindgen = { workspace = true }
 anyhow = { workspace = true }
-tiger = { path = "../compiler" }
+tiger-lib = { path = "../compiler-lib" }

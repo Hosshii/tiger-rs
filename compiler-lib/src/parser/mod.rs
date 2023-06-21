@@ -22,8 +22,8 @@ pub enum ErrorKind {
     Lexical(LexError),
     #[error("parse error: extra token: `{0:?}`")]
     ExtraToken(TokenKind),
-    #[error("parse error: unrecognized token: `{0:?}`, expected: `{1:?}`")]
-    UnrecognizedToken(TokenKind, Vec<String>),
+    #[error("parse error: unrecognized token: `{0:?}`, expected (one of): `{1}`")]
+    UnrecognizedToken(TokenKind, String),
     #[error("invalid token")]
     InvalidToken,
 }
@@ -66,10 +66,13 @@ impl From<LalrpopError> for Error {
             lalrpop_util::ParseError::UnrecognizedToken {
                 token: (loc, kind, _),
                 expected,
-            } => Error {
-                kind: ErrorKind::UnrecognizedToken(kind, expected),
-                loc,
-            },
+            } => {
+                let expected = expected.join(", ");
+                Error {
+                    kind: ErrorKind::UnrecognizedToken(kind, expected),
+                    loc,
+                }
+            }
             lalrpop_util::ParseError::User { error } => {
                 let loc = error.meta.cursor;
                 Error {
