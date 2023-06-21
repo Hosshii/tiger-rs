@@ -2,8 +2,10 @@
 
 ## Build
 
-### Prerequirement
+### Requirements
 
+- Rust
+  - wasm32-unknown-unknown target
 - cargo-make
 - node
 
@@ -19,7 +21,7 @@ or
 cargo make build
 ```
 
-### Build tiger source code
+### Build tiger source code.
 
 1. Compile tiger source code.
 
@@ -47,9 +49,9 @@ clang -no-pie tiger.s ./target/release/libcdylib.dylib
 
 #### Wasm
 
-see [Makefile.toml](./web/Makefile.toml), [index.html](./compiler/tests/index.html), [test.js](./compiler/tests/test.js)
+see ([compiler/Makefile.toml](./compiler/Makefile.toml), [index.html](./compiler/tests/index.html), [test.js](./compiler/tests/test.js)) or ([web/Makefile.toml](./web/Makefile.toml), [runWasm.ts](./web/web/src/runWasm.ts)).
 
-### Supported platform
+### Supported platform.
 
 - aarch64-apple-darwin
 - x86_64-apple-darwin

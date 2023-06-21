@@ -15,7 +15,7 @@ end
 function App() {
   const [srcCode, setSrcCode] = useState("");
   const [result, setResult] = useState("");
-  const [stdin, setStdin] = useState("");
+  const [stdin, setStdin] = useState("hello world!");
   const handleCodeChange = (s: string) => {
     setSrcCode(s);
   };
@@ -43,7 +43,7 @@ function App() {
           <div className="editor-wrapper">
             <Editor onChange={handleCodeChange} initialValue={initTigerProg} />
           </div>
-          <div className="stdin-title">Stdin</div>
+          <div className="stdin-title">In</div>
           <div className="stdin-wrapper">
             <TextArea
               content={stdin}
@@ -51,7 +51,7 @@ function App() {
               onContentChange={handleStdinChange}
             />
           </div>
-          <div className="stdout-title">Stdout</div>
+          <div className="stdout-title">Out</div>
           <div className="stdout-wrapper">
             <TextArea content={result} readonly={true} />
           </div>
