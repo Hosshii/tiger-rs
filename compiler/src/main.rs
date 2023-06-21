@@ -1,6 +1,9 @@
 use std::{env, fs::File, io};
 
-use tiger::{AARCH64_APPLE_DARWIN, X86_64_APPLE_DARWIN, X86_64_LINUX_GNU};
+use tiger::{
+    Aarch64AppleDarwin, Compiler, Wasm32UnknownUnknown, WasmCompilerOption, X86_64AppleDarwin,
+    X86_64LinuxGnu,
+};
 
 fn main() {
     let mut args = env::args();
@@ -23,17 +26,20 @@ fn main() {
 
     let result = match arch.as_str() {
         "aarch64-apple-darwin" => {
-            tiger::compile(filename, file, io::stdout(), AARCH64_APPLE_DARWIN)
+            Compiler::new::<Aarch64AppleDarwin>(filename, file, io::stdout()).compile()
         }
-        "x86_64-apple-darwin" => tiger::compile(filename, file, io::stdout(), X86_64_APPLE_DARWIN),
-        "x86_64-linux-gnu" => tiger::compile(filename, file, io::stdout(), X86_64_LINUX_GNU),
+        "x86_64-apple-darwin" => {
+            Compiler::new::<X86_64AppleDarwin>(filename, file, io::stdout()).compile()
+        }
+        "x86_64-linux-gnu" => {
+            Compiler::new::<X86_64LinuxGnu>(filename, file, io::stdout()).compile()
+        }
         "wasm32-unknown-unknown" => {
             let is_wat = args.next().map_or(false, |x| x == "--wat");
-            if is_wat {
-                tiger::compile_wat(filename, file, io::stdout())
-            } else {
-                tiger::compile_wasm(filename, file, io::stdout())
-            }
+            let options = WasmCompilerOption::new().wat(is_wat);
+            Compiler::new::<Wasm32UnknownUnknown>(filename, file, io::stdout())
+                .with_options(options)
+                .compile()
         }
         x => panic!("unknown arch {}", x),
     };

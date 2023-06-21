@@ -36,6 +36,7 @@ export const Editor: React.FC<{
           // theme: "vs-dark", // テキストエディタのテーマ
           automaticLayout: true,
           renderLineHighlight: renderLineHighlight,
+          minimap: { enabled: false },
         });
 
         newEditor.getModel()?.onDidChangeContent(() => {

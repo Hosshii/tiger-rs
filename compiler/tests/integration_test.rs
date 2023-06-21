@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     process::Command,
 };
-use tiger::Codegen;
+use tiger::{Arch, Compiler};
 
 const TEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/", "tests");
 
@@ -80,17 +80,17 @@ fn test_wasm() {
 fn test_unixlike() {
     cfg_if::cfg_if! {
         if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            use tiger::X86_64_LINUX_GNU as ARCH;
+            use tiger::X86_64LinuxGnu as ARCH;
         } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
-            use tiger::X86_64_APPLE_DARWIN as ARCH;
+            use tiger::X86_64AppleDarwin as ARCH;
         } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
-            use tiger::AARCH64_APPLE_DARWIN as ARCH;
+            use tiger::Aarch64AppleDarwin as ARCH;
         }
     }
 
     TEST_FILES.par_iter().for_each(|(expected, file_name)| {
         let tiger_file = PathBuf::from(TIGER_FILE_DIR).join(file_name);
-        test_on_unixlike(*expected, &tiger_file, CDYLIB_FILE, ARCH).unwrap();
+        test_on_unixlike::<ARCH>(*expected, &tiger_file, CDYLIB_FILE).unwrap();
     });
 }
 
@@ -108,11 +108,10 @@ cfg_if::cfg_if! {
     }
 }
 
-fn test_on_unixlike<C: Codegen>(
+fn test_on_unixlike<A: Arch>(
     expected: i32,
     tiger_file: &PathBuf,
     library_file: &str,
-    arch: std::marker::PhantomData<C>,
 ) -> Result<()> {
     let tiger_file_name = tiger_file
         .file_name()
@@ -125,7 +124,7 @@ fn test_on_unixlike<C: Codegen>(
     let asm_path = PathBuf::from(TEST_DIR).join(asm_name);
     let mut asm = File::create(&asm_path).context("cannot create file")?;
 
-    tiger::compile(tiger_file_name, tiger_file, &mut asm, arch)?;
+    Compiler::new::<A>(tiger_file_name, tiger_file, &mut asm).compile()?;
 
     let exe_name = format!("{}.out", gen_rand_string(10));
     let exe_path = PathBuf::from(TEST_DIR).join(exe_name);
@@ -168,7 +167,7 @@ fn test_on_wasm(expected: i32, tiger_file: &PathBuf, js_file: &str) -> Result<()
     out_path.set_extension("wasm");
 
     let mut out = File::create(&out_path).context("cannot create file")?;
-    tiger::compile_wasm(name, tiger_file, &mut out)?;
+    Compiler::new::<tiger::Wasm32UnknownUnknown>(name, tiger_file, &mut out).compile()?;
 
     let mut cmd = Command::new("node")
         .arg(js_file)

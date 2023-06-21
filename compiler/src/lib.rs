@@ -22,18 +22,177 @@ use crate::{
     codegen::{
         aarch64_apple_darwin::ARM64 as ARM64AppleDarwinCodegen, reg_alloc,
         x86_64_apple_darwin::X86_64 as X86_64AppleDarwinCodegen,
-        x86_64_linux_gnu::X86_64 as X86_64LinuxGnuCodegen,
+        x86_64_linux_gnu::X86_64 as X86_64LinuxGnuCodegen, Codegen,
     },
     frame::{Fragment, Frame as _},
     semant::Semant,
 };
-pub use codegen::Codegen;
+use sealed::ArchInner;
 
-pub const AARCH64_APPLE_DARWIN: PhantomData<ARM64AppleDarwinCodegen> = PhantomData;
-pub const X86_64_APPLE_DARWIN: PhantomData<X86_64AppleDarwinCodegen> = PhantomData;
-pub const X86_64_LINUX_GNU: PhantomData<X86_64LinuxGnuCodegen> = PhantomData;
+const AARCH64_APPLE_DARWIN: PhantomData<ARM64AppleDarwinCodegen> = PhantomData;
+const X86_64_APPLE_DARWIN: PhantomData<X86_64AppleDarwinCodegen> = PhantomData;
+const X86_64_LINUX_GNU: PhantomData<X86_64LinuxGnuCodegen> = PhantomData;
 
-pub fn compile<C, N, R, O>(
+pub struct Compiler<A, N, R, W>
+where
+    A: Arch,
+    N: Into<String>,
+    R: Read,
+    W: Write,
+{
+    filename: N,
+    r: R,
+    w: W,
+    options: A::Options,
+}
+
+impl<N, R, W> Compiler<Empty, N, R, W>
+where
+    N: Into<String>,
+    R: Read,
+    W: Write,
+{
+    pub fn new<C: Arch>(filename: N, r: R, w: W) -> Compiler<C, N, R, W> {
+        Compiler {
+            filename,
+            r,
+            w,
+            options: C::Options::default(),
+        }
+    }
+}
+
+impl<A, N, R, W> Compiler<A, N, R, W>
+where
+    A: Arch,
+    N: Into<String>,
+    R: Read,
+    W: Write,
+{
+    pub fn with_options(mut self, options: A::Options) -> Self {
+        self.options = options;
+        self
+    }
+
+    pub fn compile(self) -> Result<(), Error> {
+        A::compile(self.filename, self.r, self.w, self.options)
+    }
+}
+
+pub trait Arch: sealed::ArchInner {}
+
+mod sealed {
+    use std::io::{Read, Write};
+
+    use crate::Error;
+
+    pub trait ArchInner {
+        type Options: Default;
+
+        fn compile<N, R, W>(filename: N, r: R, w: W, options: Self::Options) -> Result<(), Error>
+        where
+            N: Into<String>,
+            R: Read,
+            W: Write;
+    }
+}
+
+pub struct Empty;
+impl Arch for Empty {}
+impl ArchInner for Empty {
+    type Options = ();
+
+    fn compile<N, R, O>(_: N, _: R, _: O, _: Self::Options) -> Result<(), Error>
+    where
+        N: Into<String>,
+        R: Read,
+        O: Write,
+    {
+        Ok(())
+    }
+}
+
+pub struct Aarch64AppleDarwin;
+impl Arch for Aarch64AppleDarwin {}
+impl ArchInner for Aarch64AppleDarwin {
+    type Options = ();
+
+    fn compile<N, R, O>(filename: N, r: R, o: O, _: Self::Options) -> Result<(), Error>
+    where
+        N: Into<String>,
+        R: Read,
+        O: Write,
+    {
+        compile_unixlike(filename, r, o, AARCH64_APPLE_DARWIN)
+    }
+}
+
+pub struct X86_64AppleDarwin;
+impl Arch for X86_64AppleDarwin {}
+impl ArchInner for X86_64AppleDarwin {
+    type Options = ();
+
+    fn compile<N, R, O>(filename: N, r: R, o: O, _: Self::Options) -> Result<(), Error>
+    where
+        N: Into<String>,
+        R: Read,
+        O: Write,
+    {
+        compile_unixlike(filename, r, o, X86_64_APPLE_DARWIN)
+    }
+}
+
+pub struct X86_64LinuxGnu;
+impl Arch for X86_64LinuxGnu {}
+impl ArchInner for X86_64LinuxGnu {
+    type Options = ();
+
+    fn compile<N, R, O>(filename: N, r: R, o: O, _: Self::Options) -> Result<(), Error>
+    where
+        N: Into<String>,
+        R: Read,
+        O: Write,
+    {
+        compile_unixlike(filename, r, o, X86_64_LINUX_GNU)
+    }
+}
+
+pub struct Wasm32UnknownUnknown;
+impl Arch for Wasm32UnknownUnknown {}
+impl ArchInner for Wasm32UnknownUnknown {
+    type Options = WasmCompilerOption;
+
+    fn compile<N, R, O>(filename: N, r: R, o: O, options: Self::Options) -> Result<(), Error>
+    where
+        N: Into<String>,
+        R: Read,
+        O: Write,
+    {
+        if options.wat {
+            compile_wat(filename, r, o)
+        } else {
+            compile_wasm(filename, r, o)
+        }
+    }
+}
+#[derive(Debug, Default, Clone)]
+
+pub struct WasmCompilerOption {
+    wat: bool,
+}
+
+impl WasmCompilerOption {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn wat(mut self, wat: bool) -> Self {
+        self.wat = wat;
+        self
+    }
+}
+
+fn compile_unixlike<C, N, R, O>(
     filename: N,
     r: R,
     mut o: O,
@@ -97,7 +256,7 @@ where
     Ok(())
 }
 
-pub fn compile_wasm<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
+fn compile_wasm<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
 where
     N: Into<String>,
     R: Read,
@@ -118,7 +277,7 @@ where
     Ok(())
 }
 
-pub fn compile_wat<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
+fn compile_wat<N, R, O>(filename: N, r: R, mut o: O) -> Result<(), Error>
 where
     N: Into<String>,
     R: Read,
