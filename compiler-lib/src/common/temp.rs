@@ -14,6 +14,7 @@ impl Temp {
         }
     }
 
+    #[cfg(test)]
     pub fn new_with(num: u32) -> Self {
         Temp { num }
     }

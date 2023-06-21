@@ -109,6 +109,7 @@ impl X86 {
         CALL_DEFS.as_ref()
     }
 
+    #[allow(unused)]
     pub(super) fn debug_registers() {
         dbg!(&REGISTERS_GLOBAL);
     }

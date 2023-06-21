@@ -15,6 +15,7 @@ pub struct X86_64<'a> {
 }
 
 impl<'a> X86_64<'a> {
+    #[allow(unused)]
     pub fn debug() {
         X86_64Frame::debug_registers()
     }

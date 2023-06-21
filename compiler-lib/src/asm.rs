@@ -17,11 +17,12 @@ impl Temp {
         Self(CommonTemp::new())
     }
 
+    #[cfg(test)]
     pub fn new_with(num: u32) -> Self {
         Self(CommonTemp::new_with(num))
     }
 
-    pub fn to_string<F: Frame>(self) -> String {
+    pub fn _to_string<F: Frame>(self) -> String {
         F::temp_map()
             .get(&self.0)
             .map(ToString::to_string)

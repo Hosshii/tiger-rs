@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     process::Command,
 };
-use tiger_lib::{Arch, Compiler};
+use tiger_lib::{Arch, Compiler, Wasm32UnknownUnknown};
 
 const TEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/", "tests");
 

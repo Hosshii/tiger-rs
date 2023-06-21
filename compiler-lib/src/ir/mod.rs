@@ -61,9 +61,14 @@ pub enum BinOp {
     Div,
     And,
     Or,
+
+    #[allow(dead_code)]
     LShift,
+    #[allow(dead_code)]
     RShift,
+    #[allow(dead_code)]
     ARShift,
+    #[allow(dead_code)]
     XOr,
 }
 

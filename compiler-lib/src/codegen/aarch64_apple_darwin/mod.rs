@@ -14,6 +14,7 @@ pub struct ARM64 {
 }
 
 impl ARM64 {
+    #[allow(unused)]
     pub fn debug() {
         ARM64Frame::debug_registers()
     }

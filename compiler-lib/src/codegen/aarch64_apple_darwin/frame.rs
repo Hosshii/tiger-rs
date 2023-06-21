@@ -170,6 +170,7 @@ impl ARM64 {
         CALL_DEFS.as_ref()
     }
 
+    #[allow(unused)]
     pub fn debug_registers() {
         dbg!(&REGISTERS_GLOBAL);
     }
