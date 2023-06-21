@@ -8,16 +8,25 @@ use tiger_lib::{
 };
 
 #[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 struct Args {
+    /// Specify the target architecture for the code generation.
+    /// If not provided, the default is the target architecture of the machine running the compiler.
+    /// Valid options include: 'aarch64-apple-darwin', 'x86_64-apple-darwin', 'x86_64-linux-gnu', and 'wasm32-unknown-unknown'.
     #[arg(short, long, default_value = env!("TARGET_TRIPLE"))]
     arch: Arch,
-    #[clap(short, long, requires_if("arch", "wasm32-unknown-unknown"))]
+
+    /// If set, generates '.wat' files instead of '.wasm' files.
+    /// This option is only applicable when 'arch' is set to 'wasm32-unknown-unknown'.
+    #[clap(short, long, requires_if("wasm32-unknown-unknown", "arch"))]
     wat: bool,
-    #[arg(short, long, value_name = "FILE")]
+
+    /// Path to the source code file.
+    #[arg(value_name = "FILE")]
     src: PathBuf,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Arch {
     Aarch64AppleDarwin,
     X86_64AppleDarwin,

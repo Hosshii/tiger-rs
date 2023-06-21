@@ -12,13 +12,13 @@ args = ["build", "--target", "nodejs", "--release", "--out-dir", "../compiler/te
 
 [tasks.test]
 description = "Run tests"
-dependencies = ["prepare-integration-test"]
+dependencies = ["prepare-integration-test", "build"]
 command = "cargo"
 args = ["test"]
 
 [tasks.test-release]
 description = "Run tests (release)"
-dependencies = ["prepare-integration-test-release"]
+dependencies = ["prepare-integration-test-release", "build-release"]
 command = "cargo"
 args = ["test", "--release"]
 

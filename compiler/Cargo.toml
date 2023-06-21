@@ -1,6 +1,8 @@
 [package]
 name = "tiger"
 version = "0.1.0"
+authors = ["Hosshii"]
+description = "Rust implementation of the first part of \"Modern Compiler Implementation in ML\"."
 edition = "2021"
 default-run = "tiger"
 
