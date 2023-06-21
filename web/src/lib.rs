@@ -1,4 +1,4 @@
-use tiger::{Compiler, Wasm32UnknownUnknown};
+use tiger_lib::{Compiler, Wasm32UnknownUnknown};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

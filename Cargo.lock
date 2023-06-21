@@ -706,7 +706,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tiger"
+name = "tiger-lib"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -809,7 +809,7 @@ name = "web"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "tiger",
+ "tiger-lib",
  "wasm-bindgen",
 ]
 

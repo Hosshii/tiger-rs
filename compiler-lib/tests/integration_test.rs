@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     process::Command,
 };
-use tiger::{Arch, Compiler};
+use tiger_lib::{Arch, Compiler};
 
 const TEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/", "tests");
 
@@ -80,11 +80,11 @@ fn test_wasm() {
 fn test_unixlike() {
     cfg_if::cfg_if! {
         if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            use tiger::X86_64LinuxGnu as ARCH;
+            use tiger_lib::X86_64LinuxGnu as ARCH;
         } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
-            use tiger::X86_64AppleDarwin as ARCH;
+            use tiger_lib::X86_64AppleDarwin as ARCH;
         } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
-            use tiger::Aarch64AppleDarwin as ARCH;
+            use tiger_lib::Aarch64AppleDarwin as ARCH;
         }
     }
 
@@ -167,7 +167,7 @@ fn test_on_wasm(expected: i32, tiger_file: &PathBuf, js_file: &str) -> Result<()
     out_path.set_extension("wasm");
 
     let mut out = File::create(&out_path).context("cannot create file")?;
-    Compiler::new::<tiger::Wasm32UnknownUnknown>(name, tiger_file, &mut out).compile()?;
+    Compiler::new::<Wasm32UnknownUnknown>(name, tiger_file, &mut out).compile()?;
 
     let mut cmd = Command::new("node")
         .arg(js_file)
