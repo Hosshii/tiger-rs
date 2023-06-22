@@ -175,7 +175,7 @@ impl ARM64 {
         dbg!(&REGISTERS_GLOBAL);
     }
 
-    fn lr() -> Temp {
+    pub(super) fn lr() -> Temp {
         REGISTERS_GLOBAL.x30
     }
 
@@ -360,8 +360,8 @@ impl Frame for ARM64 {
             },
             Instruction::Operand {
                 assembly: format!("    sub 'd0, 's0, #{}", self.aligned_ptr()),
-                dst: vec![REGISTERS_GLOBAL.sp.into()],
-                src: vec![REGISTERS_GLOBAL.sp.into()],
+                dst: vec![Self::sp().into()],
+                src: vec![Self::sp().into()],
                 jump: None,
             },
             Instruction::Comment {
@@ -375,15 +375,15 @@ impl Frame for ARM64 {
             },
             Instruction::Operand {
                 assembly: format!("    add 'd0, 's0, #{}", self.aligned_ptr()),
-                dst: vec![REGISTERS_GLOBAL.sp.into()],
-                src: vec![REGISTERS_GLOBAL.sp.into()],
+                dst: vec![Self::sp().into()],
+                src: vec![Self::sp().into()],
                 jump: None,
             },
             // load fp and lr
             Instruction::Operand {
                 assembly: "    ldp 'd0, 'd1, ['s0], #16".to_string(),
-                dst: vec![REGISTERS_GLOBAL.x29.into(), REGISTERS_GLOBAL.x30.into()],
-                src: vec![REGISTERS_GLOBAL.sp.into()],
+                dst: vec![Self::fp().into(), Self::lr().into()],
+                src: vec![Self::sp().into()],
                 jump: None,
             },
             Instruction::Operand {

@@ -42,6 +42,9 @@ impl ARM64 {
             temps.push(reg.into());
         }
 
+        temps.push(ARM64Frame::fp().into());
+        temps.push(ARM64Frame::lr().into());
+
         temps
     }
 
