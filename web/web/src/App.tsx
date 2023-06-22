@@ -36,7 +36,7 @@ function App() {
         <div className="grid-container">
           <div className="button-wrapper">
             <Button onClick={onClickRun}>Run</Button>
-            <ButtonLink href="https://github.com/Hosshii/tiger-rs/tree/main/compiler/tests/testfiles">
+            <ButtonLink href="https://github.com/Hosshii/tiger-rs/tree/main/compiler-lib/tests/testfiles">
               Examples
             </ButtonLink>
           </div>

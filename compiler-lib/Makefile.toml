@@ -3,22 +3,28 @@ description = "Build cdylib for compiler integration test"
 cwd = "../cdylib"
 install_crate = "wasm-pack"
 command = "wasm-pack"
-args = ["build", "--target", "nodejs", "--out-dir", "../compiler/tests/pkg"]
+args = ["build", "--target", "nodejs", "--out-dir", "../compiler-lib/tests/pkg"]
 
 [tasks.prepare-integration-test-release]
 description = "Build cdylib for compiler integration test (release)"
 extend = "prepare-integration-test"
-args = ["build", "--target", "nodejs", "--release", "--out-dir", "../compiler/tests/pkg"]
+args = ["build", "--target", "nodejs", "--release", "--out-dir", "../compiler-lib/tests/pkg"]
 
 [tasks.test]
 description = "Run tests"
-dependencies = ["prepare-integration-test", "build"]
+dependencies = [
+    { name = "prepare-integration-test" }, 
+    { name = "build-release", path = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/cdylib" }
+]
 command = "cargo"
 args = ["test"]
 
 [tasks.test-release]
 description = "Run tests (release)"
-dependencies = ["prepare-integration-test-release", "build-release"]
+dependencies = [
+    { name = "prepare-integration-test-release" }, 
+    { name = "build-release", path = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/cdylib" }
+]
 command = "cargo"
 args = ["test", "--release"]
 
@@ -27,6 +33,11 @@ description = "Clean rust artifacts"
 command = "rm"
 args = ["-rf", "./tests/pkg"]
 
+[tasks.clean-asm]
+script = '''
+rm -rf ./tests/*.s
+'''
+
 [tasks.clean-rust]
 description = "Clean rust artifacts"
 command = "cargo"
@@ -34,4 +45,4 @@ args = ["clean"]
 
 [tasks.clean]
 description = "Clean"
-dependencies = ["clean-dylib", "clean-rust"]
+dependencies = ["clean-dylib", "clean-rust", "clean-asm"]

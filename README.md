@@ -49,7 +49,7 @@ clang -no-pie tiger.s ./target/release/libcdylib.dylib
 
 #### Wasm
 
-see ([compiler/Makefile.toml](./compiler/Makefile.toml), [index.html](./compiler/tests/index.html), [test.js](./compiler/tests/test.js)) or ([web/Makefile.toml](./web/Makefile.toml), [runWasm.ts](./web/web/src/runWasm.ts)).
+see ([compiler-lib/Makefile.toml](./compiler-lib/Makefile.toml), [index.html](./compiler-lib/tests/index.html), [test.js](./compiler-lib/tests/test.js)) or ([web/Makefile.toml](./web/Makefile.toml), [runWasm.ts](./web/web/src/runWasm.ts)).
 
 ### Supported platform.
 
