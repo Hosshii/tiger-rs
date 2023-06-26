@@ -1,5 +1,5 @@
-import init_tiger, { compile } from "./pkg_compiler/web";
-import init_cdylib, { read_stdout, write_stdin } from "./pkg_cdylib/cdylib";
+import init_tiger, { compile } from "../pkg_compiler/web";
+import init_cdylib, { read_stdout, write_stdin } from "../pkg_cdylib/cdylib";
 
 async function runWasm(
   src: string,
