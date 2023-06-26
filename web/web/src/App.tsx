@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Editor } from "./components/Editor";
 import "./App.css";
-import { runWasm } from "./runWasm";
 import TextArea from "./components/Stdio";
 import { ButtonLink, Button } from "./components/ButtonLink";
+import { WorkerOutput, WorkerInput } from "./wasm/types";
 
 const initTigerProg = `let
   var a := getchar()
@@ -16,6 +16,7 @@ function App() {
   const [srcCode, setSrcCode] = useState("");
   const [result, setResult] = useState("");
   const [stdin, setStdin] = useState("hello world!");
+  const workerRef = useRef<Worker | null>(null);
   const handleCodeChange = (s: string) => {
     setSrcCode(s);
   };
@@ -24,11 +25,30 @@ function App() {
   };
 
   const onClickRun = () => {
-    runWasm(srcCode, stdin).then(({ exitCode, stdout }) => {
-      const a = `exit code: ${exitCode}\n\nstdout:\n${stdout}`;
-      setResult(a);
-    });
+    workerRef.current?.postMessage({
+      type: "run wasm",
+      payload: { src: srcCode, stdin },
+    } as WorkerInput);
   };
+
+  useEffect(() => {
+    workerRef.current = new Worker(
+      new URL("./wasm/worker.ts", import.meta.url),
+      { type: "module" }
+    );
+    workerRef.current.onmessage = (e: MessageEvent<WorkerOutput>) => {
+      const data = e.data;
+      if (data.type === "run wasm") {
+        const { exitCode, stdout } = data.payload;
+        const a = `exit code: ${exitCode}\n\nstdout:\n${stdout}`;
+        setResult(a);
+      }
+    };
+
+    return () => {
+      workerRef.current && workerRef.current.terminate();
+    };
+  }, []);
 
   return (
     <>
