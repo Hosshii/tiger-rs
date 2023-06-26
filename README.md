@@ -55,7 +55,7 @@ see ([compiler-lib/Makefile.toml](./compiler-lib/Makefile.toml), [index.html](./
 
 - aarch64-apple-darwin
 - x86_64-apple-darwin
-- x86_64-linux-gnu
+- x86_64-unknown-linux-gnu
 - wasm32-unknown-unknown
 
 ### Run test.

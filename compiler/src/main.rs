@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tiger_lib::{
     Aarch64AppleDarwin, Compiler, Wasm32UnknownUnknown, WasmCompilerOption, X86_64AppleDarwin,
-    X86_64LinuxGnu,
+    X86_64UnknownLinuxGnu,
 };
 
 #[derive(Parser)]
@@ -30,7 +30,7 @@ struct Args {
 enum Arch {
     Aarch64AppleDarwin,
     X86_64AppleDarwin,
-    X86_64LinuxGnu,
+    X86_64UnknownLinuxGnu,
     Wasm32UnknownUnknown,
 }
 
@@ -41,7 +41,7 @@ impl FromStr for Arch {
         match s {
             "aarch64-apple-darwin" => Ok(Arch::Aarch64AppleDarwin),
             "x86_64-apple-darwin" => Ok(Arch::X86_64AppleDarwin),
-            "x86_64-linux-gnu" => Ok(Arch::X86_64LinuxGnu),
+            "x86_64-unknown-linux-gnu" => Ok(Arch::X86_64UnknownLinuxGnu),
             "wasm32-unknown-unknown" => Ok(Arch::Wasm32UnknownUnknown),
             _ => Err(format!("unknown arch {}", s)),
         }
@@ -70,8 +70,8 @@ fn main() -> Result<()> {
         Arch::X86_64AppleDarwin => {
             Compiler::new::<X86_64AppleDarwin>(&filename, file, io::stdout()).compile()
         }
-        Arch::X86_64LinuxGnu => {
-            Compiler::new::<X86_64LinuxGnu>(&filename, file, io::stdout()).compile()
+        Arch::X86_64UnknownLinuxGnu => {
+            Compiler::new::<X86_64UnknownLinuxGnu>(&filename, file, io::stdout()).compile()
         }
         Arch::Wasm32UnknownUnknown => {
             let options = WasmCompilerOption::new().wat(args.wat);

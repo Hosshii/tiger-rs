@@ -22,7 +22,7 @@ use crate::{
     codegen::{
         aarch64_apple_darwin::ARM64 as ARM64AppleDarwinCodegen, reg_alloc,
         x86_64_apple_darwin::X86_64 as X86_64AppleDarwinCodegen,
-        x86_64_linux_gnu::X86_64 as X86_64LinuxGnuCodegen, Codegen,
+        x86_64_linux_gnu::X86_64 as X86_64UnknownLinuxGnuCodegen, Codegen,
     },
     frame::{Fragment, Frame as _},
     semant::Semant,
@@ -31,7 +31,7 @@ use sealed::ArchInner;
 
 const AARCH64_APPLE_DARWIN: PhantomData<ARM64AppleDarwinCodegen> = PhantomData;
 const X86_64_APPLE_DARWIN: PhantomData<X86_64AppleDarwinCodegen> = PhantomData;
-const X86_64_LINUX_GNU: PhantomData<X86_64LinuxGnuCodegen> = PhantomData;
+const X86_64_UNKNOWN_LINUX_GNU: PhantomData<X86_64UnknownLinuxGnuCodegen> = PhantomData;
 
 pub struct Compiler<A, N, R, W>
 where
@@ -108,7 +108,7 @@ impl ArchInner for Empty {
         R: Read,
         O: Write,
     {
-        Ok(())
+        unreachable!()
     }
 }
 
@@ -142,9 +142,9 @@ impl ArchInner for X86_64AppleDarwin {
     }
 }
 
-pub struct X86_64LinuxGnu;
-impl Arch for X86_64LinuxGnu {}
-impl ArchInner for X86_64LinuxGnu {
+pub struct X86_64UnknownLinuxGnu;
+impl Arch for X86_64UnknownLinuxGnu {}
+impl ArchInner for X86_64UnknownLinuxGnu {
     type Options = ();
 
     fn compile<N, R, O>(filename: N, r: R, o: O, _: Self::Options) -> Result<(), Error>
@@ -153,7 +153,7 @@ impl ArchInner for X86_64LinuxGnu {
         R: Read,
         O: Write,
     {
-        compile_unixlike(filename, r, o, X86_64_LINUX_GNU)
+        compile_unixlike(filename, r, o, X86_64_UNKNOWN_LINUX_GNU)
     }
 }
 

@@ -80,7 +80,7 @@ fn test_wasm() {
 fn test_unixlike() {
     cfg_if::cfg_if! {
         if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            use tiger_lib::X86_64LinuxGnu as ARCH;
+            use tiger_lib::X86_64UnknownLinuxGnu as ARCH;
         } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
             use tiger_lib::X86_64AppleDarwin as ARCH;
         } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
