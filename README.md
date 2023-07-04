@@ -31,7 +31,7 @@ cargo make build
 
 You can specify [target](#supported-platform) by adding `--arch <target>` argument.
 
-ex. `./target/release/tiger main.tig --arch x86_64-apple-darwin`
+ex. `./target/release/tiger --arch x86_64-apple-darwin main.tig`
 
 2. Link it with runtime.
 
